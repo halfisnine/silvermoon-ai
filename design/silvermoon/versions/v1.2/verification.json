@@ -1,0 +1,123 @@
+{
+  "browser": "153.0.8010.0",
+  "offline_assets_and_fonts": true,
+  "external_requests": 0,
+  "script_errors": [],
+  "layouts": [
+    {
+      "width": 320,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 320,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 320,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 360,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 360,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 360,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 390,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 430,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 430,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 430,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 768,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 768,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 768,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1024,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1024,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1024,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "view": "首页设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "view": "控制台设计",
+      "horizontal_overflow": false
+    },
+    {
+      "width": 1440,
+      "view": "模型与价格",
+      "horizontal_overflow": false
+    }
+  ],
+  "model_filter_search_empty_reset": true,
+  "separate_model_view": true,
+  "mobile_primary_actions_above_fold": true,
+  "clipboard_success_and_denied": true,
+  "mobile_notice_visible": true,
+  "browser_back_navigation": true,
+  "dialog_escape_focus_and_small_screen": true,
+  "mobile_menu_escape_and_navigation": true,
+  "preview_payment_inert": true,
+  "version_link_tracks_view": true
+}
