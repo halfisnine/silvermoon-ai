@@ -1,0 +1,157 @@
+{
+  "version": "1.2-preview.2",
+  "name": "月下直达",
+  "status": "interactive-design-preview-awaiting-user-feedback",
+  "saved_at": "2026-11-16T23:46:29.792502+08:00",
+  "based_on": "1.2-preview.1",
+  "base_commit": "5106f3deaa2df0e565f17f8dc7d1d8a769983f58",
+  "local_git_tag": "design/silvermoon-v1.2-preview.2",
+  "remote_backup": "not-pushed",
+  "entrypoint": "index.html",
+  "source_files": [
+    "index.html",
+    "styles.css",
+    "preview.js"
+  ],
+  "entrypoint_snapshot": "source.html",
+  "implementation_notes": "DESIGN.md",
+  "verification_file": "verification.json",
+  "image_source": "copied unchanged from V1.1 assets/moonlight.webp",
+  "font_source": "Google Fonts Noto Sans SC 400/500 and Noto Serif SC 400 text subsets; local OFL licenses",
+  "verified": {
+    "browser": "153.0.8010.0",
+    "offline_assets_and_fonts": true,
+    "external_requests": 0,
+    "script_errors": [],
+    "layouts": [
+      {
+        "width": 320,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 320,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 320,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 360,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 360,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 360,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 430,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 430,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 430,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 768,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 768,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 768,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1024,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1024,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1024,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "view": "模型与价格",
+        "horizontal_overflow": false
+      }
+    ],
+    "model_filter_search_empty_reset": true,
+    "separate_model_view": true,
+    "mobile_primary_actions_above_fold": true,
+    "clipboard_success_and_denied": true,
+    "mobile_notice_visible": true,
+    "browser_back_navigation": true,
+    "dialog_escape_focus_and_small_screen": true,
+    "mobile_menu_escape_and_navigation": true,
+    "preview_payment_inert": true,
+    "version_link_tracks_view": true
+  },
+  "production_code_changed": false,
+  "live_api_connected": false,
+  "user_accepted": false,
+  "screenshots": [
+    "screenshots/desktop-console-full.png",
+    "screenshots/desktop-console.png",
+    "screenshots/desktop-home-full.png",
+    "screenshots/desktop-home.png",
+    "screenshots/mobile-console-full.png",
+    "screenshots/mobile-console.png",
+    "screenshots/mobile-home-full.png",
+    "screenshots/mobile-home.png"
+  ]
+}
