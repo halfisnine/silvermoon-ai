@@ -8,7 +8,7 @@ COPY web/ ./
 COPY pkg/billingexpr/testdata/frontend_simulation.json /src/pkg/billingexpr/testdata/frontend_simulation.json
 ARG CUSTOM_VERSION
 RUN test -n "$CUSTOM_VERSION" && bun run typecheck && VITE_REACT_APP_VERSION="$CUSTOM_VERSION" bun run build \
-    && grep -R -F -q "$CUSTOM_VERSION" dist
+    && test -s dist/index.html && printf '%s\n' "$CUSTOM_VERSION" > /src/frontend-version
 
 FROM golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473 AS backend
 WORKDIR /src
@@ -32,6 +32,7 @@ FROM debian:bookworm-slim@sha256:f06537653ac770703bc45b4b113475bd402f451e85223f0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates tzdata libasan8 wget \
     && rm -rf /var/lib/apt/lists/* && update-ca-certificates
 COPY --from=backend /out/new-api /new-api
+COPY --from=frontend /src/frontend-version /usr/share/silvermoon/frontend-version
 COPY LICENSE NOTICE THIRD-PARTY-LICENSES.md /licenses/
 WORKDIR /data
 EXPOSE 3000

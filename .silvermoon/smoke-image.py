@@ -3,6 +3,7 @@ import json
 import subprocess
 import sys
 import time
+from html.parser import HTMLParser
 
 image, expected_version = sys.argv[1:]
 version = subprocess.check_output(
@@ -19,6 +20,11 @@ container = subprocess.check_output(
 ).strip()
 
 try:
+    frontend_version = subprocess.check_output(
+        ["docker", "exec", container, "cat", "/usr/share/silvermoon/frontend-version"], text=True
+    ).strip()
+    if frontend_version != expected_version:
+        raise RuntimeError("Frontend build version differs from the backend version")
     status = None
     for _ in range(60):
         probe = subprocess.run(
@@ -42,7 +48,16 @@ try:
         ["docker", "exec", container, "wget", "-qO-", "-T", "3",
          "http://127.0.0.1:3000/"], text=True
     )
-    if "<html" not in page.lower() or '<div id="root"' not in page:
+    class PageParser(HTMLParser):
+        has_root = False
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "div" and dict(attrs).get("id") == "root":
+                self.has_root = True
+
+    parsed = PageParser()
+    parsed.feed(page)
+    if "<html" not in page.lower() or not parsed.has_root:
         raise RuntimeError("Embedded frontend is missing")
     setup = json.loads(subprocess.check_output(
         ["docker", "exec", container, "wget", "-qO-", "-T", "3",

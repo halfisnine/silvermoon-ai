@@ -9,7 +9,9 @@
 - 镜像仓库：`vidbin/silvermoon-ai`，当前发布 Linux amd64。
 - 上游基线：`v1.0.0-rc.49`，提交见 `.silvermoon/source.lock.json`。
 - 工具链：Go 1.26.10、Bun 1.4.4，容器镜像按摘要固定。
-- 前后端使用同一个 `v1.0.0-rc.49-custom.<12位源码提交>` 版本，不改上游 VERSION 文件。
+- 前后端构建使用同一个 `v1.0.0-rc.49-custom.<12位源码提交>` 版本，不改上游 VERSION 文件。
+  当前前端页面从后端状态接口取版本，不要求版本字符串出现在压缩 JS 中；
+  前端产物版本另记在镜像内 `/usr/share/silvermoon/frontend-version` 并在运行检查时核对。
 - 保留 PGO 编译和上游运行时依赖。原始 Dockerfile 保留，自有构建使用 `.silvermoon/Dockerfile`。
 
 ## GitHub Actions
@@ -17,6 +19,7 @@
 `.github/workflows/silvermoon-build.yml` 是当前自有构建发布工作流。
 上游六个工作流完整保留在 `.github/upstream-workflows/`，移出自动扫描目录，
 避免触发官方镜像、Electron、多平台 release 和 GitCode 同步。未来升级需逐项审查。
+上游 Dependabot 配置也保存在该归档目录，暂不自动提出依赖升级，依赖变更需显式审查。
 
 | 触发 | 检查与构建 | 上传 Docker Hub |
 | --- | --- | --- |
