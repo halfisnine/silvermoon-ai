@@ -1,0 +1,100 @@
+{
+  "version": "1.0",
+  "name": "月夜插画版",
+  "status": "frozen-visual-baseline-not-implemented",
+  "frozen_at": "2026-11-16T21:23:13+08:00",
+  "source_preview_filename": "silvermoon-reference-v2.html",
+  "source_sha256": "b173999081206b3367cf5d1d805195d08083065910c45dc04ff4026c3866db2a",
+  "repository_base_commit": "ce7d6ecd97f233523cde9cb784cb3bbb83a0e679",
+  "local_git_tag": "design/silvermoon-v1.0",
+  "remote_backup": "not-pushed",
+  "entrypoint": "index.html",
+  "original_source": "source.html",
+  "implementation_notes": "DESIGN.md",
+  "localized_resources": [
+    "image",
+    "Noto Sans SC 400",
+    "Noto Sans SC 500",
+    "Noto Serif SC 400"
+  ],
+  "resource_provenance": {
+    "image": "https://r2.uploads.tw/2026/11/EnGE2flIfr.webp",
+    "fonts": "Google Fonts text subsets; OFL licenses in assets"
+  },
+  "verification": {
+    "source_identical": true,
+    "offline_assets_loaded": true,
+    "offline_font_families_loaded": true,
+    "external_network_requests": 0,
+    "script_errors": [],
+    "layout_checks": [
+      {
+        "width": 320,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 320,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 360,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 360,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 390,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 430,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 430,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "view": "首页设计",
+        "horizontal_overflow": false
+      },
+      {
+        "width": 1440,
+        "view": "控制台设计",
+        "horizontal_overflow": false
+      }
+    ],
+    "mobile_menu_escape": true,
+    "preview_payment_action_inert": true
+  },
+  "verification_method": "Playwright + @sparticuz/chromium 153.0.0; offline browser context; no production application tests",
+  "not_verified": [
+    "real mobile Safari/Android",
+    "soft keyboard and safe areas",
+    "production React integration",
+    "real account/authentication/billing/API flows",
+    "full accessibility conformance"
+  ],
+  "snapshots": [
+    "screenshots/desktop-console.png",
+    "screenshots/desktop-home.png",
+    "screenshots/mobile-console.png",
+    "screenshots/mobile-home.png",
+    "screenshots/mobile-pair.png"
+  ]
+}

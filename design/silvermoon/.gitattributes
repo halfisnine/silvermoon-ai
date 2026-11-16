@@ -1,0 +1,3 @@
+# Preserve exact source snapshots and upstream license text, including whitespace.
+versions/*/source.html -whitespace
+versions/*/assets/OFL*.txt -whitespace
