@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#34466c">
+  <meta name="description" content="银月 V1.1 设计预览：月夜插画、明亮暮色与清晰的模型接入。">
+  <title>银月 · V1.1 暮色与清晰接入</title>
+  <link rel="stylesheet" href="assets/fonts.css">
+  <link rel="stylesheet" href="styles.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <div class="preview-bar" aria-label="设计版本工具栏">
+    <span class="version-label">银月 <b>V1.1</b> · 暮色</span>
+    <div class="view-switch" aria-label="预览页面">
+      <button type="button" id="view-home" aria-pressed="true">首页设计</button>
+      <button type="button" id="view-console" aria-pressed="false">控制台设计</button>
+    </div>
+    <a id="previous-version" href="../v1.0/index.html#home">对照 V1.0 ↗</a>
+  </div>
+  <div id="home-view">
+    <a class="skip-link" href="#home-main">跳到主要内容</a>
+    <div class="opening">
+      <img class="hero-art" src="assets/moonlight.webp" width="1254" height="1254" alt="满月照亮蓝紫色天空，少女站在晚霞与水面之间" fetchpriority="high">
+      <header class="site-header wrap">
+        <a class="brand" href="#home" aria-label="银月首页"><img src="assets/moonlight.webp" alt="" width="38" height="38"><span><span class="brand-name">银月</span><small>SILVERMOON AI</small></span></a>
+        <nav class="desktop-nav" aria-label="主导航"><a href="#models">模型与价格</a><a href="#connect">接入指南</a><a href="#help">使用帮助</a><a class="nav-console" href="#console">进入控制台 ↗</a></nav>
+        <details class="mobile-menu"><summary aria-label="打开首页导航">菜单 <span aria-hidden="true">＋</span></summary><nav aria-label="手机首页导航"><a href="#models">模型与价格</a><a href="#connect">接入指南</a><a href="#help">使用帮助</a><a href="#console">进入控制台 ↗</a></nav></details>
+      </header>
+      <main class="hero wrap" id="home-main">
+        <div class="hero-copy"><p class="eyebrow">SILVERMOON · 模型 API 中转站</p><h1>把你需要的模型，<br><em>接入日常工具。</em></h1><p class="hero-description">从模型选择到每一次调用。<br>查看价格、获取密钥，在你的客户端或应用中开始使用。</p><div class="hero-actions"><a class="button button-moon" href="#models">查看模型与价格 <span aria-hidden="true">↗</span></a><button class="button button-outline" type="button" data-dialog="start">注册并接入</button></div><a class="hero-guide" href="#connect">第一次使用中转站？查看接入指南 <span aria-hidden="true">→</span></a></div>
+        <span class="art-caption" aria-hidden="true">SOMEWHERE, UNDER THE SAME MOON.</span>
+      </main>
+      <div class="hero-foot wrap"><span>连接模型，让灵感启程。</span><a href="#models">找到你的下一个模型 ↓</a></div>
+    </div>
+    <section class="model-section section" id="models" aria-labelledby="models-heading">
+      <div class="wrap">
+        <div class="section-heading"><div><p class="section-kicker">FIND YOUR MODEL</p><h2 id="models-heading">先选对模型，再开始创造。</h2></div><p class="section-description">模型能力、接入协议、计费方式。<br>开始之前，把你关心的事看清楚。</p></div>
+        <div class="model-controls"><div class="filter-group" aria-label="按用途筛选模型"><button type="button" data-filter="all" aria-pressed="true">全部</button><button type="button" data-filter="chat" aria-pressed="false">日常对话</button><button type="button" data-filter="code" aria-pressed="false">编程开发</button><button type="button" data-filter="multimodal" aria-pressed="false">多模态</button></div><label class="model-search"><span aria-hidden="true">⌕</span><input id="model-search" type="search" aria-label="搜索模型" placeholder="搜索模型或系列" autocomplete="off"></label></div>
+        <div class="model-grid">
+          <article class="model-card" data-model="GPT OpenAI" data-categories="chat code"><div class="model-top"><span class="model-monogram" aria-hidden="true">G</span><span class="family-label">OPENAI</span></div><h3>GPT 系列</h3><p>从日常问答到代码辅助，<br>找到适合你的通用模型。</p><div class="model-tags"><span>对话</span><span>代码</span></div><button type="button" class="model-detail" data-dialog="gpt">查看模型与计费 <span aria-hidden="true">↗</span></button></article>
+          <article class="model-card" data-model="Claude Anthropic" data-categories="chat code"><div class="model-top"><span class="model-monogram claude" aria-hidden="true">C</span><span class="family-label">ANTHROPIC</span></div><h3>Claude 系列</h3><p>梳理长篇内容，推敲表达，<br>让思考与构建自然衔接。</p><div class="model-tags"><span>写作</span><span>代码</span></div><button type="button" class="model-detail" data-dialog="claude">查看模型与计费 <span aria-hidden="true">↗</span></button></article>
+          <article class="model-card" data-model="Gemini Google" data-categories="chat multimodal"><div class="model-top"><span class="model-monogram gemini" aria-hidden="true">✧</span><span class="family-label">GOOGLE</span></div><h3>Gemini 系列</h3><p>结合文字与图像的理解，<br>为想法打开更多视角。</p><div class="model-tags"><span>对话</span><span>多模态</span></div><button type="button" class="model-detail" data-dialog="gemini">查看模型与计费 <span aria-hidden="true">↗</span></button></article>
+        </div>
+        <div class="model-empty" id="model-empty" hidden><h3>没有找到匹配的模型</h3><p>试试其他名称，或清除筛选查看全部。</p><button type="button" class="button button-soft" id="clear-filters">清除筛选</button></div>
+        <div class="model-caption"><p>模型为展示示例；实际供应、协议与价格以正式列表为准。</p><span id="model-count" role="status">展示 3 个系列</span></div>
+        <div class="price-note"><span class="note-mark" aria-hidden="true">◎</span><p><strong>价格要清楚，用量也要清楚。</strong><span>查看输入、输出及适用的缓存计价，调用后在控制台核对费用与记录。</span></p><button type="button" data-dialog="billing">了解计费方式 ↗</button></div>
+      </div>
+    </section>
+    <section class="connect-section section" id="connect" aria-labelledby="connect-heading"><div class="wrap connect-grid"><div class="connect-copy"><p class="section-kicker">FROM MODEL TO YOUR WORKFLOW</p><h2 id="connect-heading">你熟悉的工具，<br>接上新的可能。</h2><p>支持自定义 API 接口的客户端，或你自己的应用。<br>先确认模型与工具的协议，再按指引完成配置。</p><div class="tool-types"><span>桌面客户端</span><span>开发工具</span><span>SDK / 自有应用</span></div><button class="button button-ink" type="button" data-dialog="guide">查看接入清单 <span aria-hidden="true">↗</span></button></div><ol class="steps"><li><span>01</span><div><h3>选模型，看价格</h3><p>确认需要的模型、接口协议与计费单位。</p></div></li><li><span>02</span><div><h3>准备账户与 API 密钥</h3><p>进入控制台，查看可用额度并创建调用密钥。</p></div></li><li><span>03</span><div><h3>填入工具，发起调用</h3><p>配置接口地址、密钥和模型名称，再查看调用记录。</p></div></li></ol></div></section>
+    <section class="help-section section" id="help" aria-labelledby="help-heading"><div class="wrap"><div class="section-heading"><div><p class="section-kicker">A CLEARER WAY TO START</p><h2 id="help-heading">开始之前，心里有数。</h2></div><p class="section-description">接入、费用与使用记录，<br>让每一步都有清楚的答案。</p></div><div class="help-grid"><article><span class="help-index">01 / ACCESS</span><h3>能接入我的工具吗？</h3><p>查看工具是否支持自定义接口，并核对模型使用的协议。不同端点与工具的支持范围可能不同。</p><a href="#connect">查看接入步骤 →</a></article><article><span class="help-index">02 / USAGE</span><h3>每次调用花了多少？</h3><p>在使用记录里查看模型、用量、费用与调用结果，按对应计费说明核对。</p><a href="#console">了解控制台 →</a></article><article><span class="help-index">03 / SUPPORT</span><h3>调用遇到问题怎么办？</h3><p>先检查公告和错误信息，再根据接入指引排查。联系支持时请勿发送完整 API 密钥。</p><button type="button" data-dialog="support">查看排查清单 →</button></article></div></div></section>
+    <section class="closing"><div class="wrap"><p class="section-kicker">UNDER THE SAME MOON</p><h2>让下一次调用，从银月开始。</h2><div class="closing-actions"><a class="button button-ink" href="#models">查看模型与价格 ↗</a><a class="text-link" href="#console">已有账户？进入控制台 →</a></div></div></section>
+    <footer class="site-footer wrap"><span>银月 AI · SILVERMOON</span><span>连接模型，让灵感启程。</span></footer>
+  </div>
+  <section id="console-view" class="console" hidden aria-label="银月控制台设计稿">
+    <img class="console-art" src="assets/moonlight.webp" width="1254" height="1254" alt="">
+    <header class="console-header"><a class="brand" href="#home" aria-label="回到银月首页"><img src="assets/moonlight.webp" alt="" width="36" height="36"><span><span class="brand-name">银月</span><small>SILVERMOON AI</small></span></a><nav class="desktop-nav" aria-label="控制台导航"><a href="#models">模型与价格</a><a href="#connect">接入指南</a><span class="user-avatar" aria-label="示例用户：旅行者">月</span></nav><details class="mobile-menu"><summary aria-label="打开控制台导航">菜单 <span aria-hidden="true">＋</span></summary><nav aria-label="手机控制台导航"><a href="#home">回到首页</a><a href="#models">模型与价格</a><button type="button" data-dialog="keys">API 密钥</button><button type="button" data-dialog="wallet">钱包与充值</button><button type="button" data-dialog="records">使用记录</button><button type="button" data-dialog="support">公告与帮助</button></nav></details></header>
+    <div class="console-layout"><aside class="console-sidebar" aria-label="控制台侧栏"><p>工作空间</p><button type="button" class="selected" aria-current="page" data-overview><span aria-hidden="true">◈</span>控制台概览</button><button type="button" data-dialog="keys"><span aria-hidden="true">⌘</span>API 密钥</button><button type="button" data-dialog="playground"><span aria-hidden="true">◇</span>在线体验</button><button type="button" data-dialog="records"><span aria-hidden="true">≋</span>使用记录</button><p>账户</p><button type="button" data-dialog="wallet"><span aria-hidden="true">▱</span>钱包与充值</button><button type="button" data-dialog="profile"><span aria-hidden="true">◎</span>个人设置</button><div class="sidebar-poem">在同一片月光下<br><small>UNDER THE SAME MOON.</small></div><a href="#home" class="back-home">← 回到首页</a></aside>
+    <main class="console-main"><div class="breadcrumb"><span>工作空间 / 概览</span><span class="sample-label">设计预览 · 示例数据</span></div><section class="welcome"><div><p class="welcome-kicker">YOUR IDEAS, A LITTLE BRIGHTER.</p><h1>晚上好，旅行者。</h1><p>月光已至，继续你的创造。<br>你的模型、密钥与每一次灵感，都在这里。</p></div><span class="welcome-poem" aria-hidden="true">让灵感有所抵达</span></section>
+      <div class="metrics"><section class="metric-card balance"><div class="metric-label">账户余额 <span aria-hidden="true">◌</span></div><strong>¥128.60</strong><div class="metric-footer"><span>账户可用额度</span><button type="button" class="button button-ink" data-dialog="wallet">去充值 ↗</button></div></section><section class="metric-card"><div class="metric-label">今日用量 <span aria-hidden="true">↗</span></div><strong>¥2.36</strong><span class="metric-note">费用示例 · 非真实账单</span></section><section class="metric-card"><div class="metric-label">今日请求 <span aria-hidden="true">✧</span></div><strong>186 <small>次</small></strong><span class="metric-note">调用记录示例</span></section></div>
+      <div class="console-middle"><section class="console-panel"><div class="panel-heading"><h2>从这里开始</h2><span>常用入口</span></div><div class="quick-actions"><button type="button" data-dialog="keys"><span aria-hidden="true">⌘</span>创建密钥</button><button type="button" data-dialog="playground"><span aria-hidden="true">◇</span>在线体验</button><a href="#models"><span aria-hidden="true">✧</span>模型广场</a><a href="#connect"><span aria-hidden="true">≡</span>接入指南</a></div></section><section class="console-panel notice"><div class="panel-heading"><h2>银月来信</h2><span>公告</span></div><p>这里展示服务更新与使用指引。<br>重要的信息，也值得被清晰看见。</p><button type="button" data-dialog="support">公告排版示例 ↗</button></section></div>
+      <section class="console-panel usage-panel"><div class="panel-heading"><h2>最近使用</h2><button type="button" class="quiet-button" data-dialog="records">全部记录 ↗</button></div><table class="records"><thead><tr><th scope="col">模型 / 时间</th><th scope="col">状态</th><th scope="col">费用</th></tr></thead><tbody><tr><td>gpt-4.1<small>今天 20:42 · 默认密钥</small></td><td><span class="success">✓ 已完成</span></td><td>¥0.018</td></tr><tr><td>gemini-2.5-pro<small>今天 20:36 · 创作工具</small></td><td><span class="success">✓ 已完成</span></td><td>¥0.026</td></tr></tbody></table></section><footer class="console-footer"><span>银月 AI · SILVERMOON</span><a href="#help">使用帮助 ↗</a></footer>
+    </main></div>
+  </section>
+  <dialog id="preview-dialog" aria-labelledby="dialog-title"><div class="dialog-top"><span>银月 · 设计预览</span><button type="button" id="close-dialog" aria-label="关闭弹窗">×</button></div><h2 id="dialog-title"></h2><p id="dialog-description"></p><ul id="dialog-list"></ul><p class="dialog-note" id="dialog-note"></p><button type="button" class="button button-ink" id="dialog-confirm">知道了</button></dialog>
+</body>
+</html>
