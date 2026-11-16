@@ -5,6 +5,7 @@ ENV BUN_CONFIG_MAX_HTTP_REQUESTS=16 NODE_OPTIONS=--max-old-space-size=2304 RAYON
 COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY web/ ./
+COPY pkg/billingexpr/testdata/frontend_simulation.json /src/pkg/billingexpr/testdata/frontend_simulation.json
 ARG CUSTOM_VERSION
 RUN test -n "$CUSTOM_VERSION" && bun run typecheck && VITE_REACT_APP_VERSION="$CUSTOM_VERSION" bun run build \
     && grep -R -F -q "$CUSTOM_VERSION" dist
