@@ -20,6 +20,7 @@ import { Megaphone } from 'lucide-react'
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useAnnouncements } from '@/features/dashboard/hooks/use-status-data'
@@ -45,7 +46,7 @@ const AnnouncementStatusDot = memo(function AnnouncementStatusDot(props: {
   )
 })
 
-export function AnnouncementsPanel() {
+export function AnnouncementsPanel(props: { compact?: boolean } = {}) {
   const { t } = useTranslation()
   const { items: list, loading } = useAnnouncements()
   const [selectedAnnouncement, setSelectedAnnouncement] =
@@ -55,6 +56,35 @@ export function AnnouncementsPanel() {
   const handleAnnouncementClick = (item: AnnouncementItem) => {
     setSelectedAnnouncement(item)
     setIsDialogOpen(true)
+  }
+
+  if (props.compact) {
+    if (loading || !list.length) return null
+    return (
+      <>
+        <Button
+          variant='ghost'
+          className='silvermoon-news'
+          onClick={() => handleAnnouncementClick(list[0])}
+        >
+          <span className='silvermoon-news-label'>
+            <Megaphone aria-hidden='true' />
+            {t('Announcements')}
+          </span>
+          <span className='silvermoon-news-preview'>
+            {getPreviewText(list[0].content)}
+          </span>
+          <span className='silvermoon-news-detail'>
+            {t('Click for details')}
+          </span>
+        </Button>
+        <AnnouncementDetailModal
+          open={isDialogOpen}
+          onOpenChange={setIsDialogOpen}
+          announcement={selectedAnnouncement}
+        />
+      </>
+    )
   }
 
   return (

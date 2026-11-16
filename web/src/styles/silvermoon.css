@@ -1,0 +1,613 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/* Silvermoon V1.2: moonlit artwork, quiet surfaces, no decorative accent borders. */
+@layer base {
+  body:not([data-theme-preset]) {
+    --background: #eeedf6;
+    --foreground: #35415f;
+    --card: #fcfaff;
+    --card-foreground: #35415f;
+    --popover: #fcfaff;
+    --popover-foreground: #35415f;
+    --primary: #746087;
+    --primary-foreground: #fff;
+    --secondary: #e8e2f0;
+    --secondary-foreground: #4e4263;
+    --muted: #e8e5f0;
+    --muted-foreground: #686079;
+    --accent: #e7e0ef;
+    --accent-foreground: #493c60;
+    --border: #dcd7e7;
+    --input: #c9bfd8;
+    --ring: #84639d;
+    --overview-accent-1: #8873a5;
+    --overview-accent-2: #ac7e95;
+    --overview-accent-3: #657d9d;
+    --sidebar: #3d4b6d;
+    --sidebar-foreground: #f0eaf8;
+    --sidebar-primary: #e8e2fa;
+    --sidebar-primary-foreground: #454164;
+    --sidebar-accent: #e8e2fa;
+    --sidebar-accent-foreground: #454164;
+    --sidebar-border: #ffffff20;
+    --sidebar-ring: #e2c8f4;
+  }
+
+  .dark body:not([data-theme-preset]) {
+    --background: #22263b;
+    --foreground: #eee8f6;
+    --card: #2c3047;
+    --card-foreground: #eee8f6;
+    --popover: #2c3047;
+    --popover-foreground: #eee8f6;
+    --primary: #c9b3dd;
+    --primary-foreground: #30263e;
+    --secondary: #39364f;
+    --secondary-foreground: #ede5f5;
+    --muted: #35384f;
+    --muted-foreground: #b9b0c9;
+    --accent: #494159;
+    --accent-foreground: #f1e5fa;
+    --border: #48445e;
+    --input: #665d7b;
+    --ring: #c9b3dd;
+    --overview-accent-1: #baa2da;
+    --overview-accent-2: #d0a3b8;
+    --overview-accent-3: #9bb2d3;
+    --sidebar: #2a314b;
+    --sidebar-foreground: #e8e2f2;
+    --sidebar-accent: #4e4666;
+    --sidebar-accent-foreground: #f8edff;
+  }
+}
+
+/* Feature layouts intentionally override utility defaults on composed components. */
+body:not([data-theme-preset]) [data-slot='sidebar-wrapper'] > header {
+  background: var(--card);
+  color: var(--foreground);
+}
+
+body:not([data-theme-preset]) [data-slot='sidebar-inner'],
+body:not([data-theme-preset]) [data-slot='sidebar'][data-mobile='true'] {
+  background: linear-gradient(
+    165deg,
+    var(--sidebar),
+    color-mix(in srgb, var(--sidebar), #a68aa0 28%)
+  );
+  --muted-foreground: #d3c9df;
+  --foreground: var(--sidebar-foreground);
+  --accent: var(--sidebar-accent);
+  --accent-foreground: var(--sidebar-accent-foreground);
+}
+
+body:not([data-theme-preset]) [data-slot='sidebar-menu-button'] {
+  min-height: 44px;
+  border: 0;
+  box-shadow: none;
+}
+
+body:not([data-theme-preset])
+  [data-slot='sidebar-menu-button'][data-active='true'] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+
+.silvermoon-home-width {
+  width: min(100%, 1240px);
+  margin-inline: auto;
+  padding-inline: 48px;
+}
+.silvermoon-home {
+  background: var(--background);
+}
+.silvermoon-landing > header {
+  background: color-mix(in srgb, var(--card) 95%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+.silvermoon-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #3c4c73;
+  color: #fff5fa;
+  padding-top: 64px;
+}
+.silvermoon-hero-art {
+  position: absolute;
+  z-index: -3;
+  inset: 0 0 0 auto;
+  width: min(78%, 1000px);
+  height: 640px;
+  object-fit: cover;
+  object-position: center 42%;
+  mask-image: linear-gradient(90deg, transparent, #000 24%);
+}
+.silvermoon-hero::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #3c4c73 5%,
+    #3c4c73dc 25%,
+    #3c4c7330 58%,
+    transparent 78%
+  );
+}
+.silvermoon-hero::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: auto 0 0;
+  height: 95px;
+  background: linear-gradient(transparent, var(--background));
+}
+.silvermoon-hero-content {
+  padding-block: 84px 70px;
+  min-height: 515px;
+}
+.silvermoon-eyebrow {
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+.silvermoon-hero h1 {
+  max-width: 650px;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(36px, 4.2vw, 58px);
+  line-height: 1.45;
+  letter-spacing: 1px;
+}
+.silvermoon-hero h1 em {
+  font-style: normal;
+  color: #f0cedf;
+}
+.silvermoon-hero-description {
+  margin-top: 20px;
+  font-size: 14px;
+  line-height: 1.9;
+  max-width: 460px;
+}
+.silvermoon-hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 28px;
+}
+.silvermoon-hero-actions [data-slot='button'] {
+  min-height: 46px;
+  border-radius: 6px;
+  padding-inline: 22px;
+}
+.silvermoon-hero-actions [data-slot='button']:first-child {
+  background: #f5e7ec;
+  color: #35415f;
+}
+.silvermoon-hero-actions [data-slot='button']:last-child {
+  background: #34456299;
+  border-color: #d1c8e0;
+  color: #fff;
+}
+.silvermoon-guide-link {
+  padding-inline: 0;
+  color: #f1e8f7;
+  font-size: 12px;
+  min-height: 44px;
+  margin-top: 6px;
+}
+.silvermoon-art-caption {
+  position: absolute;
+  right: 7%;
+  bottom: 85px;
+  writing-mode: vertical-rl;
+  letter-spacing: 4px;
+  font-family: var(--font-serif);
+  font-size: 12px;
+}
+.silvermoon-home-info {
+  padding-block: 12px 24px;
+}
+.silvermoon-access-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.silvermoon-access-card {
+  min-width: 0;
+  padding: 27px 28px;
+}
+.silvermoon-access-card h2 {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.silvermoon-kicker {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted-foreground);
+  margin-bottom: 14px;
+}
+.silvermoon-endpoint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 6px 5px 14px;
+  background: var(--muted);
+  border-radius: 6px;
+  margin-top: 18px;
+}
+.silvermoon-endpoint code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  user-select: all;
+}
+.silvermoon-endpoint [data-slot='button'] {
+  min-height: 44px;
+}
+.silvermoon-endpoint-hint,
+.silvermoon-empty-endpoint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+.silvermoon-support-card {
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--card), #c5b2d0 8%),
+    color-mix(in srgb, var(--card), #e2b9cc 15%)
+  );
+}
+.silvermoon-support-card > p:not(.silvermoon-kicker) {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  margin-top: 8px;
+}
+.silvermoon-support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+.silvermoon-support-actions [data-slot='button'] {
+  min-height: 44px;
+}
+.silvermoon-news {
+  display: flex;
+  width: 100%;
+  justify-content: start;
+  gap: 22px;
+  min-height: 52px;
+  height: auto;
+  padding: 13px 20px;
+  margin-top: 15px;
+  background: var(--muted);
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 400;
+}
+.silvermoon-news-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.silvermoon-news-preview {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.silvermoon-news-detail {
+  color: var(--muted-foreground);
+}
+.silvermoon-footer > div {
+  padding-block: 22px;
+}
+.silvermoon-footer > div > div:last-child {
+  margin-top: 18px;
+  padding-top: 16px;
+}
+
+.silvermoon-overview {
+  max-width: 1440px;
+  margin-inline: auto;
+}
+.silvermoon-welcome {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 225px;
+  display: flex;
+  align-items: center;
+  padding: 32px 35px;
+  border-radius: 12px;
+  background: #455679;
+  color: #fff2f6;
+}
+.silvermoon-welcome > img {
+  position: absolute;
+  z-index: -3;
+  inset: 0 0 0 auto;
+  width: 75%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 47%;
+  mask-image: linear-gradient(90deg, transparent, #000 28%);
+}
+.silvermoon-welcome::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    #455679 0%,
+    #455679b8 35%,
+    #45567926 65%,
+    transparent
+  );
+}
+.silvermoon-welcome > div {
+  min-width: 0;
+  max-width: 70%;
+}
+.silvermoon-welcome .silvermoon-eyebrow {
+  margin-bottom: 14px;
+  color: #f2d9eb;
+}
+.silvermoon-welcome h1 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(25px, 2.8vw, 34px);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.silvermoon-welcome h1 + p {
+  font-size: 13px;
+  line-height: 1.9;
+  margin-top: 12px;
+}
+.silvermoon-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: var(--card);
+}
+.silvermoon-quick-actions [data-slot='button'] {
+  min-height: 44px;
+  height: auto;
+}
+.silvermoon-summary {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: visible;
+}
+.silvermoon-summary-layout {
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+.silvermoon-summary-stats {
+  background: var(--card);
+  border-radius: 10px;
+  min-width: 0;
+}
+.silvermoon-summary-card {
+  border: 0;
+  border-radius: 9px;
+  background: var(--muted);
+  min-width: 0;
+}
+.silvermoon-balance {
+  border: 0;
+  border-radius: 10px;
+  background: linear-gradient(
+    120deg,
+    color-mix(in srgb, var(--card), #edc9d6 18%),
+    color-mix(in srgb, var(--card), #cdb2e4 10%)
+  );
+}
+.silvermoon-overview [data-slot='button'] {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1024px) {
+  .silvermoon-home-width {
+    padding-inline: 28px;
+  }
+  .silvermoon-access-card {
+    padding: 24px;
+  }
+  .silvermoon-summary-layout {
+    grid-template-columns: 1fr;
+  }
+  .silvermoon-balance {
+    order: -1;
+  }
+}
+@media (max-width: 640px) {
+  .silvermoon-home-width {
+    padding-inline: 20px;
+  }
+  .silvermoon-hero {
+    background: var(--background);
+    color: var(--foreground);
+  }
+  .silvermoon-hero-art {
+    top: 64px;
+    width: 100%;
+    height: 310px;
+    object-position: center 40%;
+    mask-image: linear-gradient(#000 68%, transparent);
+  }
+  .silvermoon-hero::before {
+    display: none;
+  }
+  .silvermoon-hero::after {
+    display: none;
+  }
+  .silvermoon-hero-content {
+    padding-top: 278px;
+    padding-bottom: 22px;
+    min-height: 0;
+  }
+  .silvermoon-hero .silvermoon-eyebrow {
+    color: var(--muted-foreground);
+    margin-bottom: 13px;
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .silvermoon-hero h1 {
+    font-size: 33px;
+    line-height: 1.45;
+  }
+  .silvermoon-hero h1 em {
+    color: var(--primary);
+  }
+  .silvermoon-hero-description {
+    font-size: 13px;
+    margin-top: 13px;
+  }
+  .silvermoon-hero-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .silvermoon-hero-actions [data-slot='button'] {
+    padding: 10px;
+    height: auto;
+    white-space: normal;
+    font-size: 12px;
+  }
+  .silvermoon-hero-actions [data-slot='button']:first-child {
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .silvermoon-hero-actions [data-slot='button']:last-child {
+    background: var(--card);
+    color: var(--foreground);
+    border-color: var(--input);
+  }
+  .silvermoon-guide-link {
+    color: var(--muted-foreground);
+    white-space: normal;
+    height: auto;
+    text-align: start;
+  }
+  .silvermoon-art-caption {
+    display: none;
+  }
+  .silvermoon-access-grid {
+    grid-template-columns: 1fr;
+  }
+  .silvermoon-access-card {
+    padding: 22px 18px;
+  }
+  .silvermoon-access-card h2 {
+    font-size: 19px;
+  }
+  .silvermoon-endpoint {
+    padding-left: 10px;
+    gap: 8px;
+  }
+  .silvermoon-endpoint code {
+    font-size: 12px;
+  }
+  .silvermoon-endpoint [data-slot='button'] {
+    padding-inline: 10px;
+  }
+  .silvermoon-news {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 7px;
+    padding: 14px;
+  }
+  .silvermoon-news-preview {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .silvermoon-news-detail {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .silvermoon-welcome {
+    padding: 25px 20px;
+    min-height: 205px;
+  }
+  .silvermoon-welcome > img {
+    width: 100%;
+    object-position: 65% 44%;
+  }
+  .silvermoon-welcome > div {
+    max-width: 100%;
+  }
+  .silvermoon-welcome::before {
+    background: linear-gradient(90deg, #455679f0, #455679b8 55%, #45567945);
+  }
+  .silvermoon-welcome .silvermoon-eyebrow {
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+  .silvermoon-welcome h1 {
+    font-size: 25px;
+  }
+  .silvermoon-quick-actions {
+    gap: 8px;
+    padding: 14px;
+  }
+  .silvermoon-quick-actions [data-slot='button'] {
+    flex: 1 1 40%;
+    white-space: normal;
+  }
+  .silvermoon-summary-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .silvermoon-summary-card:last-child {
+    grid-column: 1 / -1;
+  }
+  .silvermoon-summary-card {
+    padding: 14px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .silvermoon-home *,
+  .silvermoon-overview * {
+    scroll-behavior: auto;
+  }
+}

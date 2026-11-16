@@ -646,7 +646,38 @@ export function OverviewDashboard() {
         )}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
+        <div className='silvermoon-overview flex flex-col gap-4'>
+          <section
+            className='silvermoon-welcome'
+            aria-label={t('Welcome back')}
+          >
+            <img
+              src='/silvermoon/moonlight.webp'
+              alt=''
+              width={1254}
+              height={1254}
+            />
+            <div>
+              <p className='silvermoon-eyebrow'>{t('Under the same moon.')}</p>
+              <h1>
+                {t('Welcome back, {{name}}.', {
+                  name: user?.display_name || user?.username || t('Traveler'),
+                })}
+              </h1>
+              <p>{t('A little moonlight for your next idea.')}</p>
+            </div>
+          </section>
+          <SummaryCards />
+          {setupComplete && !setupGuideExpanded && (
+            <nav
+              className='silvermoon-quick-actions'
+              aria-label={t('Recommended actions')}
+            >
+              {visibleQuickActions.map((action) => (
+                <CompactQuickAction key={action.title} action={action} />
+              ))}
+            </nav>
+          )}
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
@@ -786,8 +817,6 @@ export function OverviewDashboard() {
               </CardStaggerItem>
             </CardStaggerContainer>
           )}
-
-          <SummaryCards />
 
           {showContentPanels && (
             <CardStaggerContainer

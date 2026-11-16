@@ -1,0 +1,73 @@
+# 银月 V1.2 正式前端实施记录
+
+日期：2026-11-17。状态：本地开发和前端验证完成，未推送、未发布镜像、未部署。
+
+## 保存与找回
+
+用户确认的是 **V1.2 预览 2**，即去掉卡片顶部彩线与侧栏装饰竖线的版本。先保存确认记录，再开始产品开发。
+
+- 冻结设计：`design/silvermoon/versions/v1.2-preview.2/`，原始提交 `1ec6c23`。
+- 确认记录：`ACCEPTED.json`；保存提交 `7fe5ef7`；标签 `design/silvermoon-v1.2-approved`。
+- 正式实现分支：`codex/silvermoon-v1-2-frontend`。
+- 正式实现本地标记：`implementation/silvermoon-v1.2-local.1`。
+- V1.0、V1.1、V1.2 预览 1、V1.2 预览 2 的原文件和校验清单均未修改；四套 SHA256 校验全部通过。
+- 上述为本地保存，不是异地备份。后续调整应另存版本，不覆盖原确认稿。
+
+可通过 `git show design/silvermoon-v1.2-approved:design/silvermoon/ACCEPTED.json` 查看确认记录；用 `git archive` 导出指定标签，不必覆盖正在开发的工作目录。
+
+## 正式页面如何实现
+
+首页改为原图月夜主视觉、两项主要操作（控制台、模型与价格）、接入地址、帮助入口和一条公告摘要。桌面展示月亮与人物，手机改为图片在上、文案在下。去掉原默认首页的大量特性、统计与行动区块，不展示设计稿里的虚拟业务数字。
+
+控制台概览增加月夜欢迎区；沿用现有真实数据卡，使用淡紫与粉色面板、暮色侧栏和清晰的顶栏。手机优先展示余额，统计卡按两列排列。复用现有快捷操作；设置指南、权限过滤、已有内容面板和业务数据逻辑保留。其他页面通过共享主题色、侧栏和顶栏统一视觉，其业务布局未逐页重做。
+
+样式入口为 `web/src/styles/silvermoon.css`。默认主题应用银月配色，兼容深色模式，保留用户明确选择的其他主题预设。未增加卡片顶部彩线或侧栏装饰竖线。
+
+图片复制自确认稿，保存为 `web/public/silvermoon/moonlight.webp`，约 152 KiB。正式产品不使用设计稿的字体字符子集，避免动态用户名和多语言出现缺字；使用项目已有字体与系统字体回退。
+
+新增文案通过项目翻译脚本补齐七种语言，并执行 i18n 同步。
+
+## 与后台配置、既有组件的连接
+
+- 接口地址读取已有 API 信息配置，找不到时使用有效的服务器地址；保留原始路径，不擅自追加或删除 `/v1`。关闭 API 信息时不展示地址，没有配置时显示空状态。
+- 复制操作复用 `CopyButton`；公告为现有 `AnnouncementsPanel` 的紧凑展示，详情仍复用原公告弹窗，进入首页不会强制弹出。
+- 文档配置为有效 HTTP(S) 链接时直接打开；未配置时使用共享 `Dialog` 展示简短接入步骤，入口指向真实存在的模型、密钥和试用页面。
+- 未提供客服联系方式，因此帮助区使用接入说明和关于页面，没有虚构客服链接。
+- 现有首页自定义 URL、HTML、Markdown 优先级保留。若后台配置了自定义首页，部署后仍会显示该内容，运营方需调整配置才会看到新的默认首页。
+- 沿用既有系统名称和 Logo 配置；新视觉不修改站点配置数据。
+- 根据当前项目治理要求，保留 New API / QuantumNous 的版权与署名。不能将这一点描述为已实现早期“去掉所有署名”的要求。
+
+本次没有新增通用按钮、复制、弹窗或认证实现；新增的是首页业务内容组合、公告紧凑展示与视觉样式。没有修改后端、计费、认证、支付和数据库逻辑。
+
+## 已执行验证
+
+使用本仓库 `.dev/run`：
+
+- `bun run typecheck`：1,416 个文件、2 个项目，无类型错误。
+- `bun run build`：成功，最终构建约 17.2 秒。
+- `bun run test --maxWorkers=1 src/features/home/__tests__/silvermoon-home.test.tsx src/features/dashboard/components/overview/__tests__/setup-guide.test.tsx src/context/__tests__/theme-preferences.test.tsx`：3 个文件、23 项测试全部通过。
+- 受影响 TSX 与浏览器检查脚本运行 `oxlint`：无错误；设置指南测试中保留两处原有 `prefer-query-selector` 提示。
+- 受影响源文件运行 `oxfmt`；`git diff --check` 通过。
+- `bun run i18n:sync`：七种语言均无缺失键；未修改既有翻译缺陷。
+
+浏览器检查使用真实生产构建，API 响应为明确的测试数据，不连接生产账户。检查首页和控制台在 320、360、390、430、768、1024、1440 像素以及深浅主题下的布局，共 28 组：页面与主内容均无横向溢出，没有页面脚本异常。验证完整地址复制、公告打开和 Escape 关闭、接入指南、移动侧栏。额外检查长用户名与手机首页菜单。
+
+检查中发现控制台顶栏在深蓝背景上的文字不够清晰，已调整顶栏底色。尺寸切换动画中的瞬时尺寸不能作为稳定布局判断，浏览器脚本等待动画完成后再检测。
+
+可复用检查脚本：`web/src/features/home/__tests__/silvermoon-layout.browser.cjs`。需 Node、Playwright 和 `@sparticuz/chromium`；它仅监听随机本机端口，自动服务 `web/dist`，拦截 API 生成测试数据，不接触实际账户。此次工具安装在 `/tmp/silvermoon-visual-check/node_modules`，未增加产品依赖。
+
+本次运行方式：
+
+```bash
+NODE_PATH=/tmp/silvermoon-visual-check/node_modules SILVERMOON_REVIEW_FONT=/tmp/fonts/fonts/NotoSansSCReview.ttf node web/src/features/home/__tests__/silvermoon-layout.browser.cjs
+```
+
+在此命令中增加 `SILVERMOON_REVIEW_LONG_NAME=1` 可检查连续长用户名。最小 Linux 环境没有中文字库，`SILVERMOON_REVIEW_FONT` 仅给浏览器截图补充本地字体，不改变产品打包内容。有系统中文字库的环境可以省略该变量。
+
+主要截图和浏览器结果另存于 `design/silvermoon/implementation/v1.2-local.1/`，纳入版本保存。完整截图、构建日志、浏览器结果保存在忽略目录 `build/dev/silvermoon-v1.2-review/`，其中余额、用户、接口域名均为测试数据。截图是构建页面的核验材料，不是线上运行证明。
+
+## 范围与后续
+
+本次实现已落到真实 React 前端。未进行生产部署，也未用真实后端执行登录、支付或扣费验收；这些不是纯视觉任务的验证范围。部署与业务联调应单独执行。
+
+后续若继续调整，优先保持首页内容简洁、手机操作入口清楚、后台数据语义不变；新增 V1.3 时保留本记录和本地实现标记。

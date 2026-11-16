@@ -1,0 +1,9 @@
+{
+  "version": "v1.2-local.1",
+  "date": "2026-11-17",
+  "type": "real-frontend-build-with-mocked-api",
+  "approved_design": "v1.2-preview.2",
+  "data": "All balances, account names, API URLs and announcements in screenshots are test fixtures.",
+  "font": "Local CJK font injected for minimal Linux browser review only; production uses system fallback.",
+  "status": "local-only-not-deployed"
+}

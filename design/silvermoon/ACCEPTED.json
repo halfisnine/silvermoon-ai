@@ -9,5 +9,8 @@
   "user_instruction": "就按照这V1.2版本进行修改！先将V1.2版本进行保存",
   "frozen_preview_unchanged": true,
   "remote_backup": "not-pushed",
-  "implementation_status": "authorized-not-yet-complete"
+  "implementation_status": "implemented-locally-frontend-verified-not-deployed",
+  "implementation_branch": "codex/silvermoon-v1-2-frontend",
+  "implementation_tag": "implementation/silvermoon-v1.2-local.1",
+  "implementation_notes": "design/silvermoon/IMPLEMENTATION-v1.2.md"
 }

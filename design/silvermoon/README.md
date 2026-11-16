@@ -1,6 +1,6 @@
 # 银月视觉版本档案
 
-此目录保存设计稿与实施说明，不是生产前端，也不参与网站构建或部署。
+此目录保存设计稿与实施说明，不参与网站构建或部署。正式前端在 `web/`；V1.2 的实际开发和验证情况见 [实施记录](IMPLEMENTATION-v1.2.md)。
 
 ## 确认稿
 
@@ -13,13 +13,13 @@
 | V1.0 | 月夜插画版 | 已冻结的首个视觉基线，2026-11-16 | [离线预览](versions/v1.0/index.html) · [实施说明](versions/v1.0/DESIGN.md) |
 | V1.1 预览 1 | 暮色与清晰接入 | 可交互预览完成，等待用户评价 | [离线预览](versions/v1.1/index.html) · [实施与验证](versions/v1.1/DESIGN.md) |
 | V1.2 预览 1 | 月下直达 | 根据同行分析简化首页、加强控制台主题，等待用户评价 | [离线预览](versions/v1.2/index.html) · [实施与验证](versions/v1.2/DESIGN.md) |
-| V1.2 预览 2 | 月下直达 · 去装饰线 | 去掉数据卡顶端彩线与侧栏选中项装饰竖线，等待用户评价 | [离线预览](versions/v1.2-preview.2/index.html) · [修订说明](versions/v1.2-preview.2/DESIGN.md) |
+| V1.2 预览 2 | 月下直达 · 去装饰线 | 已确认采用；正式前端本地实现完成，未部署 | [离线预览](versions/v1.2-preview.2/index.html) · [修订说明](versions/v1.2-preview.2/DESIGN.md) |
 
 V1.0 对应本聊天中用户评价“还不错”并要求保存的版本，原预览文件名为 `silvermoon-reference-v2.html`。历史文件名中的 v2 是草稿轮次；从本次起，正式视觉档案以 V1.0 编号。视觉基线确认不代表功能开发、上线或全部细节已验收。
 
 V1.1 预览 1 已另外保存，标记为 `design/silvermoon-v1.1-preview.1`；尚未取代 V1.0 的已确认基线。两版均为本地保存，未推送远端。
 
-V1.2 预览 1 标记为 `design/silvermoon-v1.2-preview.1`，同样仅本地保存，未推送远端。V1.1 的反馈是首页视觉基本认可、内容需更聚焦、控制台品牌感需增强；V1.2 不是已确认定稿。设计依据见 [同行首页分析](research/2026-11-16-homepage-comparison.md)。
+V1.2 预览 1 标记为 `design/silvermoon-v1.2-preview.1`，同样仅本地保存，未推送远端。V1.1 的反馈是首页视觉基本认可、内容需更聚焦、控制台品牌感需增强；该段记录预览 1 的历史状态；后续预览 2 已于 2026-11-17 确认采用。设计依据见 [同行首页分析](research/2026-11-16-homepage-comparison.md)。
 
 ## 如何查看与找回
 

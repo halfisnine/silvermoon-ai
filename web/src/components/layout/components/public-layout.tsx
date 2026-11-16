@@ -20,6 +20,7 @@ import type { TopNavLink } from '../types'
 import { PublicHeader, type PublicHeaderProps } from './public-header'
 
 type PublicLayoutProps = {
+  className?: string
   children: React.ReactNode
   showMainContainer?: boolean
   navContent?: React.ReactNode
@@ -34,7 +35,14 @@ type PublicLayoutProps = {
 
 export function PublicLayout(props: PublicLayoutProps) {
   return (
-    <div className='bg-background text-foreground relative min-h-svh overflow-x-clip'>
+    <div
+      className={[
+        'bg-background text-foreground relative min-h-svh overflow-x-clip',
+        props.className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       <PublicHeader
         navContent={props.navContent}
         navLinks={props.navLinks}

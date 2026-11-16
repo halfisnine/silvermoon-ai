@@ -107,19 +107,26 @@ async function renderOverview() {
 }
 
 describe('overview setup guide', () => {
-  it('shows usage first and only a header entry when setup is complete', async () => {
+  it('shows a welcome and quick actions while keeping the completed guide collapsed', async () => {
     await renderOverview()
 
     const toggle = await screen.findByRole('button', { name: 'Setup guide' })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
     expect(
       screen.getAllByRole('heading').map((heading) => heading.textContent)
-    ).toEqual(['Overview', 'Usage at a glance'])
+    ).toEqual([
+      'Overview',
+      'Welcome back, dashboard-user.',
+      'Usage at a glance',
+    ])
     expect(screen.queryByText('Setup guide complete')).not.toBeInTheDocument()
     expect(screen.queryByText('Setup progress: 3/3')).not.toBeInTheDocument()
-    for (const name of ['API Keys', 'Channels', 'Usage Logs', 'Pricing']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+    for (const name of ['API Keys', 'Usage Logs', 'Pricing']) {
+      expect(screen.getByRole('button', { name })).toBeVisible()
     }
+    expect(
+      screen.queryByRole('button', { name: 'Channels' })
+    ).not.toBeInTheDocument()
     const panel = document.getElementById(
       toggle.getAttribute('aria-controls') ?? ''
     )
