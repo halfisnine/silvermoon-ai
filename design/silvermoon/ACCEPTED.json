@@ -1,0 +1,13 @@
+{
+  "accepted_at": "2026-11-17",
+  "version": "1.2-preview.2",
+  "name": "月下直达",
+  "source_directory": "design/silvermoon/versions/v1.2-preview.2",
+  "source_commit": "1ec6c23",
+  "source_tag": "design/silvermoon-v1.2-preview.2",
+  "accepted_tag": "design/silvermoon-v1.2-approved",
+  "user_instruction": "就按照这V1.2版本进行修改！先将V1.2版本进行保存",
+  "frozen_preview_unchanged": true,
+  "remote_backup": "not-pushed",
+  "implementation_status": "authorized-not-yet-complete"
+}
