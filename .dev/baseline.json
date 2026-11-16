@@ -1,0 +1,15 @@
+{
+  "prepared_at": "2026-11-16",
+  "repository": "https://github.com/halfisnine/silvermoon-ai",
+  "development_branch": "custom/main",
+  "starting_commit": "2d4a34fee7381d52d6807745c0b7fd784f99b70a",
+  "source": "independent copy of existing clean domestic checkout; GitHub API head checked on 2026-11-16",
+  "instabox_unpushed_changes": "not imported; not deleted",
+  "remote_head_check": {
+    "project": "silvermoon-ai",
+    "local_base": "2d4a34fee7381d52d6807745c0b7fd784f99b70a",
+    "remote_head": "2d4a34fee7381d52d6807745c0b7fd784f99b70a",
+    "matches": true,
+    "independent_objects": true
+  }
+}
