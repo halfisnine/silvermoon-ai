@@ -1,4 +1,4 @@
-name: Silvermoon build and publish
+name: Silvermoon AI build and publish
 
 on:
   push:
