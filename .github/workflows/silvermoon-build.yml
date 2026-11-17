@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Publish this custom/main commit to Docker Hub
+        description: Publish to Docker Hub (codex/* branches use candidate tags)
         type: boolean
         required: true
         default: false
@@ -41,6 +41,8 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             version="$GITHUB_REF_NAME"
             [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9][a-zA-Z0-9.-]*)?$ ]] || exit 1
+          elif [[ "$GITHUB_EVENT_NAME" == workflow_dispatch && "$GITHUB_REF" == refs/heads/codex/* ]]; then
+            version="candidate-$GITHUB_SHA"
           else
             version="dev-$GITHUB_SHA"
           fi
@@ -70,7 +72,8 @@ jobs:
       - name: Publish image
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
-          (github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/custom/main')
+          (github.event_name == 'workflow_dispatch' && inputs.publish &&
+            (github.ref == 'refs/heads/custom/main' || startsWith(github.ref, 'refs/heads/codex/')))
         env:
           VERSION: ${{ steps.version.outputs.value }}
           CUSTOM_VERSION: ${{ steps.version.outputs.custom }}
@@ -85,9 +88,11 @@ jobs:
           DOCKER_CONFIG=$(mktemp -d "$RUNNER_TEMP/docker-auth.XXXXXX")
           trap 'rm -rf "$DOCKER_CONFIG"' EXIT
           printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin >/dev/null
-          docker tag "$IMAGE:$VERSION" "$IMAGE:sha-$GITHUB_SHA"
           docker push "$IMAGE:$VERSION"
-          docker push "$IMAGE:sha-$GITHUB_SHA"
+          if [[ "$VERSION" != candidate-* ]]; then
+            docker tag "$IMAGE:$VERSION" "$IMAGE:sha-$GITHUB_SHA"
+            docker push "$IMAGE:sha-$GITHUB_SHA"
+          fi
           # Resolve the registry manifest digest; deploy this immutable reference.
           digest=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{json .Manifest}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
@@ -97,5 +102,9 @@ jobs:
             printf -- '- Commit: `%s`\n' "$GITHUB_SHA"
             printf -- '- Application version: `%s`\n' "$CUSTOM_VERSION"
             printf -- '- Deploy reference: `%s@%s`\n' "$IMAGE" "$digest"
+            if [[ "$VERSION" == candidate-* ]]; then
+              printf '\nCandidate image for verification; no main-branch merge or production deployment.\n'
+              printf '\nPull the exact tested image:\n```sh\ndocker pull %s@%s\n```\n' "$IMAGE" "$digest"
+            fi
             printf '\nBased on New API v1.0.0-rc.49. Build/startup checks passed; production model and billing acceptance remain separate.\n'
           } >> "$GITHUB_STEP_SUMMARY"

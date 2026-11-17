@@ -7,7 +7,9 @@ RUN bun install --frozen-lockfile
 COPY web/ ./
 COPY pkg/billingexpr/testdata/frontend_simulation.json /src/pkg/billingexpr/testdata/frontend_simulation.json
 ARG CUSTOM_VERSION
-RUN test -n "$CUSTOM_VERSION" && bun run typecheck && VITE_REACT_APP_VERSION="$CUSTOM_VERSION" bun run build \
+RUN test -n "$CUSTOM_VERSION" && bun run typecheck \
+    && bun run test --maxWorkers=1 src/features/home/__tests__/silvermoon-home.test.tsx \
+    && VITE_REACT_APP_VERSION="$CUSTOM_VERSION" bun run build \
     && test -s dist/index.html && printf '%s\n' "$CUSTOM_VERSION" > /src/frontend-version
 
 FROM golang:1.26.10-bookworm@sha256:5de7c99eb78ca5e515a4c340235d0955ec5964a5071c492c15503d7c267da473 AS backend

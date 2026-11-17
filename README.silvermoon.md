@@ -26,20 +26,34 @@
 | custom/main 提交、目标为该分支的 PR | 是 | 否 |
 | 自有版本标签 v* | 是 | 是 |
 | 在 custom/main 手动运行 | 是 | 仅勾选 publish 时 |
+| 在 codex/* 功能分支手动运行 | 是 | 仅勾选 publish 时，上传 candidate-完整提交 标签 |
 
-不要推送官方版本标签来触发自有发布。首个候选版本计划为
-`v1.0.0-rc.49-silvermoon.1`；后续自有标签使用新的名称，不移动旧标签。
+不要推送官方版本标签来触发自有发布。正式发布使用新的自有版本标签，不移动旧标签。
+合并前的验证使用功能分支手动候选构建，不需要创建版本标签或先合并主分支。
 GitHub 仓库需设置 `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`。
 普通检查不注入这两个发布凭证，流水线不登录或修改生产服务器。
 
-检查包括：冻结前端依赖、类型检查、前端生产构建、Go 依赖校验、根模块 vet、
+检查包括：冻结前端依赖、类型检查、银月首页功能测试、前端生产构建、Go 依赖校验、根模块 vet、
 两个独立模块 build/test、PGO 主程序构建及运行镜像检查。
 运行检查使用无网络、无宿主机数据挂载的临时 SQLite 容器；只读取健康状态、
 前端和初始化状态，不初始化管理员、不调用模型。没有运行完整根模块与前端测试集，
 不等价于 PostgreSQL/MySQL 业务验收。
 
-发布生成版本标签与 `sha-完整提交` 标签，不生成 latest。镜像标签仍可被仓库写入者
+正式发布生成版本标签与 `sha-完整提交` 标签；功能分支候选只生成 `candidate-完整提交`，不生成 latest。镜像标签仍可被仓库写入者
 覆盖，部署时使用任务摘要中记录的 `vidbin/silvermoon-ai@sha256:...`。
+
+## 合并前验证候选镜像
+
+1. 推送 `codex/*` 功能分支。仅推送该分支不会自动构建或发布镜像。
+2. 在 GitHub Actions 打开 **Silvermoon AI build and publish**，点击 **Run workflow**，
+   在分支下拉框中选择该功能分支，勾选 `publish` 后手动运行。不要选择 `custom/main`。
+3. 等待测试、构建、镜像启动检查和 Docker Hub 上传全部成功。
+4. 从该次运行的 Summary 复制候选标签和 digest，以 `docker pull vidbin/silvermoon-ai@sha256:...`
+   拉取这次构建的确切镜像，在独立本地测试配置、数据库和 Redis 中验证。
+5. 验证通过后再合并 `custom/main`，随后另行执行正式发布。候选工作流不会合并分支或部署服务。
+
+功能分支候选标签示例为 `vidbin/silvermoon-ai:candidate-<40位提交SHA>`；实际 SHA 以运行摘要为准。
+未勾选 `publish` 时仍执行检查与构建，但不会登录 Docker Hub 或上传镜像。
 
 ## 本地构建
 
