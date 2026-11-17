@@ -92,3 +92,9 @@ NODE_PATH=/tmp/silvermoon-visual-check/node_modules SILVERMOON_REVIEW_FONT=/tmp/
 独立回归入口：`web/src/components/layout/__tests__/sidebar-contrast.browser.cjs`，默认连接本机开发构建 43000，API 全部使用明确的测试响应，不使用真实账号或修改用户数据。可通过 `SILVERMOON_REVIEW_URL` 指定另一个本地检查入口。检查产物位于 `build/dev/submenu-contrast/`。
 
 原有首页/控制台 28 组布局与普通菜单对比度回归也全部通过。已重新构建并更新独立开发环境，四个服务健康；冻结设计稿和生产环境保持原状。
+
+## 2026-11-17 标签页首次加载品牌
+
+根据用户明确要求“浏览器 tab 一开始就是银月”，将初始 HTML 的 title / title 元数据设置为银月，构建入口的 favicon 使用银月月夜图。此前只通过后台状态在 JavaScript 启动后更新品牌，因此首次打开会先显示 New API。现不再依赖后台请求或本地缓存来提供首次标签页标题和图标，后台自定义品牌的后续同步逻辑保留。上游项目署名与版权保留。
+
+新增 `web/src/lib/__tests__/initial-branding.browser.cjs`：使用没有缓存且禁用 JavaScript 的新浏览器上下文检查两个开发入口，验证初始标题、元数据及图标内容。修改前复现 title 为 New API 的失败，修改后 43000 / 45173 均通过；类型检查、涉及文件的 lint、构建与开发环境健康检查通过。开发环境已更新，未部署生产。
