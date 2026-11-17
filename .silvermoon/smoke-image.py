@@ -44,6 +44,14 @@ try:
         raise RuntimeError("Status endpoint did not become ready")
     if status["data"]["version"] != expected_version:
         raise RuntimeError("Status version differs from the compiled version")
+    if status["data"].get("system_name") != "银月" or status["data"].get("logo") != "/silvermoon/moonlight.webp":
+        raise RuntimeError("Fresh installation does not use Silvermoon branding before setup")
+    logo = subprocess.check_output(
+        ["docker", "exec", container, "wget", "-qO-", "-T", "3",
+         "http://127.0.0.1:3000/silvermoon/moonlight.webp"]
+    )
+    if logo[:4] != b"RIFF" or logo[8:12] != b"WEBP":
+        raise RuntimeError("Default Silvermoon logo is missing from the image")
     page = subprocess.check_output(
         ["docker", "exec", container, "wget", "-qO-", "-T", "3",
          "http://127.0.0.1:3000/"], text=True

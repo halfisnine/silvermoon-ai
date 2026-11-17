@@ -30,6 +30,7 @@ import {
 import {
   STATUS_QUERY_KEY,
   ensureStatus,
+  mapStatusDataToConfig,
   statusQueryOptions,
 } from '@/lib/status-query'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -87,6 +88,31 @@ afterEach(() => {
   apiClient.get = originalGet
   window.localStorage.clear()
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
+})
+
+describe('site branding defaults', () => {
+  test('uses Silvermoon while loading and when the server omits branding', () => {
+    expect(useSystemConfigStore.getState().config).toMatchObject({
+      systemName: '银月',
+      logo: '/silvermoon/moonlight.webp',
+    })
+    expect(mapStatusDataToConfig({ system_name: '', logo: '' })).toMatchObject({
+      systemName: '银月',
+      logo: '/silvermoon/moonlight.webp',
+    })
+  })
+
+  test('preserves operator configured branding', () => {
+    expect(
+      mapStatusDataToConfig({
+        system_name: 'Custom site',
+        logo: '/custom.webp',
+      })
+    ).toMatchObject({
+      systemName: 'Custom site',
+      logo: '/custom.webp',
+    })
+  })
 })
 
 describe('shared status query deduplication', () => {

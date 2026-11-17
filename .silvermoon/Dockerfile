@@ -8,7 +8,7 @@ COPY web/ ./
 COPY pkg/billingexpr/testdata/frontend_simulation.json /src/pkg/billingexpr/testdata/frontend_simulation.json
 ARG CUSTOM_VERSION
 RUN test -n "$CUSTOM_VERSION" && bun run typecheck \
-    && bun run test --maxWorkers=1 src/features/home/__tests__/silvermoon-home.test.tsx \
+    && bun run test --maxWorkers=1 src/features/home/__tests__/silvermoon-home.test.tsx src/lib/__tests__/status-query.test.tsx \
     && VITE_REACT_APP_VERSION="$CUSTOM_VERSION" bun run build \
     && test -s dist/index.html && printf '%s\n' "$CUSTOM_VERSION" > /src/frontend-version
 

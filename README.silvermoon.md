@@ -55,6 +55,11 @@ GitHub 仓库需设置 `DOCKERHUB_USERNAME`、`DOCKERHUB_TOKEN`。
 功能分支候选标签示例为 `vidbin/silvermoon-ai:candidate-<40位提交SHA>`；实际 SHA 以运行摘要为准。
 未勾选 `publish` 时仍执行检查与构建，但不会登录 Docker Hub 或上传镜像。
 
+新安装默认站点名称为“银月”，Logo 为镜像内的 `/silvermoon/moonlight.webp`。
+初始化引导和初始化后的页面共用该默认品牌，无需先运行开发配置脚本或手动设置名称与 Logo。
+已有数据库中显式配置的站点名称和 Logo 继续优先，不自动覆盖。镜像启动检查会用空数据库
+验证初始化前的品牌和默认图片资源；前端状态测试覆盖默认品牌和自定义品牌保留。
+
 ## 本地构建
 
 在源码根目录执行，按当前提交为前后端提供一致版本：
