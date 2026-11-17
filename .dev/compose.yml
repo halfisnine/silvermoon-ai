@@ -1,0 +1,144 @@
+# Isolated Silvermoon / New API development stack. Never attach external networks or volumes.
+name: silvermoon-ai-dev
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  postgres:
+    image: ${DEV_POSTGRES_IMAGE:?Use .dev/stack}
+    pull_policy: never
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      POSTGRES_USER: silvermoon_dev
+      POSTGRES_DB: silvermoon_dev
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      TZ: Asia/Shanghai
+    secrets: [db_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [storage]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U silvermoon_dev -d silvermoon_dev']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  redis:
+    image: ${DEV_REDIS_IMAGE:?Use .dev/stack}
+    pull_policy: never
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 128m
+    memswap_limit: 128m
+    command: [redis-server, /usr/local/etc/redis/redis.conf]
+    secrets: [redis_password]
+    volumes:
+      - redis_data:/data
+      - ./private/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks: [storage]
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis_password)" redis-cli ping | grep -qx PONG']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *logging
+
+  app:
+    # Reuse the pinned development tool image, NOT another running application or its configuration.
+    image: ${DEV_GO_IMAGE:?Use .dev/stack}
+    pull_policy: never
+    restart: unless-stopped
+    entrypoint: [/app/new-api]
+    command: [--log-dir, /data/logs]
+    working_dir: /data
+    cpus: 1
+    mem_limit: 768m
+    memswap_limit: 768m
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp:size=128m]
+    env_file: ./private/app.env
+    environment:
+      PORT: '3000'
+      TZ: Asia/Shanghai
+      GOMAXPROCS: '1'
+      GOMEMLIMIT: 640MiB
+      NODE_TYPE: master
+      SQL_MAX_IDLE_CONNS: '5'
+      SQL_MAX_OPEN_CONNS: '20'
+      REDIS_POOL_SIZE: '5'
+    ports:
+      - '127.0.0.1:43000:3000'
+    volumes:
+      - ../build/dev/runtime:/app:ro
+      - app_data:/data
+    networks: [storage, application]
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -qO-, -T, '3', 'http://127.0.0.1:3000/api/status']
+      interval: 10s
+      timeout: 5s
+      start_period: 90s
+      retries: 12
+    logging: *logging
+
+  web:
+    image: ${DEV_BUN_IMAGE:?Use .dev/stack}
+    pull_policy: never
+    restart: unless-stopped
+    entrypoint: [bun]
+    command: [run, dev, --host, 0.0.0.0, --port, '5173']
+    working_dir: /workspace/web
+    cpus: 1
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      HOME: /tmp
+      VITE_REACT_APP_SERVER_URL: http://app:3000
+      NODE_OPTIONS: --max-old-space-size=1152
+      RAYON_NUM_THREADS: '1'
+    ports:
+      - '127.0.0.1:45173:5173'
+    volumes:
+      - ../web:/workspace/web
+      - ../.cache/dev/node_modules:/workspace/web/node_modules
+      - ../pkg/billingexpr/testdata:/workspace/pkg/billingexpr/testdata:ro
+    networks: [application]
+    depends_on:
+      app: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, bun, -e, "fetch('http://127.0.0.1:5173/api/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 60s
+      retries: 12
+    logging: *logging
+
+secrets:
+  db_password:
+    file: ./private/db_password
+  redis_password:
+    file: ./private/redis_password
+
+volumes:
+  postgres_data:
+  redis_data:
+  app_data:
+
+networks:
+  storage:
+    internal: true
+  application:

@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Manage only this repository's isolated Silvermoon / New API development stack."""
+import json
+import os
+from pathlib import Path
+import secrets
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+DEV = ROOT / '.dev'
+PRIVATE = DEV / 'private'
+SERVICES = {'app', 'web', 'postgres', 'redis'}
+
+
+def run(args, **kwargs):
+    return subprocess.run(args, cwd=ROOT, check=True, **kwargs)
+
+
+def initialize():
+    PRIVATE.mkdir(mode=0o700, exist_ok=True)
+    PRIVATE.chmod(0o700)
+    names = ['db_password', 'redis_password', 'session_secret', 'crypto_secret']
+    for name in names:
+        path = PRIVATE / name
+        if not path.exists():
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, 'w') as file:
+                file.write(secrets.token_hex(32) + '\n')
+    values = {name: (PRIVATE / name).read_text().strip() for name in names}
+    # Fixed internal service names: never inherit production SQL/Redis connection variables.
+    files = {
+        'app.env': (
+            f'SQL_DSN=postgresql://silvermoon_dev:{values["db_password"]}@postgres:5432/silvermoon_dev\n'
+            f'REDIS_CONN_STRING=redis://:{values["redis_password"]}@redis:6379/0\n'
+            f'SESSION_SECRET={values["session_secret"]}\n'
+            f'CRYPTO_SECRET={values["crypto_secret"]}\n'
+        ),
+        'redis.conf': (
+            'bind 0.0.0.0\nprotected-mode yes\nport 6379\ndir /data\n'
+            'appendonly yes\nappendfsync everysec\nmaxmemory 64mb\n'
+            'maxmemory-policy noeviction\n'
+            f'requirepass {values["redis_password"]}\n'
+        ),
+    }
+    for name, content in files.items():
+        path = PRIVATE / name
+        # Redis drops to its own UID; parent dir remains 0700 and only this file is mounted.
+        mode = 0o644 if name == 'redis.conf' else 0o600
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, 'w') as file:
+            file.write(content)
+        path.chmod(mode)
+    print('Development secrets ready in .dev/private; existing secrets preserved.')
+
+
+def compose(args):
+    source = os.environ.get('DEV_IMAGE_SOURCE', 'domestic')
+    if source not in {'domestic', 'official'}:
+        raise SystemExit('DEV_IMAGE_SOURCE must be domestic or official')
+    env = dict(os.environ)
+    for filename in ['toolchains.lock.json', 'services.lock.json']:
+        for name, value in json.loads((DEV / filename).read_text()).items():
+            env[f'DEV_{name.upper()}_IMAGE'] = value[source]
+    # Force project identity and an empty interpolation env file; ignore ambient Compose settings.
+    for key in list(env):
+        if key.startswith('COMPOSE_'):
+            del env[key]
+    return run(['docker', 'compose', '--project-name', 'silvermoon-ai-dev',
+                '--project-directory', str(DEV), '--env-file', '/dev/null',
+                '-f', str(DEV / 'compose.yml'), *args], env=env)
+
+
+def build():
+    runtime = ROOT / 'build/dev/runtime'
+    runtime.mkdir(parents=True, exist_ok=True)
+    revision = subprocess.check_output(['git', 'rev-parse', '--short=12', 'HEAD'], cwd=ROOT, text=True).strip()
+    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain'], cwd=ROOT))
+    version = f'v1.0.0-rc.49-dev.{revision}' + ('.dirty' if dirty else '')
+    env = dict(os.environ, CUSTOM_VERSION=version)
+    run([str(DEV / 'run'), 'bun', 'install', '--frozen-lockfile'])
+    run([str(DEV / 'run'), 'bun', 'run', 'build'], env=env)
+    # Atomic replacement leaves the currently running executable intact until app recreation.
+    run([str(DEV / 'run'), 'go', 'build', '-trimpath', '-ldflags',
+         f'-s -w -X github.com/QuantumNous/new-api/common.Version={version}',
+         '-o', '/artifacts/runtime/new-api.next', '.'])
+    (runtime / 'new-api.next').replace(runtime / 'new-api')
+    (runtime / 'version').write_text(version + '\n')
+    print(f'Built {version}; not published or deployed to production.')
+
+
+if __name__ == '__main__':
+    command = sys.argv[1] if len(sys.argv) > 1 else 'help'
+    extra = sys.argv[2:]
+    if any(service not in SERVICES for service in extra):
+        raise SystemExit('Only app, web, postgres or redis may be selected')
+    try:
+        if command == 'init':
+            initialize()
+        elif command == 'build':
+            build()
+        elif command in {'up', 'rebuild'}:
+            initialize()
+            if command == 'rebuild' or not (ROOT / 'build/dev/runtime/new-api').exists():
+                build()
+            compose(['up', '-d', '--wait', '--wait-timeout', '240', *(['--force-recreate', 'app', 'web'] if command == 'rebuild' else [])])
+        elif command == 'check':
+            compose(['config', '--quiet'])
+        elif command == 'status':
+            compose(['ps'])
+        elif command == 'logs':
+            compose(['logs', '--tail', '80', *(extra or ['app', 'web'])])
+        elif command == 'stop':
+            compose(['stop', *extra])
+        elif command == 'start':
+            compose(['up', '-d', '--wait', '--wait-timeout', '240', *extra])
+        elif command == 'restart':
+            compose(['restart', *extra])
+        else:
+            print('Usage: .dev/stack init|build|up|rebuild|check|status|logs|stop|start|restart [service]')
+            print('App http://127.0.0.1:43000 ; live frontend http://127.0.0.1:45173')
+            print('No data-deletion command is provided. Stop/start preserves all development data.')
+    except subprocess.CalledProcessError as error:
+        raise SystemExit(error.returncode) from None

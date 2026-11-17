@@ -1,0 +1,53 @@
+{
+  "verified_at": "2026-11-17",
+  "status": "running-locally-awaiting-initial-admin-setup",
+  "runtime": {
+    "project": "silvermoon-ai-dev",
+    "healthy_services": [
+      "app",
+      "postgres",
+      "redis",
+      "web"
+    ],
+    "database": "silvermoon_dev",
+    "postgres": "17.11 (Debian 17.11-1.pgdg12+2)",
+    "redis": "Redis server v=7.2.17 sha=00000000:0 malloc=jemalloc-5.3.0 bits=64 build=d87e0d0cf3ba4aa5",
+    "public_tables": 38,
+    "version": "v1.0.0-rc.49-dev.c90e74644c9f.dirty",
+    "storage_published_ports": [],
+    "app_url": "http://127.0.0.1:43000",
+    "live_frontend_url": "http://127.0.0.1:45173",
+    "separate_volumes_and_networks": true
+  },
+  "persistence": {
+    "postgres_persistence_after_restart": true,
+    "redis_persistence_after_restart": true,
+    "probe_data_removed": true,
+    "redis_requires_authentication": true,
+    "secrets_preserved_on_reinit": true,
+    "existing_service_count_unchanged": 12
+  },
+  "browser": {
+    "ports": [
+      43000,
+      45173
+    ],
+    "initial_setup_visible": true,
+    "live_css_update": true,
+    "source_restored": true,
+    "page_errors": [],
+    "locale": "zh-CN"
+  },
+  "scope": "Dedicated PostgreSQL and Redis instances; no production configuration or data imported; no application database/authentication code changes.",
+  "commands": [
+    ".dev/stack init",
+    ".dev/stack check",
+    ".dev/stack build",
+    ".dev/stack up",
+    ".dev/stack restart postgres redis app",
+    ".dev/stack start",
+    "python3 .dev/verify-stack.py"
+  ],
+  "git_push": "not-performed",
+  "production_deployment": "not-performed"
+}

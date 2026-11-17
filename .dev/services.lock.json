@@ -1,0 +1,12 @@
+{
+  "postgres": {
+    "version": "17.11",
+    "domestic": "mirror.ccs.tencentyun.com/library/postgres@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994",
+    "official": "postgres@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994"
+  },
+  "redis": {
+    "version": "7.2.17",
+    "domestic": "mirror.ccs.tencentyun.com/library/redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f",
+    "official": "redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f"
+  }
+}

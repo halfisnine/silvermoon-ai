@@ -11,7 +11,8 @@ Instabox 尚未推送的前端修改未导入，也未删除。旧国内源码�
 在项目根目录执行 `.dev/run go version`。工具入口只依赖本项目、Docker、Python 3 和 POSIX shell，
 不挂载运维目录或凭证、不要求项目位于固定绝对路径。源码只读依赖约束，缓存和产物在本项目内。
 单个工具容器 2 CPU / 3 GiB，无额外 swap；两会话完整构建应错开，避免耗尽共享宿主机资源。
-此入口用于命令行检查和编译，不发布开发服务端口，也没有创建开发数据库。
+`.dev/run` 用于命令行检查和编译，不发布服务端口。独立开发服务现由 `.dev/stack` 管理，
+包含专属 PostgreSQL、Redis 和前端开发服务，详见 [开发环境说明](ENVIRONMENT.md)。
 
 Go 使用固定 1.26.10，默认 CGO_ENABLED=0；竞争检测使用 `CGO_ENABLED=1 .dev/run go test -race ./...`。
 Go 依赖代理默认 goproxy.cn，可单次设置 GOPROXY；不关闭 TLS 或校验和验证。
@@ -34,8 +35,8 @@ Go 依赖代理默认 goproxy.cn，可单次设置 GOPROXY；不关闭 TLS 或�
 
 先检查未提交、未跟踪文件及未推送分支，提交推送或单独安全备份。独立 Git 对象库不依赖旧源码目录。
 `.cache/` 和 `build/` 是可重建缓存/产物，不提交；`.dev/private/` 保留给本地敏感配置并忽略。
-项目未来数据库、Redis、端口和 Compose 项目名必须独立，默认服务仅监听回环；不能复用生产数据。
-本次没有迁移或启动旧 snewapi-dev 栈，不能称为已经搭好可浏览器验收的开发应用。
+开发数据库、Redis、端口和 Compose 项目名均独立，服务仅监听回环，不复用生产数据。
+新环境为 `silvermoon-ai-dev`，从空库初始化；没有迁移或启动旧 snewapi-dev 栈。
 运维与生产部署由 /opt/snewapi 工作区管理，该路径是当前位置，移机可调整；开发工具不依赖它。
 源码迁移不自动迁移聊天历史，重要结论写入项目文件；运维资料和密钥/数据需分别备份。
 迁移后重新授权 GitHub SSH、验证工具和相关功能，再停用旧工作机；不要在两个副本同时开发同一功能。
@@ -49,6 +50,6 @@ Bun 固定 1.4.4；`.dev/run bun --version`、`.dev/run bun install --frozen-loc
 `.dev/run bun run typecheck` 在 web/ 内运行，node_modules 单独挂载到本项目缓存。
 New API 主程序依赖 web/dist，先构建前端再编译根模块；发布沿用 `.silvermoon/Dockerfile`。
 `relaykit` 和 `tokenkit` 的独立验证分别用 `.dev/run go -C relaykit test ./...` 等。
-开发启动说明尚待后续独立配置；不要直接调用旧 /opt/snewapi/dev/stack 并假定它使用此目录。
+开发启动使用本项目 `.dev/stack up`；不要调用旧 /opt/snewapi/dev/stack 并假定它使用此目录。
 本站基线为 New API v1.0.0-rc.49，许可证、官方署名、模块路径和业务代码未修改。
 发布详情见项目根 README.silvermoon.md。
