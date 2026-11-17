@@ -88,11 +88,13 @@ const server = http.createServer((req, res) => {
       localStorage.setItem('i18nextLng', 'zhCN')
       localStorage.setItem('newapi:theme:v1:mode', mode)
     }, mode)
+    let footerSettings = {}
     await context.route('**/api/**', async (route) => {
       const path = new URL(route.request().url()).pathname
       let data
       if (path === '/api/status') {
         data = {
+          ...footerSettings,
           system_name: '银月',
           logo: '/silvermoon/moonlight.webp',
           server_address: 'https://api.silvermoon.example',
@@ -332,9 +334,16 @@ const server = http.createServer((req, res) => {
           ) {
             throw new Error('Code example is not keyboard focusable')
           }
-          await footer
-            .getByRole('link', { name: 'New API', exact: true })
-            .waitFor()
+          if (
+            (await footer
+              .locator('a[href="https://github.com/QuantumNous/new-api"]')
+              .count()) ||
+            /New API|由项目贡献者/.test(await footer.textContent())
+          ) {
+            throw new Error(
+              'Removed project attribution is still rendered in the footer'
+            )
+          }
         }
         results.push({ mode, target, ...size })
         if (
@@ -407,6 +416,40 @@ const server = http.createServer((req, res) => {
           .last()
           .click({ trial: true })
         await menu.click()
+        for (const legalEnabled of [false, true]) {
+          footerSettings = {
+            footer_html: '<p>银月自定义页脚</p>',
+            user_agreement_enabled: legalEnabled,
+            privacy_policy_enabled: legalEnabled,
+          }
+          await page.reload()
+          const customFooter = page.locator('.silvermoon-footer')
+          await customFooter.getByText('银月自定义页脚').waitFor()
+          if (
+            /New API|由项目贡献者/.test(await customFooter.textContent()) ||
+            (await customFooter
+              .locator('a[href="https://github.com/QuantumNous/new-api"]')
+              .count())
+          ) {
+            throw new Error('Custom footer appends removed project attribution')
+          }
+          const legalCount = await customFooter
+            .locator('a[href="/user-agreement"], a[href="/privacy-policy"]')
+            .count()
+          if (legalCount !== (legalEnabled ? 2 : 0)) {
+            throw new Error(
+              'Custom footer legal links no longer follow settings'
+            )
+          }
+          if (
+            await page.evaluate(
+              () => document.documentElement.scrollWidth > innerWidth
+            )
+          ) {
+            throw new Error('Custom footer causes horizontal overflow')
+          }
+        }
+        footerSettings = {}
       } else {
         for (const active of ['false', 'true']) {
           const selector =
