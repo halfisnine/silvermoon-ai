@@ -96,19 +96,20 @@ body:not([data-theme-preset]) [data-slot='sidebar'][data-mobile='true'] {
   --accent-foreground: var(--sidebar-accent-foreground);
 }
 
-body:not([data-theme-preset]) [data-slot='sidebar-menu-button'] {
+/* Composed collapsible/dropdown triggers replace data-slot, but retain data-sidebar. */
+body:not([data-theme-preset]) [data-sidebar='menu-button'] {
   min-height: 44px;
   border: 0;
   box-shadow: none;
 }
 
-body:not([data-theme-preset]) [data-slot='sidebar-menu-button'][data-active],
+body:not([data-theme-preset]) [data-sidebar='menu-button'][data-active],
 body:not([data-theme-preset])
   :is(
-    [data-slot='sidebar-menu-button'],
-    [data-slot='sidebar-menu-sub-button'],
-    [data-slot='sidebar-menu-action'],
-    [data-slot='sidebar-group-action']
+    [data-sidebar='menu-button'],
+    [data-sidebar='menu-sub-button'],
+    [data-sidebar='menu-action'],
+    [data-sidebar='group-action']
   ):is(:hover, :focus-visible) {
   background: var(--sidebar-accent);
   color: var(--sidebar-accent-foreground);
