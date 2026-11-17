@@ -28,6 +28,7 @@ import {
   buildIntegrationExample,
   INTEGRATION_PROTOCOLS,
 } from '../lib/integration-example'
+import { SilvermoonRequestCode } from './silvermoon-request-code'
 
 interface SilvermoonIntegrationProps {
   endpoint: string
@@ -108,7 +109,7 @@ export function SilvermoonIntegration(props: SilvermoonIntegrationProps) {
                       }
                     >
                       <pre tabIndex={0} aria-label={t('cURL request example')}>
-                        <code>{code}</code>
+                        <SilvermoonRequestCode code={code} />
                       </pre>
                     </CodeBlockFrame>
                   </TabsContent>

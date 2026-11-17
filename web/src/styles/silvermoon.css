@@ -256,8 +256,15 @@ body:not([data-theme-preset])
   padding: 24px;
   min-width: 0;
   border-radius: 16px;
-  background: var(--card);
-  box-shadow: 0 12px 36px -24px #7968a04d;
+  background-color: var(--card);
+  background-image:
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--primary) 8%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(ellipse at 0% 100%, #ce9fb014, transparent 50%);
+  box-shadow: 0 16px 40px -26px #7968a04d;
 }
 .silvermoon-endpoint-label {
   display: inline-block;
@@ -268,18 +275,42 @@ body:not([data-theme-preset])
 }
 .silvermoon-integration-panel .silvermoon-endpoint {
   margin-top: 0;
+  background-color: var(--muted);
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in srgb, var(--primary) 8%, transparent),
+    #91b8d314
+  );
+}
+.silvermoon-integration-panel .silvermoon-endpoint-label {
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--card) 72%, transparent);
+  color: var(--foreground);
+}
+.silvermoon-integration-panel .silvermoon-endpoint [data-slot='button'] {
+  background: color-mix(in srgb, var(--card) 80%, transparent);
+  border-color: transparent;
+  color: var(--foreground);
+}
+.silvermoon-integration-panel .silvermoon-endpoint [data-slot='button']:hover {
+  background: var(--card);
 }
 .silvermoon-integration-code {
   --foreground: #e8edf6;
   --muted-foreground: #b6c3d6;
   --muted: #2b3c53;
-  --border: #61718a;
-  --accent: #354963;
+  --border: #45516d;
+  --accent: #40506c;
   --accent-foreground: #ffffff;
-  background: #203044;
+  background-color: #243149;
+  background-image: linear-gradient(125deg, #22344b, #2c304b);
   border: 0;
   margin: 20px 0 0;
   border-radius: 10px;
+}
+.silvermoon-integration-code > div:first-child {
+  background: linear-gradient(110deg, #bda2e31a, #a4d2ee0d);
 }
 .silvermoon-integration-code pre {
   margin: 0;
@@ -307,17 +338,29 @@ body:not([data-theme-preset])
   grid-template-columns: repeat(4, minmax(0, 1fr));
   width: 100%;
   height: auto;
-  gap: 4px;
-  padding: 4px;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
 }
 .silvermoon-protocol-tabs [data-slot='tabs-trigger'] {
   color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--card), var(--muted) 60%);
   min-height: 44px;
   font-size: 12px;
+  border: 0;
+  box-shadow: none;
 }
 .silvermoon-protocol-tabs
   [data-slot='tabs-trigger']:is([data-active], :hover, :focus-visible) {
   color: var(--foreground);
+}
+.silvermoon-protocol-tabs [data-slot='tabs-trigger'][data-active] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  box-shadow: 0 3px 8px -5px color-mix(in srgb, var(--primary) 65%, transparent);
+}
+.silvermoon-protocol-tabs [data-slot='tabs-trigger']:hover {
+  background: var(--accent);
 }
 .silvermoon-protocol-tabs [data-slot='tabs-content'] {
   min-width: 0;

@@ -305,10 +305,53 @@ const server = http.createServer((req, res) => {
             if ((await tab.getAttribute('aria-selected')) !== 'true') {
               throw new Error('Protocol selection is not accessible')
             }
-            const request = await page
+            const example = page
               .getByRole('tabpanel', { name: label, exact: true })
-              .locator('.silvermoon-integration-code pre')
-              .textContent()
+              .locator('.silvermoon-integration-code')
+            await example.locator('pre code span').first().waitFor()
+            const coloring = await example.evaluate((element) => {
+              const colors = [
+                ...new Set(
+                  [...element.querySelectorAll('pre code span')]
+                    .filter((token) => token.textContent.trim())
+                    .map((token) => getComputedStyle(token).color)
+                ),
+              ]
+              const surfaces = getComputedStyle(element).backgroundImage.match(
+                /rgb\([^)]+\)/g
+              ) || [getComputedStyle(element).backgroundColor]
+              const context = document.createElement('canvas').getContext('2d')
+              const luminance = (color) => {
+                context.fillStyle = color
+                context.fillRect(0, 0, 1, 1)
+                const rgb = [...context.getImageData(0, 0, 1, 1).data]
+                  .slice(0, 3)
+                  .map((value) => {
+                    const channel = value / 255
+                    return channel <= 0.04045
+                      ? channel / 12.92
+                      : ((channel + 0.055) / 1.055) ** 2.4
+                  })
+                return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+              }
+              const contrasts = colors.flatMap((color) =>
+                surfaces.map((surface) => {
+                  const fg = luminance(color),
+                    bg = luminance(surface)
+                  return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05)
+                })
+              )
+              return {
+                count: colors.length,
+                minimumContrast: Math.min(...contrasts),
+              }
+            })
+            if (coloring.count < 4 || coloring.minimumContrast < 4.5) {
+              throw new Error(
+                `Unreadable or missing code colors: ${JSON.stringify(coloring)}`
+              )
+            }
+            const request = await example.locator('pre').textContent()
             if (!request.includes(requestPath)) {
               throw new Error(`Wrong request for ${label}`)
             }
@@ -361,6 +404,11 @@ const server = http.createServer((req, res) => {
             path: `${out}/${target}-${mode}-${width}.png`,
             fullPage: true,
           })
+          if (target === 'home') {
+            await page.locator('.silvermoon-integration-panel').screenshot({
+              path: `${out}/integration-${mode}-${width}.png`,
+            })
+          }
         }
       }
       if (target === 'home') {
