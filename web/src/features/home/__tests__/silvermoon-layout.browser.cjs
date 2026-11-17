@@ -260,6 +260,88 @@ const server = http.createServer((req, res) => {
               `Moon is cropped or covered at ${width}px: ${JSON.stringify(moon)}`
             )
           }
+          const header = page.locator('.silvermoon-public-header')
+          for (const scrollTop of [0, 360]) {
+            await page.evaluate(
+              (value) => window.scrollTo({ top: value, behavior: 'instant' }),
+              scrollTop
+            )
+            await page.waitForFunction(
+              (scrolled) =>
+                document
+                  .querySelector('.silvermoon-public-header')
+                  .hasAttribute('data-scrolled') === scrolled,
+              scrollTop > 0
+            )
+            await page.evaluate(async () => {
+              await Promise.allSettled(
+                document
+                  .getAnimations()
+                  .filter(
+                    (animation) =>
+                      animation.effect?.getComputedTiming().iterations !==
+                      Infinity
+                  )
+                  .map((animation) => animation.finished)
+              )
+            })
+            const navigation = await header
+              .locator('.silvermoon-public-nav')
+              .evaluate((nav) => {
+                const bounds = nav.getBoundingClientRect()
+                const controls = [...nav.querySelectorAll('a, button')].filter(
+                  (control) => control.getBoundingClientRect().width > 0
+                )
+                return {
+                  width: bounds.width,
+                  overflow: nav.scrollWidth > nav.clientWidth,
+                  clipped: controls.some((control) => {
+                    const rect = control.getBoundingClientRect()
+                    return (
+                      rect.left < bounds.left - 1 ||
+                      rect.right > bounds.right + 1 ||
+                      rect.top < bounds.top - 1 ||
+                      rect.bottom > bounds.bottom + 1
+                    )
+                  }),
+                }
+              })
+            if (navigation.overflow || navigation.clipped) {
+              throw new Error(
+                `Header controls clipped at ${width}px / scroll ${scrollTop}`
+              )
+            }
+            if (width >= 1024) {
+              await header
+                .locator('.silvermoon-nav-link[aria-current="page"][href="/"]')
+                .waitFor()
+              if (scrollTop && width >= 1440 && navigation.width < 1000) {
+                throw new Error('Scrolled header is too cramped')
+              }
+            } else {
+              const touchSizes = await header
+                .locator('.silvermoon-nav-mobile > button')
+                .evaluateAll((buttons) =>
+                  buttons.map((button) => {
+                    const rect = button.getBoundingClientRect()
+                    return { width: rect.width, height: rect.height }
+                  })
+                )
+              if (
+                touchSizes.some((rect) => rect.width < 44 || rect.height < 44)
+              ) {
+                throw new Error('Mobile header controls are too small')
+              }
+            }
+            if ([390, 1440].includes(width)) {
+              await header.screenshot({
+                path: `${out}/header-${mode}-${width}-${scrollTop ? 'scrolled' : 'top'}.png`,
+              })
+            }
+          }
+          await page.evaluate(() =>
+            window.scrollTo({ top: 0, behavior: 'instant' })
+          )
           const footer = page.locator('.silvermoon-footer')
           const bounds = await footer.boundingBox()
           const maximumHeight = width < 640 ? 120 : 80
@@ -517,13 +599,36 @@ const server = http.createServer((req, res) => {
         await page.getByRole('dialog').waitFor()
         await page.keyboard.press('Escape')
         await page.setViewportSize({ width: 390, height: 844 })
-        const menu = page.locator('header button').last()
+        const menu = page.getByRole('button', { name: '切换导航菜单' })
         await menu.click()
+        if ((await menu.getAttribute('aria-expanded')) !== 'true') {
+          throw new Error('Mobile menu expanded state is missing')
+        }
         await page
           .locator('nav a[href="/pricing"]:visible')
           .last()
           .click({ trial: true })
+        await page
+          .locator('.silvermoon-mobile-navigation')
+          .evaluate(async (menu) => {
+            await Promise.allSettled(
+              menu
+                .getAnimations({ subtree: true })
+                .map((animation) => animation.finished)
+            )
+          })
+        await page.screenshot({ path: `${out}/public-menu-${mode}-390.png` })
         await menu.click()
+        if ((await menu.getAttribute('aria-expanded')) !== 'false') {
+          throw new Error('Mobile menu did not close')
+        }
+        if (
+          !(await page
+            .locator('.silvermoon-mobile-navigation')
+            .evaluate((element) => element.inert))
+        ) {
+          throw new Error('Closed menu still accepts keyboard focus')
+        }
         for (const legalEnabled of [false, true]) {
           footerSettings = {
             footer_html: '<p>银月自定义页脚</p>',
@@ -614,6 +719,54 @@ const server = http.createServer((req, res) => {
           path: `${out}/console-${mode}-mobile-menu.png`,
         })
         await page.keyboard.press('Escape')
+        await page.setViewportSize({ width: 1440, height: 1000 })
+        await page.locator('a[href="/"]:visible').first().click()
+        const publicHeader = page.locator('.silvermoon-public-header')
+        await publicHeader.locator('[data-slot="avatar"]').first().waitFor()
+        await publicHeader
+          .locator('.silvermoon-nav-tools button:has([data-slot="avatar"])')
+          .click()
+        await page
+          .getByRole('menuitem', { name: '个人资料', exact: true })
+          .waitFor()
+        await page.keyboard.press('Escape')
+        await page.getByRole('menu').waitFor({ state: 'hidden' })
+        for (const label of ['更改语言', '切换主题']) {
+          await publicHeader.getByRole('button', { name: label }).click()
+          await page.getByRole('menu', { name: label }).waitFor()
+          await page.keyboard.press('Escape')
+          await page
+            .getByRole('menu', { name: label })
+            .waitFor({ state: 'hidden' })
+        }
+        await publicHeader
+          .getByRole('button', { name: '通知', exact: true })
+          .click()
+        await page.getByRole('dialog').waitFor()
+        await page.keyboard.press('Escape')
+        await page.getByRole('dialog').waitFor({ state: 'hidden' })
+        await page.evaluate(() =>
+          window.scrollTo({ top: 360, behavior: 'instant' })
+        )
+        await page.waitForFunction(() =>
+          document
+            .querySelector('.silvermoon-public-header')
+            .hasAttribute('data-scrolled')
+        )
+        await page.evaluate(async () => {
+          await Promise.allSettled(
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.effect?.getComputedTiming().iterations !== Infinity
+              )
+              .map((animation) => animation.finished)
+          )
+        })
+        await publicHeader.screenshot({
+          path: `${out}/header-${mode}-authenticated.png`,
+        })
       }
     }
     await context.close()

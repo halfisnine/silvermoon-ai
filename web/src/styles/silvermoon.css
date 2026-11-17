@@ -123,9 +123,142 @@ body:not([data-theme-preset])
 .silvermoon-home {
   background: var(--background);
 }
-.silvermoon-landing > header {
-  background: color-mix(in srgb, var(--card) 95%, transparent);
-  border-bottom: 1px solid var(--border);
+.silvermoon-public-header {
+  background: transparent;
+  border: 0;
+}
+.silvermoon-public-header .silvermoon-nav-shell {
+  max-width: 1240px;
+  padding: 8px 24px 0;
+  transition-property: max-width, padding;
+  transition-duration: 250ms;
+}
+.silvermoon-public-header[data-scrolled] .silvermoon-nav-shell {
+  max-width: 1120px;
+}
+.silvermoon-public-nav {
+  height: 48px;
+  padding: 2px 10px 2px 14px;
+  gap: 16px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  box-shadow: 0 6px 24px -12px #26324c30;
+  backdrop-filter: blur(20px);
+  --tw-ring-shadow: 0 0 #0000;
+  transition-property: background-color, box-shadow;
+  transition-duration: 250ms;
+}
+.silvermoon-public-header[data-scrolled] .silvermoon-public-nav {
+  box-shadow: 0 10px 30px -14px #26324c50;
+}
+.silvermoon-nav-brand {
+  gap: 6px;
+}
+.silvermoon-nav-home {
+  min-height: 44px;
+}
+.silvermoon-nav-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+.silvermoon-nav-logo img {
+  border-radius: 50%;
+}
+.silvermoon-nav-desktop {
+  gap: 3px;
+}
+.silvermoon-nav-link {
+  display: flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 12px;
+  color: var(--muted-foreground);
+  border-radius: 10px;
+}
+.silvermoon-nav-link:is(:hover, :focus-visible) {
+  color: var(--foreground);
+  background: var(--muted);
+}
+.silvermoon-nav-link[aria-current='page'] {
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+}
+.silvermoon-nav-home:focus-visible,
+.silvermoon-nav-link:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.silvermoon-nav-tools {
+  flex-shrink: 0;
+  gap: 2px;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border);
+}
+.silvermoon-nav-tools > button,
+.silvermoon-nav-tools > a {
+  height: 40px;
+  min-width: 40px;
+  border-radius: 10px;
+}
+.silvermoon-nav-tools > button,
+.silvermoon-nav-mobile > button {
+  color: var(--foreground);
+}
+.silvermoon-nav-tools > button:is(:hover, :focus-visible),
+.silvermoon-nav-mobile > button:is(:hover, :focus-visible) {
+  background: var(--muted);
+}
+.silvermoon-public-header [data-slot='avatar'] {
+  width: 28px;
+  height: 28px;
+}
+/* Scope brand colors to the navigation initials, which have inline user colors. */
+.silvermoon-public-header [data-slot='avatar-fallback'] {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+}
+.silvermoon-nav-mobile {
+  gap: 2px;
+}
+.silvermoon-nav-mobile > button {
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+}
+.silvermoon-mobile-navigation {
+  background: color-mix(in srgb, var(--card) 98%, transparent);
+}
+.silvermoon-mobile-navigation nav a {
+  min-height: 48px;
+  padding-inline: 16px;
+  border-radius: 12px;
+}
+.silvermoon-mobile-navigation nav a:is(:hover, :focus-visible) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.silvermoon-mobile-navigation nav a[aria-current='page'] {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+@media (max-width: 1023px) {
+  .silvermoon-public-header .silvermoon-nav-shell {
+    padding-inline: 12px;
+  }
+  .silvermoon-public-nav {
+    padding-inline: 10px 4px;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .silvermoon-public-header .silvermoon-nav-shell,
+  .silvermoon-public-nav {
+    transition: none;
+  }
 }
 .silvermoon-hero {
   position: relative;
