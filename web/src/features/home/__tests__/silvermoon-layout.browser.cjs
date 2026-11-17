@@ -179,7 +179,9 @@ const server = http.createServer((req, res) => {
         })
       }
       await page.evaluate(() => document.fonts.ready)
-      for (const width of [320, 360, 390, 430, 768, 1024, 1440]) {
+      for (const width of [
+        320, 360, 390, 430, 640, 641, 768, 1024, 1440, 1600, 1920,
+      ]) {
         await page.setViewportSize({ width, height: 1000 })
         await page.evaluate(async () => {
           await new Promise((r) =>
@@ -203,6 +205,61 @@ const server = http.createServer((req, res) => {
           })),
         }))
         if (target === 'home') {
+          await page.evaluate(() =>
+            window.scrollTo({ top: 0, behavior: 'instant' })
+          )
+          await page
+            .locator('.silvermoon-hero-art')
+            .evaluate((image) => image.decode())
+          const moon = await page
+            .locator('.silvermoon-hero-art')
+            .evaluate((image) => {
+              const rect = image.getBoundingClientRect()
+              const style = getComputedStyle(image)
+              const scale = Math.max(
+                rect.width / image.naturalWidth,
+                rect.height / image.naturalHeight
+              )
+              const [x, y] = style.objectPosition
+                .split(' ')
+                .map((value) => Number.parseFloat(value) / 100)
+              const left =
+                rect.left + (rect.width - image.naturalWidth * scale) * x
+              const top =
+                rect.top + (rect.height - image.naturalHeight * scale) * y
+              const hero = image.closest('.silvermoon-hero')
+              const heroRect = hero.getBoundingClientRect()
+              const headerBottom = document
+                .querySelector('.silvermoon-landing > header')
+                .getBoundingClientRect().bottom
+              const fade = Number.parseFloat(
+                getComputedStyle(hero, '::after').height
+              )
+              // Conservative bounds of the moon and its immediate glow in the 1254px source.
+              return {
+                left: left + 370 * scale,
+                right: left + 900 * scale,
+                top: top + 88 * scale,
+                bottom: top + 610 * scale,
+                visibleLeft: Math.max(rect.left, heroRect.left),
+                visibleRight: Math.min(rect.right, heroRect.right),
+                visibleTop: Math.max(rect.top, heroRect.top, headerBottom),
+                visibleBottom: Math.min(
+                  rect.bottom,
+                  heroRect.bottom - (innerWidth > 640 ? fade : 0)
+                ),
+              }
+            })
+          if (
+            moon.left < moon.visibleLeft ||
+            moon.right > moon.visibleRight ||
+            moon.top < moon.visibleTop + 4 ||
+            moon.bottom > moon.visibleBottom
+          ) {
+            throw new Error(
+              `Moon is cropped or covered at ${width}px: ${JSON.stringify(moon)}`
+            )
+          }
           const footer = page.locator('.silvermoon-footer')
           const bounds = await footer.boundingBox()
           const maximumHeight = width < 640 ? 120 : 80
@@ -395,7 +452,7 @@ const server = http.createServer((req, res) => {
         ) {
           throw new Error(`Overflow ${JSON.stringify(results.at(-1))}`)
         }
-        if ([390, 1440].includes(width)) {
+        if ([390, 641, 1440, 1600].includes(width)) {
           await page.evaluate(() => {
             document.activeElement?.blur()
             window.scrollTo({ top: 0, behavior: 'instant' })
@@ -405,6 +462,9 @@ const server = http.createServer((req, res) => {
             fullPage: true,
           })
           if (target === 'home') {
+            await page
+              .locator('.silvermoon-hero')
+              .screenshot({ path: `${out}/hero-${mode}-${width}.png` })
             await page.locator('.silvermoon-integration-panel').screenshot({
               path: `${out}/integration-${mode}-${width}.png`,
             })
