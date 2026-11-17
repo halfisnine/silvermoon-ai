@@ -100,6 +100,7 @@ const server = http.createServer((req, res) => {
       }
     }, mode)
     let footerSettings = {}
+    let populatedKeys = false
     await context.route('**/api/**', async (route) => {
       const path = new URL(route.request().url()).pathname
       let data
@@ -158,10 +159,37 @@ const server = http.createServer((req, res) => {
         }
       } else if (path === '/api/user/self') data = user
       else if (path === '/api/token/' || path === '/api/token') {
-        data = {
-          items: [{ id: 1, name: 'App key', key: 'masked', status: 1 }],
-          total: 1,
-        }
+        const items = populatedKeys
+          ? [
+              {
+                id: 1,
+                name: 'Moonlight review key',
+                key: 'masked-review-only',
+                status: 1,
+                remain_quota: 5000000,
+                used_quota: 0,
+                unlimited_quota: false,
+                expired_time: -1,
+                created_time: now,
+                accessed_time: now,
+                group: 'default',
+                model_limits_enabled: false,
+                model_limits: '',
+                allow_ips: '',
+              },
+            ]
+          : []
+        data =
+          process.env.SILVERMOON_REVIEW_TARGET === 'keys'
+            ? { items, total: items.length, page: 1, page_size: 20 }
+            : {
+                items: [{ id: 1, name: 'App key', key: 'masked', status: 1 }],
+                total: 1,
+              }
+      } else if (path === '/api/token/auto-groups') {
+        data = { groups: ['default'], max_count: 5 }
+      } else if (path === '/api/user/self/groups') {
+        data = { default: { ratio: 1, desc: 'Default' } }
       } else if (path === '/api/user/models') data = ['gpt-4o-mini']
       else if (path === '/api/data/self') {
         data = [
@@ -203,6 +231,105 @@ const server = http.createServer((req, res) => {
     const targets = process.env.SILVERMOON_REVIEW_TARGET
       ? [process.env.SILVERMOON_REVIEW_TARGET]
       : ['home', 'console']
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'keys') {
+      for (const populated of [false, true]) {
+        populatedKeys = populated
+        await page.goto(`${baseUrl}/keys`)
+        await page
+          .getByRole('heading', { name: 'API 密钥', exact: true })
+          .waitFor()
+        await page
+          .getByText(populated ? 'Moonlight review key' : '未找到 API 密钥', {
+            exact: true,
+          })
+          .first()
+          .waitFor()
+        if (process.env.SILVERMOON_REVIEW_FONT) {
+          await page.addStyleTag({
+            content:
+              "@font-face{font-family:'Review Sans';src:url('/__review_font.ttf')}body{font-family:'Review Sans',sans-serif;--font-sans:'Review Sans',sans-serif;--font-ui-sans:'Review Sans',sans-serif;--font-body:'Review Sans',sans-serif}",
+          })
+          await page.evaluate(() => document.fonts.ready)
+        }
+        for (const width of [320, 390, 768, 1440, 1920]) {
+          await page.setViewportSize({ width, height: 1000 })
+          await page.evaluate(async () => {
+            await new Promise((resolve) =>
+              requestAnimationFrame(() => requestAnimationFrame(resolve))
+            )
+            await Promise.allSettled(
+              document
+                .getAnimations()
+                .filter(
+                  (animation) =>
+                    animation.effect?.getComputedTiming().iterations !==
+                    Infinity
+                )
+                .map((animation) => animation.finished)
+            )
+          })
+          await page
+            .getByText(populated ? 'Moonlight review key' : '未找到 API 密钥', {
+              exact: true,
+            })
+            .first()
+            .waitFor()
+          const surface = await page.evaluate(() => ({
+            width: innerWidth,
+            scroll: document.documentElement.scrollWidth,
+            scene: getComputedStyle(
+              document.querySelector('[data-slot="sidebar-wrapper"]'),
+              '::before'
+            ).backgroundImage,
+          }))
+          await page.screenshot({
+            path: `${out}/keys-${mode}-${populated ? 'rows' : 'empty'}-${width}.png`,
+          })
+          if (surface.scroll > width) {
+            throw new Error(
+              `Keys page overflow at ${width}px: ${JSON.stringify(
+                await page.evaluate(() =>
+                  [...document.querySelectorAll('main *')]
+                    .filter(
+                      (e) => e.getBoundingClientRect().right > innerWidth + 1
+                    )
+                    .slice(0, 8)
+                    .map((e) => ({
+                      tag: e.tagName,
+                      slot: e.getAttribute('data-slot'),
+                      cls: e.className,
+                      width: e.getBoundingClientRect().width,
+                    }))
+                )
+              )}`
+            )
+          }
+          if (
+            (mode === 'silvermoon-dream') !==
+            surface.scene.includes('url(')
+          ) {
+            throw new Error('Scene is missing or leaked into default theme')
+          }
+          results.push({
+            mode,
+            target: 'keys',
+            populated,
+            width,
+            scroll: surface.scroll,
+          })
+        }
+      }
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page
+        .getByRole('button', { name: '创建 API 密钥', exact: true })
+        .click()
+      await page.getByRole('dialog').waitFor()
+      await page.screenshot({ path: `${out}/keys-${mode}-drawer-390.png` })
+      await page.keyboard.press('Escape')
+      await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      await context.close()
+      continue
+    }
     for (const target of targets) {
       await page.goto(
         baseUrl + (target === 'home' ? '/' : '/dashboard/overview')

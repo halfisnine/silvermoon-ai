@@ -44,12 +44,43 @@ body[data-theme-preset='silvermoon-dream'] {
     radial-gradient(ellipse at 10% 70%, #f6e8f1 0, transparent 55%),
     var(--background);
 }
+/* One continuous illustrated scene reaches every console page, not just Overview.
+   The source is the existing 153 KB local artwork; no remote image requests. */
+body[data-theme-preset='silvermoon-dream'] [data-slot='sidebar-wrapper'] {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(120deg, #e7e5f7, #d6dff1 55%, #efdce9);
+}
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='sidebar-wrapper']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  left: auto;
+  width: min(100%, 100svh);
+  z-index: -1;
+  pointer-events: none;
+  background: url('../../public/silvermoon/moonlight.webp') right center / auto
+    100% no-repeat;
+  mask-image: linear-gradient(90deg, transparent, #000 50%);
+  opacity: 0.7;
+}
 body[data-theme-preset='silvermoon-dream'] [data-slot='sidebar-inner'],
 body[data-theme-preset='silvermoon-dream']
   [data-slot='sidebar'][data-mobile='true'] {
-  background: linear-gradient(165deg, #eee7f8, #e7ddf1 70%, #f0e5f0);
+  background-color: #e4e3f4;
+  background-image:
+    linear-gradient(180deg, #f9f4fff0, #f0eaf7cf 48%, #e6e5f794),
+    url('../../public/silvermoon/moonlight.webp');
+  background-size:
+    cover,
+    auto 100%;
+  background-position:
+    center,
+    88% bottom;
+  background-repeat: no-repeat;
   --foreground: var(--sidebar-foreground);
-  --muted-foreground: #776384;
+  --muted-foreground: #6d587c;
   --accent: var(--sidebar-accent);
   --accent-foreground: var(--sidebar-accent-foreground);
 }
@@ -76,7 +107,9 @@ body[data-theme-preset='silvermoon-dream'] [data-slot='sidebar-inset'] {
 body[data-theme-preset='silvermoon-dream']
   [data-slot='sidebar-wrapper']
   > header {
-  background: #f8f4fcf2;
+  background: #fbf8ffde;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #ffffff9c;
 }
 body[data-theme-preset='silvermoon-dream'] .silvermoon-welcome {
   min-height: 260px;
@@ -141,6 +174,93 @@ body[data-theme-preset='silvermoon-dream'] .silvermoon-home {
 body[data-theme-preset='silvermoon-dream'] .silvermoon-integration-panel {
   border-radius: 20px;
   background: linear-gradient(125deg, #faf4ff, #eee7f9 60%, #f8e9f2);
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='sidebar-inset'] {
+  box-shadow: none;
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='section-page-header'] {
+  background: linear-gradient(100deg, #fcf9ffe6, #f7f0ff70);
+  border-bottom: 1px solid #ffffff94;
+  margin-bottom: 10px;
+}
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='data-table-page']
+  > :first-child:not([data-slot='data-table-surface']) {
+  padding: 12px;
+  border-radius: 14px;
+  background: #faf7ffe0;
+  box-shadow: 0 6px 18px -16px #493a76;
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='data-table-surface'] {
+  border: 1px solid #ffffffe0;
+  border-radius: 18px;
+  background: linear-gradient(120deg, #ffffffa3, #f9f3ff40);
+  box-shadow: 0 10px 34px -24px #3e335b80;
+  --table-header: #f6f0fc;
+  container-type: inline-size;
+}
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='data-table-surface']
+  [data-slot='empty'] {
+  position: sticky;
+  left: 0;
+  width: 100cqw;
+}
+/* Filled rows and pinned cells must remain legible over the scenery. */
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='data-table-surface']
+  [data-slot='table-body']
+  > [data-slot='table-row']:not(:has([data-slot='empty'])) {
+  background: #fcfaffed;
+}
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='data-table-surface']
+  [data-slot='table-row']:has([data-slot='empty']) {
+  background: transparent;
+}
+body[data-theme-preset='silvermoon-dream']
+  [data-slot='data-table-surface']
+  [data-slot='table-body']
+  > [data-slot='table-row']:not(:has([data-slot='empty'])):is(
+    :hover,
+    [data-state='selected']
+  ) {
+  background: #e9def7;
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='empty-header'] {
+  padding: 26px 32px;
+  border: 1px solid #ffffffb3;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #fffaffed, #f3edffdb);
+  box-shadow: 0 12px 32px -24px #55427680;
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='empty-icon'] {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #e1d3f3, #e2e9fa);
+  color: #6b4e95;
+}
+body[data-theme-preset='silvermoon-dream'] [data-slot='section-page-footer'] {
+  border-top: 1px solid #ffffffb3;
+  background: #faf7ffed;
+}
+@media (max-width: 640px) {
+  body[data-theme-preset='silvermoon-dream']
+    [data-slot='sidebar-wrapper']::before {
+    background-position: 60% center;
+    mask-image: none;
+    opacity: 0.55;
+  }
+  body[data-theme-preset='silvermoon-dream'] [data-slot='empty-header'] {
+    padding: 22px 18px;
+  }
+  body[data-theme-preset='silvermoon-dream']
+    [data-slot='sidebar-wrapper']
+    > header {
+    backdrop-filter: none;
+    background: #faf7fff2;
+  }
 }
 .silvermoon-theme-option {
   display: block;
