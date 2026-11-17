@@ -234,6 +234,53 @@ const server = http.createServer((req, res) => {
           .click({ trial: true })
         await menu.click()
       } else {
+        for (const active of ['false', 'true']) {
+          const selector =
+            active === 'true' ? '[data-active]' : ':not([data-active])'
+          const item = page
+            .locator(`[data-slot="sidebar-menu-button"]${selector}:visible`)
+            .first()
+          for (const state of ['hover', 'focus']) {
+            await page.mouse.move(1435, 995)
+            if (state === 'hover') {
+              await item.hover()
+            } else {
+              await page.keyboard.press('Tab')
+              await item.focus()
+            }
+            const contrast = await item.evaluate((element) => {
+              const style = getComputedStyle(element)
+              const luminance = (color) => {
+                const channels = color
+                  .match(/[\d.]+/g)
+                  .slice(0, 3)
+                  .map(Number)
+                  .map((value) => {
+                    const channel = value / 255
+                    return channel <= 0.04045
+                      ? channel / 12.92
+                      : ((channel + 0.055) / 1.055) ** 2.4
+                  })
+                return (
+                  channels[0] * 0.2126 +
+                  channels[1] * 0.7152 +
+                  channels[2] * 0.0722
+                )
+              }
+              const foreground = luminance(style.color)
+              const background = luminance(style.backgroundColor)
+              return (
+                (Math.max(foreground, background) + 0.05) /
+                (Math.min(foreground, background) + 0.05)
+              )
+            })
+            if (contrast < 4.5) {
+              throw new Error(
+                `${mode} sidebar ${state} (active=${active}) contrast ${contrast.toFixed(2)} < 4.5`
+              )
+            }
+          }
+        }
         await page.setViewportSize({ width: 390, height: 844 })
         const trigger = page.locator('[data-slot="sidebar-trigger"]').first()
         await trigger.click()

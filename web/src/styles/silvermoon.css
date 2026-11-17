@@ -102,8 +102,14 @@ body:not([data-theme-preset]) [data-slot='sidebar-menu-button'] {
   box-shadow: none;
 }
 
+body:not([data-theme-preset]) [data-slot='sidebar-menu-button'][data-active],
 body:not([data-theme-preset])
-  [data-slot='sidebar-menu-button'][data-active='true'] {
+  :is(
+    [data-slot='sidebar-menu-button'],
+    [data-slot='sidebar-menu-sub-button'],
+    [data-slot='sidebar-menu-action'],
+    [data-slot='sidebar-group-action']
+  ):is(:hover, :focus-visible) {
   background: var(--sidebar-accent);
   color: var(--sidebar-accent-foreground);
 }

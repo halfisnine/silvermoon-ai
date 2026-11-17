@@ -1,0 +1,27 @@
+{
+  "verified_at": "2026-11-17",
+  "branding": [
+    {
+      "port": 43000,
+      "title": "银月",
+      "setup": "初始化 银月",
+      "logoLoaded": true
+    },
+    {
+      "port": 45173,
+      "title": "银月",
+      "setup": "初始化 银月",
+      "logoLoaded": true
+    }
+  ],
+  "setup_check": "Only setup status was mocked as uninitialized; real status/branding and assets were used. No account or initialization data was changed.",
+  "sidebar_before_hover_contrast": 1.06,
+  "sidebar_after_minimum_contrast": 4.5,
+  "sidebar_state_combinations_passed": 8,
+  "responsive_cases_passed": 28,
+  "brand_seed_idempotent": true,
+  "operator_branding_preserved": true,
+  "upstream_attribution_preserved": true,
+  "development_services_updated": true,
+  "production_updated": false
+}

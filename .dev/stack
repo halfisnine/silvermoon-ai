@@ -54,7 +54,7 @@ def initialize():
     print('Development secrets ready in .dev/private; existing secrets preserved.')
 
 
-def compose(args):
+def compose(args, **kwargs):
     source = os.environ.get('DEV_IMAGE_SOURCE', 'domestic')
     if source not in {'domestic', 'official'}:
         raise SystemExit('DEV_IMAGE_SOURCE must be domestic or official')
@@ -68,7 +68,19 @@ def compose(args):
             del env[key]
     return run(['docker', 'compose', '--project-name', 'silvermoon-ai-dev',
                 '--project-directory', str(DEV), '--env-file', '/dev/null',
-                '-f', str(DEV / 'compose.yml'), *args], env=env)
+                '-f', str(DEV / 'compose.yml'), *args], env=env, **kwargs)
+
+
+def configure_branding():
+    result = compose(['exec', '-T', 'postgres', 'psql', '-U', 'silvermoon_dev',
+                      '-d', 'silvermoon_dev', '-v', 'ON_ERROR_STOP=1', '-qAt'],
+                     input=(DEV / 'branding.sql').read_text(), text=True, capture_output=True)
+    changed = result.stdout.strip().splitlines()
+    if changed:
+        # Options are cached in the app process. Reload only this development service.
+        compose(['restart', 'app'])
+        compose(['up', '-d', '--wait', '--wait-timeout', '240', 'app', 'web'])
+    print('Development site branding ready; operator customizations and upstream attribution preserved.')
 
 
 def build():
@@ -97,6 +109,8 @@ if __name__ == '__main__':
     try:
         if command == 'init':
             initialize()
+        elif command == 'brand':
+            configure_branding()
         elif command == 'build':
             build()
         elif command in {'up', 'rebuild'}:
@@ -104,6 +118,7 @@ if __name__ == '__main__':
             if command == 'rebuild' or not (ROOT / 'build/dev/runtime/new-api').exists():
                 build()
             compose(['up', '-d', '--wait', '--wait-timeout', '240', *(['--force-recreate', 'app', 'web'] if command == 'rebuild' else [])])
+            configure_branding()
         elif command == 'check':
             compose(['config', '--quiet'])
         elif command == 'status':
@@ -117,7 +132,7 @@ if __name__ == '__main__':
         elif command == 'restart':
             compose(['restart', *extra])
         else:
-            print('Usage: .dev/stack init|build|up|rebuild|check|status|logs|stop|start|restart [service]')
+            print('Usage: .dev/stack init|brand|build|up|rebuild|check|status|logs|stop|start|restart [service]')
             print('App http://127.0.0.1:43000 ; live frontend http://127.0.0.1:45173')
             print('No data-deletion command is provided. Stop/start preserves all development data.')
     except subprocess.CalledProcessError as error:
