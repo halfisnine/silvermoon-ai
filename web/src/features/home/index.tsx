@@ -120,7 +120,7 @@ export function Home() {
   return (
     <PublicLayout showMainContainer={false} className='silvermoon-landing'>
       <SilvermoonHome />
-      <Footer className='silvermoon-footer' />
+      <Footer compact className='silvermoon-footer' />
     </PublicLayout>
   )
 }

@@ -35,6 +35,7 @@ interface FooterColumnProps {
 }
 
 interface FooterProps {
+  compact?: boolean
   logo?: string
   name?: string
   columns?: FooterColumnProps[]
@@ -161,6 +162,7 @@ export function Footer(props: FooterProps) {
   const displayLogo = systemLogo || props.logo || '/logo.png'
   const displayName = systemName || props.name || 'New API'
   const isDemoSiteMode = Boolean(demoSiteEnabled)
+  const isCompact = Boolean(props.compact) && !isDemoSiteMode
   const currentYear = new Date().getFullYear()
 
   const fallbackColumns = useMemo<FooterColumnProps[]>(
@@ -248,47 +250,50 @@ export function Footer(props: FooterProps) {
 
   return (
     <footer
+      data-compact={isCompact || undefined}
       className={cn('border-border/40 relative z-10 border-t', props.className)}
     >
       <div className='mx-auto max-w-6xl px-6 py-12 md:py-16'>
-        <div className='flex flex-col justify-between gap-10 md:flex-row md:gap-16'>
-          {/* Brand column */}
-          <div className='shrink-0'>
-            <Link to='/' className='group flex items-center gap-2.5'>
-              <img
-                src={displayLogo}
-                alt={displayName}
-                className='size-7 rounded-lg object-contain'
-              />
-              <span className='text-sm font-semibold tracking-tight'>
-                {displayName}
-              </span>
-            </Link>
-            <p className='text-muted-foreground/60 mt-3 max-w-[200px] text-xs leading-relaxed'>
-              {t('Powerful API Management Platform')}
-            </p>
-          </div>
-
-          {/* Links columns */}
-          {isDemoSiteMode && (
-            <div className='grid grid-cols-3 gap-8 md:gap-16'>
-              {displayColumns.map((column, index) => (
-                <div key={index}>
-                  <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
-                    {t(column.title)}
-                  </p>
-                  <ul className='space-y-2.5'>
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
-                        <FooterLinkItem link={link} />
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+        {!isCompact && (
+          <div className='flex flex-col justify-between gap-10 md:flex-row md:gap-16'>
+            {/* Brand column */}
+            <div className='shrink-0'>
+              <Link to='/' className='group flex items-center gap-2.5'>
+                <img
+                  src={displayLogo}
+                  alt={displayName}
+                  className='size-7 rounded-lg object-contain'
+                />
+                <span className='text-sm font-semibold tracking-tight'>
+                  {displayName}
+                </span>
+              </Link>
+              <p className='text-muted-foreground/60 mt-3 max-w-[200px] text-xs leading-relaxed'>
+                {t('Powerful API Management Platform')}
+              </p>
             </div>
-          )}
-        </div>
+
+            {/* Links columns */}
+            {isDemoSiteMode && (
+              <div className='grid grid-cols-3 gap-8 md:gap-16'>
+                {displayColumns.map((column) => (
+                  <div key={column.title}>
+                    <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
+                      {t(column.title)}
+                    </p>
+                    <ul className='space-y-2.5'>
+                      {column.links.map((link) => (
+                        <li key={`${link.href}-${link.text}`}>
+                          <FooterLinkItem link={link} />
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Copyright + optional legal links inline on the left, project
             attribution on the right; wraps on narrow screens. */}

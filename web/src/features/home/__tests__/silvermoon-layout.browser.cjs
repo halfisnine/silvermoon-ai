@@ -200,6 +200,22 @@ const server = http.createServer((req, res) => {
             scroll: e.scrollWidth,
           })),
         }))
+        if (target === 'home') {
+          const footer = page.locator('.silvermoon-footer')
+          const bounds = await footer.boundingBox()
+          const maximumHeight = width < 640 ? 120 : 80
+          if (!bounds || bounds.height > maximumHeight) {
+            throw new Error(
+              `Homepage footer exceeds compact height at ${width}px: ${bounds?.height}`
+            )
+          }
+          if (await footer.locator('img').count()) {
+            throw new Error('Compact homepage footer repeats the brand logo')
+          }
+          await footer
+            .getByRole('link', { name: 'New API', exact: true })
+            .waitFor()
+        }
         results.push({ mode, target, ...size })
         if (
           size.scroll > width ||

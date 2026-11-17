@@ -342,6 +342,15 @@ body:not([data-theme-preset])
   padding-top: 16px;
 }
 
+.silvermoon-footer[data-compact] > div {
+  padding-block: 16px;
+}
+.silvermoon-footer[data-compact] > div > div:last-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
 .silvermoon-overview {
   max-width: 1440px;
   margin-inline: auto;
