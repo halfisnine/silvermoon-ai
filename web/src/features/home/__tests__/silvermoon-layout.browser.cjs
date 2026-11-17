@@ -225,11 +225,110 @@ const server = http.createServer((req, res) => {
           if (/SLA|99\.98/.test(await footer.textContent())) {
             throw new Error('Footer presents an unverified SLA')
           }
-          await page.locator('.silvermoon-integration-code pre').focus()
+          const protocolTabs = page.getByRole('tablist', { name: 'API 协议' })
+          const boundsByTab = await protocolTabs
+            .getByRole('tab')
+            .evaluateAll((tabs) =>
+              tabs.map((tab) => {
+                const rect = tab.getBoundingClientRect()
+                return { width: rect.width, height: rect.height, top: rect.top }
+              })
+            )
           if (
-            !(await page
+            boundsByTab.length !== 4 ||
+            boundsByTab.some((rect) => rect.height < 44)
+          ) {
+            throw new Error('Protocol tabs are missing or too small for touch')
+          }
+          const tabContrast = await protocolTabs
+            .getByRole('tab')
+            .evaluateAll((tabs) =>
+              tabs.map((tab) => {
+                const context = document
+                  .createElement('canvas')
+                  .getContext('2d')
+                context.fillStyle = '#fff'
+                context.fillRect(0, 0, 2, 1)
+                const ancestors = []
+                for (let node = tab; node; node = node.parentElement) {
+                  ancestors.unshift(node)
+                }
+                for (const node of ancestors) {
+                  context.fillStyle = getComputedStyle(node).backgroundColor
+                  context.fillRect(0, 0, 2, 1)
+                }
+                context.fillStyle = getComputedStyle(tab).color
+                context.fillRect(1, 0, 1, 1)
+                const luminance = (offset) => {
+                  const rgb = [...context.getImageData(offset, 0, 1, 1).data]
+                    .slice(0, 3)
+                    .map((value) => {
+                      const channel = value / 255
+                      return channel <= 0.04045
+                        ? channel / 12.92
+                        : ((channel + 0.055) / 1.055) ** 2.4
+                    })
+                  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722
+                }
+                const bg = luminance(0),
+                  fg = luminance(1)
+                return (Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05)
+              })
+            )
+          if (tabContrast.some((ratio) => ratio < 4.5)) {
+            throw new Error(
+              `Protocol labels lack contrast: ${JSON.stringify(tabContrast)}`
+            )
+          }
+          const tabRows = new Set(
+            boundsByTab.map((rect) => Math.round(rect.top))
+          ).size
+          if (tabRows !== (width <= 480 ? 2 : 1)) {
+            throw new Error(`Unexpected protocol tab layout at ${width}px`)
+          }
+          for (const [label, requestPath] of [
+            ['OpenAI Chat', '/v1/chat/completions'],
+            ['OpenAI Responses', '/v1/responses'],
+            ['Anthropic', '/v1/messages'],
+            ['Gemini', '/v1beta/models/YOUR_MODEL_NAME:generateContent'],
+          ]) {
+            const tab = protocolTabs.getByRole('tab', {
+              name: label,
+              exact: true,
+            })
+            await tab.click()
+            await page
+              .getByRole('tabpanel', { name: label, exact: true })
+              .waitFor()
+            if ((await tab.getAttribute('aria-selected')) !== 'true') {
+              throw new Error('Protocol selection is not accessible')
+            }
+            const request = await page
+              .getByRole('tabpanel', { name: label, exact: true })
               .locator('.silvermoon-integration-code pre')
-              .evaluate((e) => e === document.activeElement))
+              .textContent()
+            if (!request.includes(requestPath)) {
+              throw new Error(`Wrong request for ${label}`)
+            }
+            if (
+              await page.evaluate(
+                () => document.documentElement.scrollWidth > innerWidth
+              )
+            ) {
+              throw new Error(
+                `Protocol example overflows at ${width}px: ${label}`
+              )
+            }
+          }
+          await protocolTabs
+            .getByRole('tab', { name: 'OpenAI Chat', exact: true })
+            .click()
+          const activeCode = page
+            .getByRole('tabpanel', { name: 'OpenAI Chat', exact: true })
+            .locator('.silvermoon-integration-code pre')
+          await activeCode.focus()
+          if (
+            !(await activeCode.evaluate((e) => e === document.activeElement))
           ) {
             throw new Error('Code example is not keyboard focusable')
           }
@@ -259,19 +358,39 @@ const server = http.createServer((req, res) => {
         await page.locator('.silvermoon-endpoint button').click()
         const copied = await page.evaluate(() => navigator.clipboard.readText())
         if (copied !== endpoint) throw new Error('Copy mismatch')
-        await page.locator('.silvermoon-integration-code button').click()
-        const copiedCode = await page.evaluate(() =>
-          navigator.clipboard.readText()
-        )
-        const displayedCode = await page
-          .locator('.silvermoon-integration-code pre')
-          .textContent()
+        for (const label of [
+          'OpenAI Chat',
+          'OpenAI Responses',
+          'Anthropic',
+          'Gemini',
+        ]) {
+          await page.getByRole('tab', { name: label, exact: true }).click()
+          const panel = page.getByRole('tabpanel', { name: label, exact: true })
+          await panel.locator('.silvermoon-integration-code button').click()
+          const copiedCode = await page.evaluate(() =>
+            navigator.clipboard.readText()
+          )
+          const displayedCode = await panel
+            .locator('.silvermoon-integration-code pre')
+            .textContent()
+          if (
+            copiedCode !== displayedCode ||
+            !copiedCode.includes('YOUR_MODEL_NAME')
+          ) {
+            throw new Error(`Code example copy mismatch for ${label}`)
+          }
+        }
+        await page
+          .getByRole('tab', { name: 'OpenAI Chat', exact: true })
+          .click()
+        await page.keyboard.press('ArrowRight')
+        await page.keyboard.press('Enter')
         if (
-          copiedCode !== displayedCode ||
-          !copiedCode.includes('YOUR_MODEL_NAME') ||
-          !copiedCode.includes('/chat/completions')
+          (await page
+            .getByRole('tab', { name: 'OpenAI Responses', exact: true })
+            .getAttribute('aria-selected')) !== 'true'
         ) {
-          throw new Error('Code example copy mismatch')
+          throw new Error('Protocol tabs are not keyboard operable')
         }
         await page.locator('.silvermoon-news').click()
         await page.getByRole('dialog').waitFor()

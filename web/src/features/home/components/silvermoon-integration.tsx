@@ -22,8 +22,12 @@ import { useTranslation } from 'react-i18next'
 import { CodeBlockFrame } from '@/components/ai-elements/code-block'
 import { CopyButton } from '@/components/copy-button'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 
-import { buildIntegrationExample } from '../lib/integration-example'
+import {
+  buildIntegrationExample,
+  INTEGRATION_PROTOCOLS,
+} from '../lib/integration-example'
 
 interface SilvermoonIntegrationProps {
   endpoint: string
@@ -44,7 +48,7 @@ export function SilvermoonIntegration(props: SilvermoonIntegrationProps) {
       <header className='silvermoon-integration-heading'>
         <p className='silvermoon-kicker'>{t('Quick integration')}</p>
         <h2 id='integration-title'>{t('Your next request starts here.')}</h2>
-        <p>{t('Connect your tools with an OpenAI-compatible API.')}</p>
+        <p>{t('Connect with OpenAI, Anthropic or Gemini protocols.')}</p>
       </header>
       <div className='silvermoon-integration-panel'>
         {props.loading && <Skeleton className='h-48 w-full' />}
@@ -74,42 +78,51 @@ export function SilvermoonIntegration(props: SilvermoonIntegrationProps) {
         )}
         {!props.loading && example && (
           <>
-            <CodeBlockFrame
-              className='silvermoon-integration-code'
-              showToolbar
-              title={
-                <span className='silvermoon-code-title'>
-                  <span className='silvermoon-terminal-dots' aria-hidden='true'>
-                    ● ● ●
-                  </span>{' '}
-                  bash · cURL
-                </span>
-              }
-              endActions={
-                <CopyButton
-                  value={example}
-                  size='default'
-                  aria-label={t('Copy code')}
-                >
-                  {t('Copy code')}
-                </CopyButton>
-              }
-            >
-              <pre tabIndex={0} aria-label={t('cURL request example')}>
-                <code>{example}</code>
-              </pre>
-            </CodeBlockFrame>
+            <Tabs defaultValue='openai' className='silvermoon-protocol-tabs'>
+              <TabsList aria-label={t('API protocol')}>
+                {INTEGRATION_PROTOCOLS.map((protocol) => (
+                  <TabsTrigger key={protocol.id} value={protocol.id}>
+                    {protocol.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {INTEGRATION_PROTOCOLS.map((protocol) => {
+                const code = buildIntegrationExample(
+                  props.endpoint,
+                  protocol.id
+                )
+                return (
+                  <TabsContent key={protocol.id} value={protocol.id}>
+                    <CodeBlockFrame
+                      className='silvermoon-integration-code'
+                      showToolbar
+                      title='cURL'
+                      endActions={
+                        <CopyButton
+                          value={code}
+                          size='default'
+                          aria-label={t('Copy code')}
+                        >
+                          {t('Copy code')}
+                        </CopyButton>
+                      }
+                    >
+                      <pre tabIndex={0} aria-label={t('cURL request example')}>
+                        <code>{code}</code>
+                      </pre>
+                    </CodeBlockFrame>
+                  </TabsContent>
+                )
+              })}
+            </Tabs>
             <p className='silvermoon-endpoint-hint'>
               {t(
-                'Set OPENAI_API_KEY to your API key and replace YOUR_MODEL_NAME with an available model.'
+                'Set SILVERMOON_API_KEY to your API key and replace YOUR_MODEL_NAME with a model that supports the selected protocol.'
               )}
             </p>
           </>
         )}
-        <div className='silvermoon-integration-bottom'>
-          <p>{t('Use the address required by your client setup guide.')}</p>
-          {props.children}
-        </div>
+        <div className='silvermoon-integration-bottom'>{props.children}</div>
       </div>
     </section>
   )

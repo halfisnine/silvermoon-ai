@@ -119,6 +119,65 @@ describe('Silvermoon homepage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('offers four protocol examples without terminal decorations and copies the selected request', async () => {
+    const user = userEvent.setup()
+    const clipboard = vi
+      .spyOn(navigator.clipboard, 'writeText')
+      .mockResolvedValue(undefined)
+    await renderHome()
+    await screen.findByText('https://route.example/custom/v1')
+    expect(screen.queryByText('● ● ●')).not.toBeInTheDocument()
+    const cases = [
+      [
+        'OpenAI Chat',
+        '/custom/v1/chat/completions',
+        'Authorization: Bearer',
+        '"messages"',
+      ],
+      [
+        'OpenAI Responses',
+        '/custom/v1/responses',
+        'Authorization: Bearer',
+        '"input"',
+      ],
+      [
+        'Anthropic',
+        '/custom/v1/messages',
+        'anthropic-version: 2023-06-01',
+        '"max_tokens": 1024',
+      ],
+      [
+        'Gemini',
+        '/custom/v1beta/models/YOUR_MODEL_NAME:generateContent',
+        'x-goog-api-key:',
+        '"contents"',
+      ],
+    ]
+    for (const [label, path, header, field] of cases) {
+      const tab = screen.getByRole('tab', { name: label })
+      await user.click(tab)
+      expect(tab).toHaveAttribute('aria-selected', 'true')
+      const panel = screen.getByRole('tabpanel', { name: label })
+      expect(panel).toBeVisible()
+      await user.click(screen.getByRole('button', { name: 'Copy code' }))
+      await waitFor(() =>
+        expect(clipboard).toHaveBeenLastCalledWith(
+          screen.getByLabelText('cURL request example').textContent
+        )
+      )
+      expect(clipboard.mock.lastCall?.[0]).toContain(path)
+      expect(clipboard.mock.lastCall?.[0]).toContain(header)
+      expect(clipboard.mock.lastCall?.[0]).toContain(field)
+    }
+    await user.click(screen.getByRole('tab', { name: 'OpenAI Chat' }))
+    await user.keyboard('{ArrowRight}{Enter}')
+    await waitFor(() =>
+      expect(
+        screen.getByRole('tab', { name: 'OpenAI Responses' })
+      ).toHaveAttribute('aria-selected', 'true')
+    )
+  })
+
   it('uses the configured server address when no route is available', async () => {
     status.api_info = []
     await renderHome()
@@ -220,6 +279,103 @@ describe('Homepage cURL example', () => {
   )
 
   it.each([
+    [
+      'https://gateway.example',
+      'responses',
+      'https://gateway.example/v1/responses',
+    ],
+    [
+      'https://gateway.example/v1',
+      'anthropic',
+      'https://gateway.example/v1/messages',
+    ],
+    [
+      'https://gateway.example/v1/',
+      'gemini',
+      'https://gateway.example/v1beta/models/YOUR_MODEL_NAME:generateContent',
+    ],
+    [
+      'https://gateway.example/proxy/v1',
+      'gemini',
+      'https://gateway.example/proxy/v1beta/models/YOUR_MODEL_NAME:generateContent',
+    ],
+    [
+      'https://gateway.example/proxy/v1beta',
+      'anthropic',
+      'https://gateway.example/proxy/v1/messages',
+    ],
+    [
+      'https://gateway.example/proxy/v1/messages',
+      'responses',
+      'https://gateway.example/proxy/v1/responses',
+    ],
+    [
+      'https://gateway.example/proxy/v1beta/models/old-model:generateContent',
+      'openai',
+      'https://gateway.example/proxy/v1/chat/completions',
+    ],
+    [
+      'https://gateway.example/proxy/v1beta/models/old-model:streamGenerateContent',
+      'gemini',
+      'https://gateway.example/proxy/v1beta/models/YOUR_MODEL_NAME:generateContent',
+    ],
+  ] as const)(
+    'switches %s to %s without retaining the old protocol suffix',
+    (endpoint, protocol, expected) => {
+      expect(buildIntegrationExample(endpoint, protocol).split('\n')[0]).toBe(
+        `curl '${expected}' \\`
+      )
+    }
+  )
+
+  it.each([
+    [
+      'responses',
+      '/v1/responses',
+      ['Authorization: Bearer test-placeholder-key'],
+      { model: 'YOUR_MODEL_NAME', input: 'Hello!' },
+    ],
+    [
+      'anthropic',
+      '/v1/messages',
+      ['x-api-key: test-placeholder-key', 'anthropic-version: 2023-06-01'],
+      {
+        model: 'YOUR_MODEL_NAME',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: 'Hello!' }],
+      },
+    ],
+    [
+      'gemini',
+      '/v1beta/models/YOUR_MODEL_NAME:generateContent',
+      ['x-goog-api-key: test-placeholder-key'],
+      { contents: [{ parts: [{ text: 'Hello!' }] }] },
+    ],
+  ] as const)(
+    'copies a valid %s request with protocol-specific headers and JSON',
+    (protocol, path, headers, body) => {
+      const example = buildIntegrationExample(
+        'https://gateway.example',
+        protocol
+      )
+      const args = execFileSync(
+        'sh',
+        ['-c', `curl() { printf "%s\\0" "$@"; }\n${example}`],
+        {
+          env: { SILVERMOON_API_KEY: 'test-placeholder-key' },
+          encoding: 'utf8',
+        }
+      )
+        .split('\0')
+        .filter(Boolean)
+      expect(args[0]).toBe(`https://gateway.example${path}`)
+      for (const header of headers) expect(args).toContain(header)
+      expect(args).toContain('Content-Type: application/json')
+      expect(JSON.parse(args[args.indexOf('-d') + 1])).toEqual(body)
+    }
+  )
+
+  it.each([
     '',
     'not-a-url',
     'javascript:alert(1)',
@@ -240,7 +396,7 @@ describe('Homepage cURL example', () => {
       'sh',
       ['-c', `curl() { printf "%s\\0" "$@"; }\n${example}`],
       {
-        env: { OPENAI_API_KEY: 'test-placeholder-key' },
+        env: { SILVERMOON_API_KEY: 'test-placeholder-key' },
         encoding: 'utf8',
       }
     )

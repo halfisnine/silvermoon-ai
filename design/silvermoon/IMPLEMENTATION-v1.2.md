@@ -126,3 +126,25 @@ NODE_PATH=/tmp/silvermoon-visual-check/node_modules SILVERMOON_REVIEW_FONT=/tmp/
 开发环境更新，未发布镜像或部署生产；冻结 V1.2 设计稿和旧标签保留。对应本地分支 `codex/silvermoon-home-integration`，该分支提交可恢复此次实现。浏览器截图使用长地址测试数据，不代表实际运营域名或模型调用成功。
 
 本次桌面与手机截图保存在 `design/silvermoon/implementation/v1.2-home-integration/`，与代码一同提交，便于后续对比与恢复。
+
+## 2026-11-17 多协议接入示例与顶部整理
+
+根据用户反馈，移除代码框顶部的三颗装饰圆点及 BASH 标签，仅保留 cURL 标题和共享复制按钮；删除接入卡片底部重复的通用说明。首页接入说明覆盖 OpenAI、Anthropic 和 Gemini，新增四个协议选项：OpenAI Chat、OpenAI Responses、Anthropic、Gemini。桌面一行四项，480px 及以下两行两列，点击区域至少 44px；提高未选中标签的文字对比度。
+
+协议依据为本仓库实际对外路由：`router/relay-router.go` 提供 `/v1/chat/completions`、`/v1/messages`、`/v1beta/models/{model}:generateContent`；`pkg/jsplugin/routing.go` 与 `router/task-plugin-protocol-router.go` 注册 `/v1/responses` 并回退到 Responses relay。请求头参照现有 `middleware/auth.go` 的入口支持与定价页已有示例，分别采用 Bearer、x-api-key + anthropic-version、x-goog-api-key。这里只改前端示例，不修改认证、转发、插件或计费流程，不发起真实模型调用。
+
+示例切换同时更换请求路径、请求头和请求体。统一使用 SILVERMOON_API_KEY 环境变量和 YOUR_MODEL_NAME 占位符；提示选择支持对应协议的模型，不将“入口支持协议”表述为“所有模型支持所有协议”。动态站点地址和原始地址复制保留；跨 v1/v1beta 或完整请求 URL 切换时保留代理路径前缀，避免重复版本或残留原协议路径。
+
+继续组合项目共享 Tabs / TabsContent、CodeBlockFrame 与 CopyButton；已检查定价页 ModelApiSection 的现有协议选择与示例实现，其私有生成器依赖具体 PricingModel 及多语言示例，不直接引入首页。首页在既有 integration-example 工具内扩展少量协议数据与模板，不新增通用组件或依赖。
+
+用户同时提出删除页脚上游署名；当前 AGENTS.md 的 Protected project information 明确保护该内容，本次保留，已向用户说明。银月紧凑版权和标语不变。
+
+验证结果：
+
+- 新增界面回归用例先在旧实现稳定失败（旧装饰仍存在），修改后首页测试共 29 项通过；覆盖四种协议切换、复制、键盘操作、请求头/JSON、路径转换及原有公告/文档行为。
+- `.dev/run bun run typecheck` 通过；涉及文件 oxlint 零错误零警告，oxfmt 与 diff 空白检查通过。新增 3 个翻译键经规定脚本写入全部七种语言并执行 i18n:sync。
+- `.dev/stack rebuild` 成功更新独立开发环境；隔离与四服务健康检查通过。没有改变生产服务、数据库或 Redis 配置。
+- 真实构建浏览器回归共 28 组页面/屏宽/主题组合通过；首页额外遍历四种协议，共 56 组协议布局检查。无页面横向溢出或脚本异常，复制内容与当前协议一致，手机两列布局及 44px 操作区通过，协议文字对比度均至少 4.5:1。
+- 此次截图保存在 `design/silvermoon/implementation/v1.2-protocol-examples/`；截图中长地址为测试数据。旧设计稿、之前截图和版本标签保留。
+
+本地开发分支为 `codex/silvermoon-protocol-examples`。本次不推送远端、不发布镜像、不部署生产。

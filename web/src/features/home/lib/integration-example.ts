@@ -16,8 +16,20 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-/** Build a shell-safe OpenAI-compatible example from the public site address. */
-export function buildIntegrationExample(endpoint: string): string {
+export const INTEGRATION_PROTOCOLS = [
+  { id: 'openai', label: 'OpenAI Chat' },
+  { id: 'responses', label: 'OpenAI Responses' },
+  { id: 'anthropic', label: 'Anthropic' },
+  { id: 'gemini', label: 'Gemini' },
+] as const
+
+export type IntegrationProtocol = (typeof INTEGRATION_PROTOCOLS)[number]['id']
+
+/** Build a shell-safe example using the gateway's public protocol routes. */
+export function buildIntegrationExample(
+  endpoint: string,
+  protocol: IntegrationProtocol = 'openai'
+): string {
   let url: URL
   try {
     url = new URL(endpoint)
@@ -31,20 +43,52 @@ export function buildIntegrationExample(endpoint: string): string {
   ) {
     return ''
   }
-  const path = url.pathname.replace(/\/+$/, '')
-  url.pathname = path.endsWith('/chat/completions')
-    ? path
-    : `${path || '/v1'}/chat/completions`
+  // Accept an origin, API base or known request URL, preserving proxy prefixes.
+  let base = url.pathname
+    .replace(/\/+$/, '')
+    .replace(/\/(?:chat\/completions|responses|messages)$/, '')
+    .replace(/\/models\/[^/]+:(?:generateContent|streamGenerateContent)$/, '')
+  if (protocol === 'gemini') {
+    base = `${base.replace(/\/(?:v1|v1beta)$/, '')}/v1beta`
+  } else {
+    base = base.replace(/\/v1beta$/, '/v1') || '/v1'
+  }
+
+  let path = '/chat/completions'
+  let headers = ['  -H "Authorization: Bearer $SILVERMOON_API_KEY" \\']
+  let body = [
+    '    "model": "YOUR_MODEL_NAME",',
+    '    "messages": [{"role": "user", "content": "Hello!"}]',
+  ]
+  if (protocol === 'responses') {
+    path = '/responses'
+    body = ['    "model": "YOUR_MODEL_NAME",', '    "input": "Hello!"']
+  } else if (protocol === 'anthropic') {
+    path = '/messages'
+    headers = [
+      '  -H "x-api-key: $SILVERMOON_API_KEY" \\',
+      '  -H "anthropic-version: 2023-06-01" \\',
+    ]
+    body = [
+      '    "model": "YOUR_MODEL_NAME",',
+      '    "max_tokens": 1024,',
+      '    "messages": [{"role": "user", "content": "Hello!"}]',
+    ]
+  } else if (protocol === 'gemini') {
+    path = '/models/YOUR_MODEL_NAME:generateContent'
+    headers = ['  -H "x-goog-api-key: $SILVERMOON_API_KEY" \\']
+    body = ['    "contents": [{"parts": [{"text": "Hello!"}]}]']
+  }
+  url.pathname = `${base}${path}`
   url.hash = ''
   // Single quotes keep configured $, backticks and shell operators literal.
   const quotedUrl = `'${url.href.replaceAll("'", "'\"'\"'")}'`
   return [
     `curl ${quotedUrl} \\`,
-    '  -H "Authorization: Bearer $OPENAI_API_KEY" \\',
+    ...headers,
     '  -H "Content-Type: application/json" \\',
     "  -d '{",
-    '    "model": "YOUR_MODEL_NAME",',
-    '    "messages": [{"role": "user", "content": "Hello!"}]',
+    ...body,
     "  }'",
   ].join('\n')
 }

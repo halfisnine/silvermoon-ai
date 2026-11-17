@@ -297,27 +297,46 @@ body:not([data-theme-preset])
   min-height: 44px;
   font-size: 12px;
 }
-.silvermoon-code-title {
-  display: flex;
+.silvermoon-protocol-tabs {
+  margin-top: 20px;
+  min-width: 0;
   gap: 12px;
-  align-items: center;
 }
-.silvermoon-terminal-dots {
-  color: #b9a5da;
-  letter-spacing: 1px;
+.silvermoon-protocol-tabs [data-slot='tabs-list'] {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: 100%;
+  height: auto;
+  gap: 4px;
+  padding: 4px;
+}
+.silvermoon-protocol-tabs [data-slot='tabs-trigger'] {
+  color: var(--muted-foreground);
+  min-height: 44px;
+  font-size: 12px;
+}
+.silvermoon-protocol-tabs
+  [data-slot='tabs-trigger']:is([data-active], :hover, :focus-visible) {
+  color: var(--foreground);
+}
+.silvermoon-protocol-tabs [data-slot='tabs-content'] {
+  min-width: 0;
+}
+.silvermoon-protocol-tabs .silvermoon-integration-code {
+  margin: 0;
+}
+@media (max-width: 480px) {
+  .silvermoon-protocol-tabs [data-slot='tabs-list'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .silvermoon-integration-bottom {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 12px;
   margin-top: 18px;
-}
-.silvermoon-integration-bottom > p {
-  flex: 1 1 240px;
-  font-size: 12px;
-  color: var(--muted-foreground);
 }
 .silvermoon-integration-bottom .silvermoon-support-actions {
   margin-top: 0;
