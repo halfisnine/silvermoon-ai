@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useNavigate } from '@tanstack/react-router'
-import { ArrowRight, ChevronRight, Laptop, Moon, Sun } from 'lucide-react'
+import { ArrowRight, ChevronRight, Palette } from 'lucide-react'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -32,15 +32,16 @@ import {
   CommandSeparator,
 } from '@/components/ui/command'
 import { useSearch } from '@/context/search-provider'
-import { useTheme } from '@/context/theme-provider'
+import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useSidebarView } from '@/hooks/use-sidebar-view'
+import { THEME_PRESETS } from '@/lib/theme-customization'
 
 import { ScrollArea } from './ui/scroll-area'
 
 export function CommandMenu() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const { setTheme } = useTheme()
+  const { setPreset } = useThemeCustomization()
   const { open, setOpen } = useSearch()
   // Offer the same pages as the sidebar, so search never lists pages the
   // user's role or the sidebar settings hide.
@@ -99,20 +100,15 @@ export function CommandMenu() {
               </CommandGroup>
             ))}
             <CommandSeparator />
-            <CommandGroup heading='Theme'>
-              <CommandItem onSelect={() => runCommand(() => setTheme('light'))}>
-                <Sun /> <span>{t('Light')}</span>
-              </CommandItem>
-              <CommandItem onSelect={() => runCommand(() => setTheme('dark'))}>
-                <Moon className='scale-90' />
-                <span>{t('Dark')}</span>
-              </CommandItem>
-              <CommandItem
-                onSelect={() => runCommand(() => setTheme('system'))}
-              >
-                <Laptop />
-                <span>{t('System')}</span>
-              </CommandItem>
+            <CommandGroup heading={t('Theme')}>
+              {THEME_PRESETS.map((preset) => (
+                <CommandItem
+                  key={preset.value}
+                  onSelect={() => runCommand(() => setPreset(preset.value))}
+                >
+                  <Palette /> <span>{t(preset.name)}</span>
+                </CommandItem>
+              ))}
             </CommandGroup>
           </ScrollArea>
         </CommandList>

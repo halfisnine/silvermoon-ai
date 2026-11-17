@@ -906,4 +906,8 @@ export const STATIC_I18N_KEYS = [
   'Channel priorities changed. Refresh and try again.',
   'Invalid channel priority move',
   'Channel priority is outside the sortable range',
+  // Complete visual theme packages.
+  'Silvermoon Dream',
+  'Moon-white canvas and a dusk-blue sidebar.',
+  'Moonlit scenery, misty lilac and soft glass surfaces.',
 ] as const

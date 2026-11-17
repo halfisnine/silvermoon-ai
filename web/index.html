@@ -15,21 +15,27 @@
     />
 
     <meta name="theme-color" content="#fff" />
-    <!-- Resolve the theme before first paint so the page never flashes light
-         and one-shot detectors (e.g. Dark Reader) see the real theme.
-         Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
+    <!-- Keep the package key/allowlist in sync with theme-storage/customization.
+         Apply before React and before body content to prevent a theme flash. -->
     <script>
       ;(function () {
-        var theme = 'system'
+        var theme = 'default'
         try {
-          theme = localStorage.getItem('newapi:theme:v1:mode') || 'system'
+          if (
+            localStorage.getItem('silvermoon:theme:v1:package') ===
+            'silvermoon-dream'
+          )
+            theme = 'silvermoon-dream'
         } catch (e) {}
-        if (theme !== 'dark' && theme !== 'light') {
-          theme = window.matchMedia('(prefers-color-scheme: dark)').matches
-            ? 'dark'
-            : 'light'
-        }
-        document.documentElement.classList.add(theme)
+        document.documentElement.classList.remove('dark')
+        document.documentElement.classList.add('light')
+        document.documentElement.dataset.themePackage = theme
+        document
+          .querySelector('meta[name="theme-color"]')
+          .setAttribute(
+            'content',
+            theme === 'silvermoon-dream' ? '#f1ecf8' : '#eeedf6'
+          )
       })()
     </script>
     <!--umami-->
@@ -37,6 +43,14 @@
   </head>
 
   <body>
+    <script>
+      if (
+        document.documentElement.dataset.themePackage === 'silvermoon-dream'
+      ) {
+        document.body.dataset.themePreset = 'silvermoon-dream'
+      }
+      document.body.dataset.themeFont = 'system'
+    </script>
     <div id="root" translate="no" class="notranslate"></div>
   </body>
 </html>

@@ -21,75 +21,75 @@ import { resolve } from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { THEME_STORAGE_KEYS } from '@/lib/theme-storage'
+import { THEME_STORAGE_KEYS as keys } from '@/lib/theme-storage'
 
-// The inline script in index.html must apply the theme class before React
-// mounts; Dark Reader checks `html.dark` only once while the page loads.
 const html = readFileSync(
   resolve(import.meta.dirname, '../../../index.html'),
   'utf8'
 )
-const bootScript = html.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? ''
-
-function runBootScript() {
-  new Function(bootScript)()
+const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+  (match) => match[1]
+)
+function boot() {
+  for (const script of scripts) new Function(script)()
 }
-
-function mockSystemDarkMode(dark: boolean) {
-  vi.spyOn(window, 'matchMedia').mockImplementation(
-    (query: string) =>
-      ({
-        matches: dark && query === '(prefers-color-scheme: dark)',
-        media: query,
-      }) as MediaQueryList
-  )
-}
-
 beforeEach(() => {
   localStorage.clear()
+  document.head.innerHTML = '<meta name="theme-color" content="#fff">'
+  document.documentElement.className = 'dark'
+  vi.spyOn(window, 'matchMedia').mockImplementation(() => {
+    throw new Error('Packages must not consult OS appearance')
+  })
 })
-
 afterEach(() => {
   vi.restoreAllMocks()
-  localStorage.clear()
-  document.documentElement.classList.remove('light', 'dark')
+  document.documentElement.className = ''
+  delete document.documentElement.dataset.themePackage
+  delete document.body.dataset.themePreset
+  delete document.body.dataset.themeFont
 })
-
-describe('index.html theme boot script', () => {
-  it('applies the saved dark preference to html before React mounts', () => {
-    mockSystemDarkMode(false)
-    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'dark')
-
-    runBootScript()
-
-    expect(document.documentElement).toHaveClass('dark')
-    expect(document.documentElement).not.toHaveClass('light')
-  })
-
-  it('applies the saved light preference even when the system is dark', () => {
-    mockSystemDarkMode(true)
-    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'light')
-
-    runBootScript()
-
+describe('theme before React mounts', () => {
+  it('restores dream on html and body before content renders', () => {
+    localStorage.setItem(keys.package, 'silvermoon-dream')
+    boot()
+    expect(document.documentElement).toHaveAttribute(
+      'data-theme-package',
+      'silvermoon-dream'
+    )
+    expect(document.body).toHaveAttribute(
+      'data-theme-preset',
+      'silvermoon-dream'
+    )
     expect(document.documentElement).toHaveClass('light')
     expect(document.documentElement).not.toHaveClass('dark')
+    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
+      'content',
+      '#f1ecf8'
+    )
   })
-
-  it('follows the system dark mode when no preference is saved', () => {
-    mockSystemDarkMode(true)
-
-    runBootScript()
-
-    expect(document.documentElement).toHaveClass('dark')
-  })
-
-  it('follows the system light mode when the saved value is invalid', () => {
-    mockSystemDarkMode(false)
-    localStorage.setItem(THEME_STORAGE_KEYS.mode, 'sepia')
-
-    runBootScript()
-
+  it.each([null, 'unknown', 'dark', 'rose-garden'])(
+    'uses default for %j, ignoring legacy dark and OS mode',
+    (value) => {
+      if (value !== null) localStorage.setItem(keys.package, value)
+      localStorage.setItem(keys.mode, 'dark')
+      boot()
+      expect(document.documentElement).toHaveAttribute(
+        'data-theme-package',
+        'default'
+      )
+      expect(document.body).not.toHaveAttribute('data-theme-preset')
+      expect(document.documentElement).toHaveClass('light')
+    }
+  )
+  it('renders default even when storage is blocked', () => {
+    vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    boot()
+    expect(document.documentElement).toHaveAttribute(
+      'data-theme-package',
+      'default'
+    )
     expect(document.documentElement).toHaveClass('light')
   })
 })

@@ -16,63 +16,46 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Moon, Sun } from 'lucide-react'
-import { useEffect } from 'react'
+import { Palette } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useTheme } from '@/context/theme-provider'
-import { cn } from '@/lib/utils'
+import { useThemeCustomization } from '@/context/theme-customization-provider'
+import { THEME_PRESETS, type ThemePreset } from '@/lib/theme-customization'
 
 export function ThemeSwitch() {
   const { t } = useTranslation()
-  const { theme, setTheme } = useTheme()
-
-  /* Update theme-color meta tag
-   * when theme is updated */
-  useEffect(() => {
-    const themeColor = theme === 'dark' ? '#020817' : '#fff'
-    const metaThemeColor = document.querySelector("meta[name='theme-color']")
-    if (metaThemeColor) metaThemeColor.setAttribute('content', themeColor)
-  }, [theme])
-
+  const { customization, setPreset } = useThemeCustomization()
   return (
     <DropdownMenu modal={false}>
       <DropdownMenuTrigger
-        render={<Button variant='ghost' size='icon' className='h-9 w-9' />}
+        render={<Button variant='ghost' size='icon' className='size-11' />}
       >
-        <Sun className='size-[1.2rem] scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90' />
-        <Moon className='absolute size-[1.2rem] scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0' />
+        <Palette className='size-5' aria-hidden='true' />
         <span className='sr-only'>{t('Toggle theme')}</span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align='end'>
-        <DropdownMenuItem onClick={() => setTheme('light')}>
-          {t('Light')}{' '}
-          <Check
-            size={14}
-            className={cn('ms-auto', theme !== 'light' && 'hidden')}
-          />
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('dark')}>
-          {t('Dark')}
-          <Check
-            size={14}
-            className={cn('ms-auto', theme !== 'dark' && 'hidden')}
-          />
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => setTheme('system')}>
-          {t('System')}
-          <Check
-            size={14}
-            className={cn('ms-auto', theme !== 'system' && 'hidden')}
-          />
-        </DropdownMenuItem>
+        <DropdownMenuRadioGroup
+          value={customization.preset}
+          onValueChange={(value) => setPreset(value as ThemePreset)}
+        >
+          {THEME_PRESETS.map((preset) => (
+            <DropdownMenuRadioItem
+              key={preset.value}
+              value={preset.value}
+              className='min-h-11'
+            >
+              {t(preset.name)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )

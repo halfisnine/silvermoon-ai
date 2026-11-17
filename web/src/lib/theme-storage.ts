@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export const THEME_STORAGE_KEYS = {
+  package: 'silvermoon:theme:v1:package',
   mode: 'newapi:theme:v1:mode',
   preset: 'newapi:theme:v1:preset',
   font: 'newapi:theme:v1:font',

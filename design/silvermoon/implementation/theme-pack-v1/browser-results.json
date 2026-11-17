@@ -1,0 +1,624 @@
+{
+  "checks": 44,
+  "api_data": "browser fixtures, not production data",
+  "results": [
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 320,
+      "scroll": 320,
+      "main": [
+        {
+          "client": 320,
+          "scroll": 320
+        },
+        {
+          "client": 320,
+          "scroll": 320
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 360,
+      "scroll": 360,
+      "main": [
+        {
+          "client": 360,
+          "scroll": 360
+        },
+        {
+          "client": 360,
+          "scroll": 360
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 390,
+      "scroll": 390,
+      "main": [
+        {
+          "client": 390,
+          "scroll": 390
+        },
+        {
+          "client": 390,
+          "scroll": 390
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 430,
+      "scroll": 430,
+      "main": [
+        {
+          "client": 430,
+          "scroll": 430
+        },
+        {
+          "client": 430,
+          "scroll": 430
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 640,
+      "scroll": 640,
+      "main": [
+        {
+          "client": 640,
+          "scroll": 640
+        },
+        {
+          "client": 640,
+          "scroll": 640
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 641,
+      "scroll": 641,
+      "main": [
+        {
+          "client": 641,
+          "scroll": 641
+        },
+        {
+          "client": 641,
+          "scroll": 641
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 768,
+      "scroll": 768,
+      "main": [
+        {
+          "client": 552,
+          "scroll": 552
+        },
+        {
+          "client": 552,
+          "scroll": 552
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 1024,
+      "scroll": 1024,
+      "main": [
+        {
+          "client": 808,
+          "scroll": 808
+        },
+        {
+          "client": 808,
+          "scroll": 808
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 1440,
+      "scroll": 1440,
+      "main": [
+        {
+          "client": 1224,
+          "scroll": 1224
+        },
+        {
+          "client": 1224,
+          "scroll": 1224
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 1600,
+      "scroll": 1600,
+      "main": [
+        {
+          "client": 1384,
+          "scroll": 1384
+        },
+        {
+          "client": 1384,
+          "scroll": 1384
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "console",
+      "width": 1920,
+      "scroll": 1920,
+      "main": [
+        {
+          "client": 1704,
+          "scroll": 1704
+        },
+        {
+          "client": 1704,
+          "scroll": 1704
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 320,
+      "scroll": 320,
+      "main": [
+        {
+          "client": 320,
+          "scroll": 320
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 360,
+      "scroll": 360,
+      "main": [
+        {
+          "client": 360,
+          "scroll": 360
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 390,
+      "scroll": 390,
+      "main": [
+        {
+          "client": 390,
+          "scroll": 390
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 430,
+      "scroll": 430,
+      "main": [
+        {
+          "client": 430,
+          "scroll": 430
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 640,
+      "scroll": 640,
+      "main": [
+        {
+          "client": 640,
+          "scroll": 640
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 641,
+      "scroll": 641,
+      "main": [
+        {
+          "client": 641,
+          "scroll": 641
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 768,
+      "scroll": 768,
+      "main": [
+        {
+          "client": 768,
+          "scroll": 768
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 1024,
+      "scroll": 1024,
+      "main": [
+        {
+          "client": 1024,
+          "scroll": 1024
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 1440,
+      "scroll": 1440,
+      "main": [
+        {
+          "client": 1440,
+          "scroll": 1440
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 1600,
+      "scroll": 1600,
+      "main": [
+        {
+          "client": 1600,
+          "scroll": 1600
+        }
+      ]
+    },
+    {
+      "mode": "default",
+      "target": "home",
+      "width": 1920,
+      "scroll": 1920,
+      "main": [
+        {
+          "client": 1920,
+          "scroll": 1920
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 320,
+      "scroll": 320,
+      "main": [
+        {
+          "client": 320,
+          "scroll": 320
+        },
+        {
+          "client": 320,
+          "scroll": 320
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 360,
+      "scroll": 360,
+      "main": [
+        {
+          "client": 360,
+          "scroll": 360
+        },
+        {
+          "client": 360,
+          "scroll": 360
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 390,
+      "scroll": 390,
+      "main": [
+        {
+          "client": 390,
+          "scroll": 390
+        },
+        {
+          "client": 390,
+          "scroll": 390
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 430,
+      "scroll": 430,
+      "main": [
+        {
+          "client": 430,
+          "scroll": 430
+        },
+        {
+          "client": 430,
+          "scroll": 430
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 640,
+      "scroll": 640,
+      "main": [
+        {
+          "client": 640,
+          "scroll": 640
+        },
+        {
+          "client": 640,
+          "scroll": 640
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 641,
+      "scroll": 641,
+      "main": [
+        {
+          "client": 641,
+          "scroll": 641
+        },
+        {
+          "client": 641,
+          "scroll": 641
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 768,
+      "scroll": 768,
+      "main": [
+        {
+          "client": 552,
+          "scroll": 552
+        },
+        {
+          "client": 552,
+          "scroll": 552
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 1024,
+      "scroll": 1024,
+      "main": [
+        {
+          "client": 808,
+          "scroll": 808
+        },
+        {
+          "client": 808,
+          "scroll": 808
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 1440,
+      "scroll": 1440,
+      "main": [
+        {
+          "client": 1224,
+          "scroll": 1224
+        },
+        {
+          "client": 1224,
+          "scroll": 1224
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 1600,
+      "scroll": 1600,
+      "main": [
+        {
+          "client": 1384,
+          "scroll": 1384
+        },
+        {
+          "client": 1384,
+          "scroll": 1384
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "console",
+      "width": 1920,
+      "scroll": 1920,
+      "main": [
+        {
+          "client": 1704,
+          "scroll": 1704
+        },
+        {
+          "client": 1704,
+          "scroll": 1704
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 320,
+      "scroll": 320,
+      "main": [
+        {
+          "client": 320,
+          "scroll": 320
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 360,
+      "scroll": 360,
+      "main": [
+        {
+          "client": 360,
+          "scroll": 360
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 390,
+      "scroll": 390,
+      "main": [
+        {
+          "client": 390,
+          "scroll": 390
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 430,
+      "scroll": 430,
+      "main": [
+        {
+          "client": 430,
+          "scroll": 430
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 640,
+      "scroll": 640,
+      "main": [
+        {
+          "client": 640,
+          "scroll": 640
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 641,
+      "scroll": 641,
+      "main": [
+        {
+          "client": 641,
+          "scroll": 641
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 768,
+      "scroll": 768,
+      "main": [
+        {
+          "client": 768,
+          "scroll": 768
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 1024,
+      "scroll": 1024,
+      "main": [
+        {
+          "client": 1024,
+          "scroll": 1024
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 1440,
+      "scroll": 1440,
+      "main": [
+        {
+          "client": 1440,
+          "scroll": 1440
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 1600,
+      "scroll": 1600,
+      "main": [
+        {
+          "client": 1600,
+          "scroll": 1600
+        }
+      ]
+    },
+    {
+      "mode": "silvermoon-dream",
+      "target": "home",
+      "width": 1920,
+      "scroll": 1920,
+      "main": [
+        {
+          "client": 1920,
+          "scroll": 1920
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "unknown": []
+}

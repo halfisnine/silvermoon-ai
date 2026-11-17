@@ -2,6 +2,7 @@
 // Browser regression against the built frontend; API responses are test fixtures.
 // Requires playwright and @sparticuz/chromium via NODE_PATH. Run after .dev/run bun run build.
 // Optional SILVERMOON_REVIEW_FONT supplies a local CJK font on minimal Linux hosts.
+// REVIEW_PACKAGE / REVIEW_TARGET / REVIEW_WIDTHS (prefixed SILVERMOON_) split long runs; reports stay isolated.
 const { chromium: pw } = require('playwright')
 const chromium = require('@sparticuz/chromium').default
 const fs = require('node:fs')
@@ -11,7 +12,10 @@ const http = require('node:http')
 const repo = path.resolve(__dirname, '../../../../..')
 const out = path.join(
   repo,
-  'build/dev/silvermoon-v1.2-review',
+  'build/dev/silvermoon-theme-review',
+  process.env.SILVERMOON_REVIEW_PACKAGE || '.',
+  process.env.SILVERMOON_REVIEW_TARGET || '.',
+  process.env.SILVERMOON_REVIEW_WIDTHS || '.',
   process.env.SILVERMOON_REVIEW_LONG_NAME ? 'long-name' : '.'
 )
 fs.mkdirSync(out, { recursive: true })
@@ -79,14 +83,21 @@ const server = http.createServer((req, res) => {
   }
   const endpoint =
     'https://api.silvermoon.example/compatible/very-long-route-for-mobile-layout-check/v1'
-  for (const mode of ['light', 'dark']) {
+  const packages = process.env.SILVERMOON_REVIEW_PACKAGE
+    ? [process.env.SILVERMOON_REVIEW_PACKAGE]
+    : ['default', 'silvermoon-dream']
+  for (const mode of packages) {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
+      colorScheme: 'dark',
       permissions: ['clipboard-read', 'clipboard-write'],
     })
     await context.addInitScript((mode) => {
       localStorage.setItem('i18nextLng', 'zhCN')
-      localStorage.setItem('newapi:theme:v1:mode', mode)
+      if (!sessionStorage.getItem('review-package-seeded')) {
+        localStorage.setItem('silvermoon:theme:v1:package', mode)
+        sessionStorage.setItem('review-package-seeded', 'yes')
+      }
     }, mode)
     let footerSettings = {}
     await context.route('**/api/**', async (route) => {
@@ -167,9 +178,32 @@ const server = http.createServer((req, res) => {
       }
       await route.fulfill({ json: { success: true, data } })
     })
+    // Block application scripts: the selected surfaces must already be present
+    // after parsing HTML/CSS, before any provider can correct a flash.
+    const bootPage = await context.newPage()
+    await bootPage.route('**/*.js', (route) => route.abort())
+    await bootPage.goto(baseUrl)
+    const bootState = await bootPage.evaluate(() => ({
+      theme: document.documentElement.dataset.themePackage,
+      background: getComputedStyle(document.body)
+        .getPropertyValue('--background')
+        .trim(),
+      mounted: document.querySelector('#root').childElementCount > 0,
+    }))
+    if (
+      bootState.theme !== mode ||
+      bootState.mounted ||
+      bootState.background !== (mode === 'default' ? '#eeedf6' : '#f1ecf8')
+    ) {
+      throw new Error(`Wrong theme before React: ${JSON.stringify(bootState)}`)
+    }
+    await bootPage.close()
     const page = await context.newPage()
     page.on('pageerror', (e) => errors.push(String(e)))
-    for (const target of ['home', 'console']) {
+    const targets = process.env.SILVERMOON_REVIEW_TARGET
+      ? [process.env.SILVERMOON_REVIEW_TARGET]
+      : ['home', 'console']
+    for (const target of targets) {
       await page.goto(
         baseUrl + (target === 'home' ? '/' : '/dashboard/overview')
       )
@@ -183,9 +217,10 @@ const server = http.createServer((req, res) => {
         })
       }
       await page.evaluate(() => document.fonts.ready)
-      for (const width of [
-        320, 360, 390, 430, 640, 641, 768, 1024, 1440, 1600, 1920,
-      ]) {
+      const widths = process.env.SILVERMOON_REVIEW_WIDTHS
+        ? process.env.SILVERMOON_REVIEW_WIDTHS.split(',').map(Number)
+        : [320, 360, 390, 430, 640, 641, 768, 1024, 1440, 1600, 1920]
+      for (const width of widths) {
         await page.setViewportSize({ width, height: 1000 })
         await page.evaluate(async () => {
           await new Promise((r) =>
@@ -208,6 +243,42 @@ const server = http.createServer((req, res) => {
             scroll: e.scrollWidth,
           })),
         }))
+        if (target === 'console' && mode === 'silvermoon-dream') {
+          const fullMoon = await page
+            .locator('.silvermoon-welcome > img')
+            .evaluate(async (image) => {
+              await image.decode()
+              const rect = image.getBoundingClientRect()
+              const scale = Math.max(
+                rect.width / image.naturalWidth,
+                rect.height / image.naturalHeight
+              )
+              const top = (rect.height - image.naturalHeight * scale) * 0.1
+              return top + 88 * scale >= 0 && top + 610 * scale <= rect.height
+            })
+          if (!fullMoon) {
+            throw new Error(`Dream welcome moon is cropped at ${width}px`)
+          }
+        }
+        if (target === 'console') {
+          const clipped = await page
+            .locator('[data-slot="sidebar-wrapper"] > header')
+            .evaluate((header) => {
+              const bounds = header.getBoundingClientRect()
+              return [...header.querySelectorAll('button')].some((button) => {
+                const rect = button.getBoundingClientRect()
+                return (
+                  rect.width > 0 &&
+                  (rect.left < bounds.left ||
+                    rect.right > bounds.right ||
+                    rect.bottom > bounds.bottom)
+                )
+              })
+            })
+          if (clipped) {
+            throw new Error(`Console header actions clipped at ${width}px`)
+          }
+        }
         if (target === 'home') {
           await page.evaluate(() =>
             window.scrollTo({ top: 0, behavior: 'instant' })
@@ -753,6 +824,62 @@ const server = http.createServer((req, res) => {
           }
         }
         await page.setViewportSize({ width: 390, height: 844 })
+        // Mobile package chooser must remain accessible and preserve page state.
+        const welcome = await page.locator('.silvermoon-welcome').textContent()
+        await page.getByRole('button', { name: '打开主题设置' }).click()
+        await page.getByRole('radio', { name: '银月梦境', exact: true }).click()
+        await page.waitForFunction(
+          () => document.body.dataset.themePreset === 'silvermoon-dream'
+        )
+        await page.screenshot({ path: `${out}/theme-picker-${mode}-390.png` })
+        await page
+          .getByRole('radiogroup', { name: '主题', exact: true })
+          .getByRole('radio', { name: '默认', exact: true })
+          .click()
+        await page.waitForFunction(
+          () => !document.body.hasAttribute('data-theme-preset')
+        )
+        // Arrow keys use the shared radio group keyboard behavior.
+        await page
+          .getByRole('radiogroup', { name: '主题', exact: true })
+          .getByRole('radio', { name: '默认', exact: true })
+          .focus()
+        await page.keyboard.press('ArrowDown')
+        await page.waitForFunction(
+          () => document.body.dataset.themePreset === 'silvermoon-dream'
+        )
+        if (mode === 'default') {
+          await page
+            .getByRole('radiogroup', { name: '主题', exact: true })
+            .getByRole('radio', { name: '默认', exact: true })
+            .click()
+        }
+        await page.keyboard.press('Escape')
+        await page.getByRole('dialog').waitFor({ state: 'hidden' })
+        if (
+          welcome !== (await page.locator('.silvermoon-welcome').textContent())
+        ) {
+          throw new Error('Package switch changed page content')
+        }
+        await page.reload()
+        await page.locator('.silvermoon-welcome').waitFor()
+        if (
+          (await page.locator('html').getAttribute('data-theme-package')) !==
+          mode
+        ) {
+          throw new Error('Package was not restored on refresh')
+        }
+        await page.emulateMedia({ colorScheme: 'light' })
+        await page.emulateMedia({ colorScheme: 'dark' })
+        if (
+          !(await page.evaluate(
+            () =>
+              document.documentElement.classList.contains('light') &&
+              !document.documentElement.classList.contains('dark')
+          ))
+        ) {
+          throw new Error('OS appearance changed package surface mode')
+        }
         const trigger = page.locator('[data-slot="sidebar-trigger"]').first()
         await trigger.click()
         await page.locator('[data-mobile="true"]').waitFor()

@@ -221,3 +221,21 @@ NODE_PATH=/tmp/silvermoon-visual-check/node_modules SILVERMOON_REVIEW_FONT=/tmp/
 重新构建前后端，在旧候选镜像的相同运行时基础上替换本地编译的内嵌应用，生成仅供验证的本地镜像。独立临时 SQLite 容器的镜像检查通过；浏览器无 API mock、无品牌 SQL 注入，使用真实空库从初始化向导走完四步，再检查首页，覆盖 1440px/390px、静态标题/图标、初始化名称/徽标和初始化后的导航品牌。连续两次空库流程通过，截图保存在 `design/silvermoon/implementation/v1.2-fresh-branding/`。这不是重新发布的 GitHub 候选镜像，新的发布镜像仍由用户手动触发 Actions 构建。
 
 发布构建现运行状态品牌用例，镜像检查增加空库 `/api/status` 品牌及默认图片文件验证，避免开发库配置再次掩盖问题。修复继续提交到 `codex/silvermoon-v1.2-candidate`，不合并 `custom/main`。
+
+## 2026-11-17 主题包 V1：默认 / 银月梦境
+
+本轮在 `codex/silvermoon-theme-packages` 开发，以 `de27ed10a5f272a9c52e8c102217377d1ab1c5cc` 为基线。此前 V1.2 样式作为“默认”保留；新增“银月梦境”可选整套外观。基线提交和既有设计目录保持可追溯，不合并 `custom/main`。
+
+改动限定前端主题状态、展示入口、翻译、样式与测试。默认保留月白底色、暮蓝侧栏；梦境采用浅雾紫侧栏、月夜欢迎区域、柔和粉紫背景和半透明概览卡片，表单、菜单、弹层使用实色表面保证可读性。共用现有月夜 WebP，不引入新依赖；原设计截图中的城堡、花草没有独立素材，本版不包含这些插画，也未将整张截图当作页面背景。
+
+废除独立的深色/浅色/跟随系统切换及配色、字体、圆角混搭入口。顶部主题菜单、控制台外观设置和快捷搜索共用两套主题定义；手机端也能打开主题设置。字号密度、内容宽度与现有布局设置继续保留。主题选择使用独立的本地版本化存储键，旧明暗/配色/字体/圆角偏好退回默认，原阅读设置保留。HTML 在应用脚本运行前恢复主题，系统明暗变化不改变主题；存储受限时仍能在当前页面切换。
+
+复用 ThemeCustomizationProvider、ThemeSwitch、ConfigDrawer、CommandMenu 及共享 DropdownMenu/RadioGroup；原入口没有完整风格的预览能力，因此新增 ThemePicker 组合共享单选控件和装饰性预览，不复制单选状态或键盘交互。概览业务组件只增加一个装饰区域的 CSS 类；余额、消耗、请求数、数据来源、权限、路由和业务操作保持原实现。未修改任何后端文件、数据库结构或 Redis 配置。
+
+扩展主题时更新 `web/src/lib/theme-customization.ts` 的主题列表、对应独立样式、七语言文案及 `web/index.html` 的首屏白名单，并扩展主题恢复用例。每套风格由自身样式控制配色和装饰，不重新引入独立明暗开关。回看旧外观可直接选择“默认”；完整旧代码保存在上述基线提交。
+
+验证完成：`.dev/run bun run typecheck` 通过（1,421 文件）；主题首屏/偏好、颜色观察、首页、概览引导与状态品牌用例共 66 项通过。全部修改文件格式检查通过，lint 零错误零警告，`git diff --check` 通过。`.dev/stack rebuild` 构建成功，`python3 .dev/verify-stack.py` 确认独立开发环境四服务健康，专属数据库/Redis、卷与网络隔离保持。
+
+浏览器验证使用构建产物和 API 测试数据，按两套主题 × 首页/控制台 × 320、360、390、430、640、641、768、1024、1440、1600、1920px 共 44 组完成，零页面脚本异常、零未匹配 API 请求。覆盖横向溢出、顶部按钮裁切、侧栏 hover/focus 对比度、手机导航、协议示例与复制、公告与页脚、手机主题预览、单选键盘操作、切换前后内容保留和刷新恢复。额外阻止应用脚本加载，确认 HTML/CSS 首屏即应用保存的主题；切换系统明暗不改变主题。梦境欢迎区增加完整月亮的取景边界检查，默认主题保持原图布局。
+
+测试命令使用既有 `web/src/features/home/__tests__/silvermoon-layout.browser.cjs`，通过 `SILVERMOON_REVIEW_PACKAGE`（`default` / `silvermoon-dream`）、`SILVERMOON_REVIEW_TARGET`（`home` / `console`）、`SILVERMOON_REVIEW_WIDTHS`（逗号分隔宽度）分批执行，避免单次浏览器检查超过执行窗口。截图与汇总报告保存于 `design/silvermoon/implementation/theme-pack-v1/`；图中的余额和用量均为测试数据。代码保存在功能分支，不触发镜像发布、不合并主分支、不部署生产。
