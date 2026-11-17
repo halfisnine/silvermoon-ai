@@ -330,7 +330,7 @@ const server = http.createServer((req, res) => {
                 'Public navigation must span the viewport and remain at the top'
               )
             }
-            if (bar.height !== (width >= 1024 ? 81 : 65)) {
+            if (bar.height !== (width >= 1024 ? 65 : 57)) {
               throw new Error(
                 `Unexpected navigation height at ${width}px: ${bar.height}`
               )
@@ -810,6 +810,7 @@ const server = http.createServer((req, res) => {
         })
         await page.locator('.silvermoon-nav-link[href="/about"]').click()
         await page.waitForURL('**/about')
+        await page.locator('.silvermoon-hero').waitFor({ state: 'hidden' })
         const aboutHeader = page.locator('.silvermoon-public-header')
         await aboutHeader
           .locator('a[aria-current="page"][href="/about"]')

@@ -154,7 +154,7 @@ body:not([data-theme-preset])
   padding-inline: 48px;
 }
 .silvermoon-public-nav {
-  height: 80px;
+  height: 64px;
   gap: 24px;
 }
 .silvermoon-nav-brand {
@@ -287,7 +287,7 @@ body:not([data-theme-preset])
     padding-inline: 20px;
   }
   .silvermoon-public-nav {
-    height: 64px;
+    height: 56px;
     gap: 12px;
   }
   .silvermoon-nav-name {
