@@ -124,59 +124,72 @@ body:not([data-theme-preset])
   background: var(--background);
 }
 .silvermoon-public-header {
-  background: transparent;
-  border: 0;
+  background: color-mix(in srgb, var(--card) 96%, transparent);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(12px);
+  transition:
+    background-color 200ms,
+    box-shadow 200ms;
+}
+.silvermoon-public-header[data-scrolled] {
+  box-shadow: 0 4px 20px -12px #18202f40;
+}
+/* Only the illustrated landing page uses light controls over the night sky. */
+.silvermoon-landing:has(.silvermoon-hero)
+  > .silvermoon-public-header:not([data-scrolled]):not([data-mobile-open]) {
+  --foreground: #f8f9ff;
+  --muted-foreground: #dce1f0;
+  --muted: #ffffff12;
+  --secondary: #ffffff1a;
+  --secondary-foreground: #ffffff;
+  --border: #ffffff24;
+  --ring: #c7c0ff;
+  color: var(--foreground);
+  background: linear-gradient(180deg, #0b0f19cc, #0b0f1980 55%, transparent);
+  border-bottom-color: #ffffff0f;
+  backdrop-filter: blur(4px);
 }
 .silvermoon-public-header .silvermoon-nav-shell {
-  max-width: 1240px;
-  padding: 8px 24px 0;
-  transition-property: max-width, padding;
-  transition-duration: 250ms;
-}
-.silvermoon-public-header[data-scrolled] .silvermoon-nav-shell {
-  max-width: 1120px;
+  max-width: 1280px;
+  padding-inline: 48px;
 }
 .silvermoon-public-nav {
-  height: 48px;
-  padding: 2px 10px 2px 14px;
-  gap: 16px;
-  border-radius: 16px;
-  background: color-mix(in srgb, var(--card) 94%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
-  box-shadow: 0 6px 24px -12px #26324c30;
-  backdrop-filter: blur(20px);
-  --tw-ring-shadow: 0 0 #0000;
-  transition-property: background-color, box-shadow;
-  transition-duration: 250ms;
-}
-.silvermoon-public-header[data-scrolled] .silvermoon-public-nav {
-  box-shadow: 0 10px 30px -14px #26324c50;
+  height: 80px;
+  gap: 24px;
 }
 .silvermoon-nav-brand {
+  flex: 1 1 0;
   gap: 6px;
 }
 .silvermoon-nav-home {
   min-height: 44px;
+  gap: 12px;
+}
+.silvermoon-nav-name {
+  font-size: 18px;
 }
 .silvermoon-nav-logo {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: 0 0 16px #9b9de533;
 }
 .silvermoon-nav-logo img {
   border-radius: 50%;
 }
 .silvermoon-nav-desktop {
-  gap: 3px;
+  flex-shrink: 0;
+  gap: 6px;
 }
 .silvermoon-nav-link {
   display: flex;
   align-items: center;
   min-height: 38px;
-  padding: 8px 12px;
+  padding: 8px 14px;
   color: var(--muted-foreground);
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-weight: 400;
 }
 .silvermoon-nav-link:is(:hover, :focus-visible) {
   color: var(--foreground);
@@ -185,6 +198,8 @@ body:not([data-theme-preset])
 .silvermoon-nav-link[aria-current='page'] {
   color: var(--secondary-foreground);
   background: var(--secondary);
+  border-color: var(--border);
+  font-weight: 500;
 }
 .silvermoon-nav-home:focus-visible,
 .silvermoon-nav-link:focus-visible {
@@ -192,11 +207,10 @@ body:not([data-theme-preset])
   outline-offset: 2px;
 }
 .silvermoon-nav-tools {
-  flex-shrink: 0;
-  gap: 2px;
-  margin-left: 10px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border);
+  flex: 1 0 0;
+  min-width: max-content;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .silvermoon-nav-tools > button,
 .silvermoon-nav-tools > a {
@@ -206,11 +220,23 @@ body:not([data-theme-preset])
 }
 .silvermoon-nav-tools > button,
 .silvermoon-nav-mobile > button {
-  color: var(--foreground);
+  color: var(--muted-foreground);
 }
 .silvermoon-nav-tools > button:is(:hover, :focus-visible),
 .silvermoon-nav-mobile > button:is(:hover, :focus-visible) {
   background: var(--muted);
+  color: var(--foreground);
+}
+.silvermoon-nav-tools .silvermoon-nav-sign-in {
+  margin-left: 4px;
+  padding-inline: 18px;
+  background: linear-gradient(110deg, #6253b3, #78549e);
+  color: #fff;
+  border: 1px solid #b8abec45;
+  box-shadow: 0 2px 12px #6355b326;
+}
+.silvermoon-nav-tools .silvermoon-nav-sign-in:hover {
+  background: linear-gradient(110deg, #5748a3, #6b478f);
 }
 .silvermoon-public-header [data-slot='avatar'] {
   width: 28px;
@@ -218,8 +244,8 @@ body:not([data-theme-preset])
 }
 /* Scope brand colors to the navigation initials, which have inline user colors. */
 .silvermoon-public-header [data-slot='avatar-fallback'] {
-  background-color: var(--primary) !important;
-  color: var(--primary-foreground) !important;
+  background-color: #716089 !important;
+  color: #fff !important;
 }
 .silvermoon-nav-mobile {
   gap: 2px;
@@ -245,19 +271,34 @@ body:not([data-theme-preset])
   background: var(--secondary);
   color: var(--secondary-foreground);
 }
-@media (max-width: 1023px) {
+@media (max-width: 1279px) {
   .silvermoon-public-header .silvermoon-nav-shell {
-    padding-inline: 12px;
+    padding-inline: 24px;
   }
   .silvermoon-public-nav {
-    padding-inline: 10px 4px;
-    gap: 8px;
+    gap: 16px;
+  }
+  .silvermoon-nav-link {
+    padding-inline: 12px;
+  }
+}
+@media (max-width: 1023px) {
+  .silvermoon-public-header .silvermoon-nav-shell {
+    padding-inline: 20px;
+  }
+  .silvermoon-public-nav {
+    height: 64px;
+    gap: 12px;
+  }
+  .silvermoon-nav-name {
+    font-size: 16px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .silvermoon-public-header .silvermoon-nav-shell,
-  .silvermoon-public-nav {
-    transition: none;
+  .silvermoon-public-header,
+  .silvermoon-mobile-navigation,
+  .silvermoon-mobile-navigation * {
+    transition: none !important;
   }
 }
 .silvermoon-hero {
@@ -266,14 +307,14 @@ body:not([data-theme-preset])
   overflow: hidden;
   background: #3c4c73;
   color: #fff5fa;
-  padding-top: 64px;
+  padding-top: 80px;
 }
 .silvermoon-hero-art {
   position: absolute;
   z-index: -3;
-  inset: 32px 0 auto auto;
+  inset: 56px 0 auto auto;
   width: min(78%, 760px);
-  height: calc(100% - 32px);
+  height: calc(100% - 56px);
   object-fit: cover;
   object-position: center top;
   mask-image: linear-gradient(90deg, transparent, #000 24%);
@@ -733,16 +774,18 @@ body:not([data-theme-preset])
   .silvermoon-hero {
     background: var(--background);
     color: var(--foreground);
+    padding-top: 72px;
   }
   .silvermoon-hero-art {
-    top: 64px;
+    top: 72px;
     width: 100%;
     height: clamp(310px, 65vw, 416px);
     object-position: center 12%;
     mask-image: linear-gradient(#000 76%, transparent);
   }
   .silvermoon-hero::before {
-    display: none;
+    height: 72px;
+    background: #3c4c73;
   }
   .silvermoon-hero::after {
     display: none;

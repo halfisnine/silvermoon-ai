@@ -122,7 +122,11 @@ const server = http.createServer((req, res) => {
           quota_per_unit: 500000,
         }
       } else if (path === '/api/setup') data = { status: true }
-      else if (path === '/api/home_page_content' || path === '/api/notice') {
+      else if (
+        path === '/api/home_page_content' ||
+        path === '/api/notice' ||
+        path === '/api/about'
+      ) {
         data = ''
       } else if (path === '/api/user/auth/refresh') {
         data = {
@@ -311,10 +315,47 @@ const server = http.createServer((req, res) => {
                 `Header controls clipped at ${width}px / scroll ${scrollTop}`
               )
             }
+            const bar = await header.evaluate((element) => {
+              const bounds = element.getBoundingClientRect()
+              return {
+                left: bounds.left,
+                right: bounds.right,
+                top: bounds.top,
+                height: bounds.height,
+                background: getComputedStyle(element).backgroundImage,
+              }
+            })
+            if (bar.left !== 0 || bar.right !== width || bar.top !== 0) {
+              throw new Error(
+                'Public navigation must span the viewport and remain at the top'
+              )
+            }
+            if (bar.height !== (width >= 1024 ? 81 : 65)) {
+              throw new Error(
+                `Unexpected navigation height at ${width}px: ${bar.height}`
+              )
+            }
+            if ((bar.background !== 'none') !== (scrollTop === 0)) {
+              throw new Error(
+                'Sky gradient must give way to a readable surface after scrolling'
+              )
+            }
             if (width >= 1024) {
               await header
                 .locator('.silvermoon-nav-link[aria-current="page"][href="/"]')
                 .waitFor()
+              if (width >= 1440) {
+                const menuBounds = await header
+                  .locator('.silvermoon-nav-desktop')
+                  .boundingBox()
+                if (
+                  Math.abs(menuBounds.x + menuBounds.width / 2 - width / 2) > 2
+                ) {
+                  throw new Error(
+                    'Desktop navigation links must remain centered between brand and actions'
+                  )
+                }
+              }
               if (scrollTop && width >= 1440 && navigation.width < 1000) {
                 throw new Error('Scrolled header is too cramped')
               }
@@ -766,6 +807,25 @@ const server = http.createServer((req, res) => {
         })
         await publicHeader.screenshot({
           path: `${out}/header-${mode}-authenticated.png`,
+        })
+        await page.locator('.silvermoon-nav-link[href="/about"]').click()
+        await page.waitForURL('**/about')
+        const aboutHeader = page.locator('.silvermoon-public-header')
+        await aboutHeader
+          .locator('a[aria-current="page"][href="/about"]')
+          .first()
+          .waitFor()
+        if (
+          (await aboutHeader.evaluate(
+            (element) => getComputedStyle(element).backgroundImage
+          )) !== 'none'
+        ) {
+          throw new Error(
+            'Plain public pages must not inherit the sky gradient'
+          )
+        }
+        await aboutHeader.screenshot({
+          path: `${out}/header-${mode}-about.png`,
         })
       }
     }

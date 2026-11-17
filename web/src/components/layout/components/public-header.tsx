@@ -114,7 +114,7 @@ export function PublicHeader(props: PublicHeaderProps) {
   let authContent = (
     <Button
       size='sm'
-      className='h-8 rounded-lg px-3.5 text-xs font-medium'
+      className='silvermoon-nav-sign-in h-8 rounded-lg px-3.5 text-xs font-medium'
       render={<Link to='/sign-in' />}
     >
       {t('Sign in')}
@@ -203,23 +203,12 @@ export function PublicHeader(props: PublicHeaderProps) {
       <header
         className='silvermoon-public-header pointer-events-none fixed inset-x-0 top-0 z-50'
         data-scrolled={scrolled || undefined}
+        data-mobile-open={mobileOpen || undefined}
       >
-        <div
-          className={cn(
-            'silvermoon-nav-shell pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
-          )}
-        >
-          <nav
-            className={cn(
-              'silvermoon-public-nav flex items-center justify-between gap-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-16 px-2'
-            )}
-          >
+        <div className='silvermoon-nav-shell mx-auto'>
+          <nav className='silvermoon-public-nav pointer-events-auto flex items-center justify-between'>
             {/* Logo */}
-            <div className='silvermoon-nav-brand @container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
+            <div className='silvermoon-nav-brand @container/system-brand flex min-w-0 items-center gap-1'>
               <Link
                 to={homeUrl}
                 className='silvermoon-nav-home group flex min-w-0 items-center gap-2.5'
@@ -228,7 +217,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                   {logoContent}
                 </div>
                 <span
-                  className='max-w-48 truncate text-sm font-semibold tracking-tight'
+                  className='silvermoon-nav-name max-w-48 truncate font-medium tracking-wide'
                   title={displaySiteName}
                 >
                   {loading ? (
@@ -285,30 +274,30 @@ export function PublicHeader(props: PublicHeaderProps) {
                   </Link>
                 )
               })}
-
-              {(showLanguageSwitcher ||
-                showThemeSwitch ||
-                showNotifications ||
-                showAuthButtons) && (
-                <div className='silvermoon-nav-tools flex items-center gap-1'>
-                  {showLanguageSwitcher && <LanguageSwitcher />}
-                  {showThemeSwitch && <ThemeSwitch />}
-                  {showNotifications && (
-                    <NotificationPopover
-                      open={notifications.popoverOpen}
-                      onOpenChange={notifications.setPopoverOpen}
-                      unreadCount={notifications.unreadCount}
-                      activeTab={notifications.activeTab}
-                      onTabChange={notifications.setActiveTab}
-                      notice={notifications.notice}
-                      announcements={notifications.announcements}
-                      loading={notifications.loading}
-                    />
-                  )}
-                  {showAuthButtons && authContent}
-                </div>
-              )}
             </div>
+
+            {(showLanguageSwitcher ||
+              showThemeSwitch ||
+              showNotifications ||
+              showAuthButtons) && (
+              <div className='silvermoon-nav-tools hidden items-center lg:flex'>
+                {showLanguageSwitcher && <LanguageSwitcher />}
+                {showThemeSwitch && <ThemeSwitch />}
+                {showNotifications && (
+                  <NotificationPopover
+                    open={notifications.popoverOpen}
+                    onOpenChange={notifications.setPopoverOpen}
+                    unreadCount={notifications.unreadCount}
+                    activeTab={notifications.activeTab}
+                    onTabChange={notifications.setActiveTab}
+                    notice={notifications.notice}
+                    announcements={notifications.announcements}
+                    loading={notifications.loading}
+                  />
+                )}
+                {showAuthButtons && authContent}
+              </div>
+            )}
 
             {/* Mobile: compact actions + hamburger */}
             <div className='silvermoon-nav-mobile flex shrink-0 items-center gap-2 lg:hidden'>
