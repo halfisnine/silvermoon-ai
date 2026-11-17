@@ -21,14 +21,14 @@ import { ArrowUpRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
 import { AnnouncementsPanel } from '@/features/dashboard/components/overview/announcements-panel'
 import { useApiInfo } from '@/features/dashboard/hooks/use-status-data'
 import { useStatus } from '@/hooks/use-status'
 import { isHttpUrl } from '@/lib/content-format'
+
+import { SilvermoonIntegration } from './silvermoon-integration'
 
 export function SilvermoonHome() {
   const { t } = useTranslation()
@@ -100,67 +100,34 @@ export function SilvermoonHome() {
         </span>
       </section>
       <div className='silvermoon-home-width silvermoon-home-info'>
-        <section
-          className='silvermoon-access-grid'
-          aria-label={t('Connection and support')}
+        <SilvermoonIntegration
+          endpoint={endpoint}
+          loading={loading}
+          description={route?.description}
         >
-          <div className='silvermoon-access-card'>
-            <p className='silvermoon-kicker'>01 / API</p>
-            <h2>{t('Your next request starts here.')}</h2>
-            {loading && <Skeleton className='mt-4 h-12 w-full' />}
-            {!loading && endpoint && (
-              <div className='silvermoon-endpoint'>
-                <code>{endpoint}</code>
-                <CopyButton
-                  value={endpoint}
-                  variant='outline'
-                  size='default'
-                  aria-label={t('Copy API address')}
-                >
-                  {t('Copy')}
-                </CopyButton>
-              </div>
-            )}
-            {!loading && !endpoint && (
-              <p className='silvermoon-empty-endpoint'>
-                {t('No API routes configured')}
-              </p>
-            )}
-            <p className='silvermoon-endpoint-hint'>
-              {route?.description ||
-                t('Use the address required by your client setup guide.')}
-            </p>
+          <div className='silvermoon-support-actions'>
+            <Button
+              variant='outline'
+              render={
+                docsLink ? (
+                  <a
+                    href={docsLink}
+                    target='_blank'
+                    rel='noopener noreferrer'
+                  />
+                ) : undefined
+              }
+              onClick={docsLink ? undefined : () => setGuideOpen(true)}
+            >
+              {docsLink ? t('Docs') : t('Setup guide')}
+              <ArrowUpRight aria-hidden='true' />
+            </Button>
+            <Button variant='outline' render={<Link to='/about' />}>
+              {t('About')}
+              <ArrowUpRight aria-hidden='true' />
+            </Button>
           </div>
-          <div className='silvermoon-access-card silvermoon-support-card'>
-            <p className='silvermoon-kicker'>02 / {t('Help')}</p>
-            <h2>{t('A little help, whenever you need it.')}</h2>
-            <p>
-              {t('Find setup instructions and information about this service.')}
-            </p>
-            <div className='silvermoon-support-actions'>
-              <Button
-                variant='outline'
-                render={
-                  docsLink ? (
-                    <a
-                      href={docsLink}
-                      target='_blank'
-                      rel='noopener noreferrer'
-                    />
-                  ) : undefined
-                }
-                onClick={docsLink ? undefined : () => setGuideOpen(true)}
-              >
-                {docsLink ? t('Docs') : t('Setup guide')}
-                <ArrowUpRight aria-hidden='true' />
-              </Button>
-              <Button variant='outline' render={<Link to='/about' />}>
-                {t('About')}
-                <ArrowUpRight aria-hidden='true' />
-              </Button>
-            </div>
-          </div>
-        </section>
+        </SilvermoonIntegration>
         {status?.announcements_enabled !== false && (
           <AnnouncementsPanel compact />
         )}

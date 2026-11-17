@@ -104,3 +104,25 @@ NODE_PATH=/tmp/silvermoon-visual-check/node_modules SILVERMOON_REVIEW_FONT=/tmp/
 根据用户关于页脚留白和品牌重复的反馈，在已有共享 Footer 上增加可选 compact 展示，仅由银月默认首页启用。普通首页去掉重复的 Logo/站点介绍和版权区上方第二条分隔线，压缩上下间距；保留动态年份、站点版权、已有协议链接和上游项目署名。自定义 HTML 页脚及演示站点的导航列仍使用原布局，其他调用不受影响。
 
 桌面实际页脚高度约 49px，390px 手机宽度约 73px。浏览器回归增加紧凑高度、无重复 Logo、上游署名可见的检查，原有 28 组屏宽/主题检查均通过。类型检查、构建、格式检查通过，lint 无错误；共享页脚既有自定义 HTML 渲染提示保留。开发环境已更新，生产环境未部署。
+
+## 2026-11-17 首页接入示例与品牌页脚
+
+在 V1.2 已实现页面上采用用户提供的两张参考：将原地址/帮助双栏整合为居中的快速接入区域，包含后台配置地址、复制按钮、深蓝 cURL 示例和文档/关于入口。没有再增加重复地址区域；公告保持原有点击展开行为。模型名使用 YOUR_MODEL_NAME 占位符，密钥从用户本地 OPENAI_API_KEY 环境变量读取；页面不读取用户真实密钥，不发起模型请求。不展示未经验证的接入时长、全部客户端兼容性或 SLA 数字。
+
+地址仍读取公开状态中的首个有效 API 线路，未配置线路时回退 server_address；后台关闭 API 信息或未提供地址时不编造示例。复制地址保留后台原值。代码示例从根地址补齐 /v1/chat/completions，已有版本和自定义基础路径予以保留，完整 chat/completions 路径不重复添加；URL 以 shell 单引号转义，包含引号、变量或命令替换文本的配置不会作为 shell 命令执行。凭据嵌入 URL 时不生成示例。
+
+复用共享 CopyButton 和 CodeBlockFrame，以静态 pre/code 组合只读请求示例，避免为固定几行示例初始化编辑器。检查了 CodeBlock 和 HeroTerminalDemo；后者包含轮播、固定地址和模拟响应，不适合展示实际配置及准确复制。共享 Footer 兼容增加 brandSuffix 属性，仅银月首页传入 AI Gateway 与七语言标语；年份及站点名称继续动态读取。桌面紧凑行、手机自动换行，保留协议链接、后台自定义页脚优先级及上游 ProjectAttribution。截图中的 SLA 99.98% 没有真实监控依据，未作为服务承诺发布。
+
+验证：
+
+- `.dev/run bun run typecheck`：通过，1,418 个文件无类型错误。
+- `.dev/run bun run test --maxWorkers=1 src/features/home/__tests__/silvermoon-home.test.tsx`：17 项通过，包括地址/代码复制、地址归一化、shell 参数完整性、禁用及空配置、文档与公告。
+- 变更文件 oxfmt 检查通过；oxlint 无错误，仅保留共享 Footer 原有自定义 HTML 的 no-danger 提示。
+- 七语言经规定脚本补齐 5 个键并执行 i18n:sync，各语言 missingCount 为 0。
+- `.dev/stack rebuild`：前端生产构建、嵌入前端的后端编译及专属开发环境更新成功。
+- 浏览器脚本 `silvermoon-layout.browser.cjs`：320/360/390/430/768/1024/1440 宽度 × 深浅主题 × 首页/控制台，共 28 组通过；无页面横向溢出或脚本异常。新增代码复制、键盘聚焦、页脚年份/标语/紧凑高度检查。
+- `python3 .dev/verify-stack.py`：四个开发服务健康，独立 PostgreSQL/Redis、网络及数据卷隔离检查通过。
+
+开发环境更新，未发布镜像或部署生产；冻结 V1.2 设计稿和旧标签保留。对应本地分支 `codex/silvermoon-home-integration`，该分支提交可恢复此次实现。浏览器截图使用长地址测试数据，不代表实际运营域名或模型调用成功。
+
+本次桌面与手机截图保存在 `design/silvermoon/implementation/v1.2-home-integration/`，与代码一同提交，便于后续对比与恢复。

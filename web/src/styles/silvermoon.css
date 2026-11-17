@@ -233,22 +233,94 @@ body:not([data-theme-preset])
 .silvermoon-home-info {
   padding-block: 12px 24px;
 }
-.silvermoon-access-grid {
-  display: grid;
-  grid-template-columns: 1.25fr 1fr;
-  border-radius: 12px;
-  background: var(--card);
-  overflow: hidden;
+.silvermoon-integration {
+  max-width: 860px;
+  margin: 18px auto 28px;
 }
-.silvermoon-access-card {
-  min-width: 0;
-  padding: 27px 28px;
+.silvermoon-integration-heading {
+  text-align: center;
+  margin-bottom: 24px;
 }
-.silvermoon-access-card h2 {
+.silvermoon-integration-heading h2 {
   font-family: var(--font-serif);
-  font-size: 21px;
-  font-weight: 400;
-  line-height: 1.6;
+  font-size: clamp(22px, 3vw, 30px);
+  line-height: 1.5;
+  font-weight: 500;
+}
+.silvermoon-integration-heading > p:last-child {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.silvermoon-integration-panel {
+  padding: 24px;
+  min-width: 0;
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 12px 36px -24px #7968a04d;
+}
+.silvermoon-endpoint-label {
+  display: inline-block;
+  margin-right: 12px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.silvermoon-integration-panel .silvermoon-endpoint {
+  margin-top: 0;
+}
+.silvermoon-integration-code {
+  --foreground: #e8edf6;
+  --muted-foreground: #b6c3d6;
+  --muted: #2b3c53;
+  --border: #61718a;
+  --accent: #354963;
+  --accent-foreground: #ffffff;
+  background: #203044;
+  border: 0;
+  margin: 20px 0 0;
+  border-radius: 10px;
+}
+.silvermoon-integration-code pre {
+  margin: 0;
+  padding: 18px;
+  font-size: 12px;
+  line-height: 1.85;
+  white-space: pre;
+  overflow-x: auto;
+}
+.silvermoon-integration-code pre:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: -3px;
+}
+.silvermoon-integration-code [data-slot='button'] {
+  min-height: 44px;
+  font-size: 12px;
+}
+.silvermoon-code-title {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.silvermoon-terminal-dots {
+  color: #b9a5da;
+  letter-spacing: 1px;
+}
+.silvermoon-integration-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 18px;
+}
+.silvermoon-integration-bottom > p {
+  flex: 1 1 240px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.silvermoon-integration-bottom .silvermoon-support-actions {
+  margin-top: 0;
 }
 .silvermoon-kicker {
   font-size: 10px;
@@ -281,18 +353,6 @@ body:not([data-theme-preset])
   font-size: 12px;
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
-}
-.silvermoon-support-card {
-  background: linear-gradient(
-    120deg,
-    color-mix(in srgb, var(--card), #c5b2d0 8%),
-    color-mix(in srgb, var(--card), #e2b9cc 15%)
-  );
-}
-.silvermoon-support-card > p:not(.silvermoon-kicker) {
-  font-size: 13px;
-  color: var(--muted-foreground);
-  margin-top: 8px;
 }
 .silvermoon-support-actions {
   display: flex;
@@ -344,6 +404,10 @@ body:not([data-theme-preset])
 
 .silvermoon-footer[data-compact] > div {
   padding-block: 16px;
+}
+.silvermoon-footer[data-compact] > div > div:last-child > div:first-child {
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
 }
 .silvermoon-footer[data-compact] > div > div:last-child {
   margin-top: 0;
@@ -460,9 +524,6 @@ body:not([data-theme-preset])
   .silvermoon-home-width {
     padding-inline: 28px;
   }
-  .silvermoon-access-card {
-    padding: 24px;
-  }
   .silvermoon-summary-layout {
     grid-template-columns: 1fr;
   }
@@ -543,14 +604,11 @@ body:not([data-theme-preset])
   .silvermoon-art-caption {
     display: none;
   }
-  .silvermoon-access-grid {
-    grid-template-columns: 1fr;
+  .silvermoon-integration-panel {
+    padding: 16px;
   }
-  .silvermoon-access-card {
-    padding: 22px 18px;
-  }
-  .silvermoon-access-card h2 {
-    font-size: 19px;
+  .silvermoon-integration-code pre {
+    padding: 14px;
   }
   .silvermoon-endpoint {
     padding-left: 10px;

@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { execFileSync } from 'node:child_process'
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
@@ -31,6 +33,7 @@ import { api } from '@/lib/api'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { SilvermoonHome } from '../components/silvermoon-home'
+import { buildIntegrationExample } from '../lib/integration-example'
 
 const animationsDescriptor = Object.getOwnPropertyDescriptor(
   Element.prototype,
@@ -102,6 +105,15 @@ describe('Silvermoon homepage', () => {
     await waitFor(() =>
       expect(clipboard).toHaveBeenCalledWith('https://route.example/custom/v1')
     )
+    await user.click(screen.getByRole('button', { name: 'Copy code' }))
+    await waitFor(() =>
+      expect(clipboard).toHaveBeenLastCalledWith(
+        screen.getByLabelText('cURL request example').textContent
+      )
+    )
+    expect(clipboard.mock.lastCall?.[0]).toContain(
+      "curl 'https://route.example/custom/v1/chat/completions'"
+    )
     expect(
       screen.queryByText('https://gateway.example')
     ).not.toBeInTheDocument()
@@ -113,14 +125,24 @@ describe('Silvermoon homepage', () => {
     expect(await screen.findByText('https://gateway.example')).toBeVisible()
   })
 
-  it('does not invent an endpoint when disabled or unconfigured', async () => {
-    status.api_info_enabled = false
-    await renderHome()
-    expect(await screen.findByText('No API routes configured')).toBeVisible()
-    expect(
-      screen.queryByRole('button', { name: 'Copy API address' })
-    ).not.toBeInTheDocument()
-  })
+  it.each(['disabled', 'unconfigured'])(
+    'does not invent an endpoint when %s',
+    async (state) => {
+      if (state === 'disabled') status.api_info_enabled = false
+      else {
+        status.api_info = []
+        status.server_address = ''
+      }
+      await renderHome()
+      expect(await screen.findByText('No API routes configured')).toBeVisible()
+      expect(
+        screen.queryByRole('button', { name: 'Copy API address' })
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Copy code' })
+      ).not.toBeInTheDocument()
+    }
+  )
 
   it('opens announcements only on request and closes them with Escape', async () => {
     const user = userEvent.setup()
@@ -166,5 +188,72 @@ describe('Silvermoon homepage', () => {
       'href',
       'https://docs.example/start'
     )
+  })
+})
+
+describe('Homepage cURL example', () => {
+  it.each([
+    ['https://gateway.example', 'https://gateway.example/v1/chat/completions'],
+    [
+      'https://gateway.example/v1/',
+      'https://gateway.example/v1/chat/completions',
+    ],
+    [
+      'https://gateway.example/proxy/v1',
+      'https://gateway.example/proxy/v1/chat/completions',
+    ],
+    [
+      'https://gateway.example/proxy',
+      'https://gateway.example/proxy/chat/completions',
+    ],
+    [
+      'https://gateway.example/v1/chat/completions/',
+      'https://gateway.example/v1/chat/completions',
+    ],
+  ])(
+    'builds the request path for %s without duplicating segments',
+    (endpoint, expected) => {
+      expect(buildIntegrationExample(endpoint).split('\n')[0]).toBe(
+        `curl '${expected}' \\`
+      )
+    }
+  )
+
+  it.each([
+    '',
+    'not-a-url',
+    'javascript:alert(1)',
+    'https://name:secret@gateway.example',
+  ])(
+    'does not generate a request for invalid or credential-bearing address %s',
+    (endpoint) => {
+      expect(buildIntegrationExample(endpoint)).toBe('')
+    }
+  )
+
+  it('keeps shell syntax in a configured URL literal and passes the key and JSON as complete arguments', () => {
+    const example = buildIntegrationExample(
+      "https://gateway.example/a'b/$(printf%20unsafe)/v1?route=$HOME"
+    )
+    // Replace curl at the process boundary: no network requests or real credentials.
+    const args = execFileSync(
+      'sh',
+      ['-c', `curl() { printf "%s\\0" "$@"; }\n${example}`],
+      {
+        env: { OPENAI_API_KEY: 'test-placeholder-key' },
+        encoding: 'utf8',
+      }
+    )
+      .split('\0')
+      .filter(Boolean)
+    expect(args).toEqual([
+      "https://gateway.example/a'b/$(printf%20unsafe)/v1/chat/completions?route=$HOME",
+      '-H',
+      'Authorization: Bearer test-placeholder-key',
+      '-H',
+      'Content-Type: application/json',
+      '-d',
+      '{\n    "model": "YOUR_MODEL_NAME",\n    "messages": [{"role": "user", "content": "Hello!"}]\n  }',
+    ])
   })
 })

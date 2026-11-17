@@ -120,7 +120,12 @@ export function Home() {
   return (
     <PublicLayout showMainContainer={false} className='silvermoon-landing'>
       <SilvermoonHome />
-      <Footer compact className='silvermoon-footer' />
+      <Footer
+        compact
+        brandSuffix='AI Gateway'
+        copyright={t('Wandering among clouds, stars and moonlight.')}
+        className='silvermoon-footer'
+      />
     </PublicLayout>
   )
 }

@@ -39,6 +39,7 @@ interface FooterProps {
   logo?: string
   name?: string
   columns?: FooterColumnProps[]
+  brandSuffix?: string
   copyright?: string
   className?: string
 }
@@ -300,7 +301,8 @@ export function Footer(props: FooterProps) {
         <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
           <div className='text-muted-foreground/40 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs sm:justify-start'>
             <span>
-              &copy; {currentYear} {displayName}.{' '}
+              &copy; {currentYear} {displayName}
+              {props.brandSuffix ? ` ${props.brandSuffix}` : ''}.{' '}
               {props.copyright ?? t('footer.defaultCopyright')}
             </span>
             <LegalLinks leadingSeparator />

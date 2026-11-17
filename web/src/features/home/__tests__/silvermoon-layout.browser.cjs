@@ -212,6 +212,27 @@ const server = http.createServer((req, res) => {
           if (await footer.locator('img').count()) {
             throw new Error('Compact homepage footer repeats the brand logo')
           }
+          if (
+            !(await footer.textContent()).includes(
+              `${new Date().getFullYear()} 银月 AI Gateway.`
+            )
+          ) {
+            throw new Error('Footer is missing current year or gateway brand')
+          }
+          if (!(await footer.textContent()).includes('漫步云端与星月之间。')) {
+            throw new Error('Footer slogan is missing')
+          }
+          if (/SLA|99\.98/.test(await footer.textContent())) {
+            throw new Error('Footer presents an unverified SLA')
+          }
+          await page.locator('.silvermoon-integration-code pre').focus()
+          if (
+            !(await page
+              .locator('.silvermoon-integration-code pre')
+              .evaluate((e) => e === document.activeElement))
+          ) {
+            throw new Error('Code example is not keyboard focusable')
+          }
           await footer
             .getByRole('link', { name: 'New API', exact: true })
             .waitFor()
@@ -224,6 +245,10 @@ const server = http.createServer((req, res) => {
           throw new Error(`Overflow ${JSON.stringify(results.at(-1))}`)
         }
         if ([390, 1440].includes(width)) {
+          await page.evaluate(() => {
+            document.activeElement?.blur()
+            window.scrollTo({ top: 0, behavior: 'instant' })
+          })
           await page.screenshot({
             path: `${out}/${target}-${mode}-${width}.png`,
             fullPage: true,
@@ -234,6 +259,20 @@ const server = http.createServer((req, res) => {
         await page.locator('.silvermoon-endpoint button').click()
         const copied = await page.evaluate(() => navigator.clipboard.readText())
         if (copied !== endpoint) throw new Error('Copy mismatch')
+        await page.locator('.silvermoon-integration-code button').click()
+        const copiedCode = await page.evaluate(() =>
+          navigator.clipboard.readText()
+        )
+        const displayedCode = await page
+          .locator('.silvermoon-integration-code pre')
+          .textContent()
+        if (
+          copiedCode !== displayedCode ||
+          !copiedCode.includes('YOUR_MODEL_NAME') ||
+          !copiedCode.includes('/chat/completions')
+        ) {
+          throw new Error('Code example copy mismatch')
+        }
         await page.locator('.silvermoon-news').click()
         await page.getByRole('dialog').waitFor()
         await page.keyboard.press('Escape')
