@@ -20,13 +20,30 @@ For commercial licensing, please contact support@quantumnous.com
 export const THEME_PRESETS = [
   {
     value: 'default',
+    artwork: '/silvermoon/moonlight.webp',
+    width: 1254,
+    height: 1254,
+    surface: '#eeedf6',
     name: 'Default',
     description: 'Moon-white canvas and a dusk-blue sidebar.',
   },
   {
     value: 'silvermoon-dream',
+    artwork: '/silvermoon/moonlight.webp',
+    width: 1254,
+    height: 1254,
+    surface: '#f1ecf8',
     name: 'Silvermoon Dream',
     description: 'Moonlit scenery, misty lilac and soft glass surfaces.',
+  },
+  {
+    value: 'crimson-clouds',
+    name: 'Crimson Moon, Flowing Clouds',
+    description: 'Rose moonlight, peach-gold clouds and violet skies.',
+    artwork: '/silvermoon/crimson-clouds.jpg',
+    width: 2016,
+    height: 1152,
+    surface: '#f7eaf0',
   },
 ] as const
 

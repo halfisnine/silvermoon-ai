@@ -910,4 +910,6 @@ export const STATIC_I18N_KEYS = [
   'Silvermoon Dream',
   'Moon-white canvas and a dusk-blue sidebar.',
   'Moonlit scenery, misty lilac and soft glass surfaces.',
+  'Crimson Moon, Flowing Clouds',
+  'Rose moonlight, peach-gold clouds and violet skies.',
 ] as const

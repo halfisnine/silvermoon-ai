@@ -40,6 +40,7 @@ const server = http.createServer((req, res) => {
     '.js': 'application/javascript',
     '.css': 'text/css',
     '.webp': 'image/webp',
+    '.jpg': 'image/jpeg',
     '.woff2': 'font/woff2',
     '.ttf': 'font/ttf',
   }
@@ -85,7 +86,7 @@ const server = http.createServer((req, res) => {
     'https://api.silvermoon.example/compatible/very-long-route-for-mobile-layout-check/v1'
   const packages = process.env.SILVERMOON_REVIEW_PACKAGE
     ? [process.env.SILVERMOON_REVIEW_PACKAGE]
-    : ['default', 'silvermoon-dream']
+    : ['default', 'silvermoon-dream', 'crimson-clouds']
   for (const mode of packages) {
     const context = await browser.newContext({
       viewport: { width: 1440, height: 1000 },
@@ -221,7 +222,12 @@ const server = http.createServer((req, res) => {
     if (
       bootState.theme !== mode ||
       bootState.mounted ||
-      bootState.background !== (mode === 'default' ? '#eeedf6' : '#f1ecf8')
+      bootState.background !==
+        {
+          default: '#eeedf6',
+          'silvermoon-dream': '#f1ecf8',
+          'crimson-clouds': '#f7eaf0',
+        }[mode]
     ) {
       throw new Error(`Wrong theme before React: ${JSON.stringify(bootState)}`)
     }
@@ -304,10 +310,7 @@ const server = http.createServer((req, res) => {
               )}`
             )
           }
-          if (
-            (mode === 'silvermoon-dream') !==
-            surface.scene.includes('url(')
-          ) {
+          if ((mode !== 'default') !== surface.scene.includes('url(')) {
             throw new Error('Scene is missing or leaked into default theme')
           }
           results.push({
@@ -387,6 +390,35 @@ const server = http.createServer((req, res) => {
             throw new Error(`Dream welcome moon is cropped at ${width}px`)
           }
         }
+        if (target === 'console' && mode === 'crimson-clouds') {
+          const subjectsVisible = await page
+            .locator('.silvermoon-welcome > img')
+            .evaluate(async (image) => {
+              await image.decode()
+              const rect = image.getBoundingClientRect()
+              const scale = Math.max(
+                rect.width / image.naturalWidth,
+                rect.height / image.naturalHeight
+              )
+              const [x, y] = getComputedStyle(image)
+                .objectPosition.split(' ')
+                .map((value) => Number.parseFloat(value) / 100)
+              const left = (rect.width - image.naturalWidth * scale) * x
+              const top = (rect.height - image.naturalHeight * scale) * y
+              return (
+                image.naturalWidth === 2016 &&
+                left + 910 * scale >= 0 &&
+                left + 1235 * scale <= rect.width &&
+                top + 600 * scale >= 0 &&
+                top + 1010 * scale <= rect.height
+              )
+            })
+          if (!subjectsVisible) {
+            throw new Error(
+              `Crimson welcome characters are cropped at ${width}px`
+            )
+          }
+        }
         if (target === 'console') {
           const clipped = await page
             .locator('[data-slot="sidebar-wrapper"] > header')
@@ -437,12 +469,17 @@ const server = http.createServer((req, res) => {
               const fade = Number.parseFloat(
                 getComputedStyle(hero, '::after').height
               )
-              // Conservative bounds of the moon and its immediate glow in the 1254px source.
+              // Original moon bounds; the landscape instead protects both full characters.
+              // Its giant moon intentionally extends beyond the source image.
+              const landscape = image.naturalWidth === 2016
+              const bounds = landscape
+                ? [910, 1235, 600, 1010]
+                : [370, 900, 88, 610]
               return {
-                left: left + 370 * scale,
-                right: left + 900 * scale,
-                top: top + 88 * scale,
-                bottom: top + 610 * scale,
+                left: left + bounds[0] * scale,
+                right: left + bounds[1] * scale,
+                top: top + bounds[2] * scale,
+                bottom: top + bounds[3] * scale,
                 visibleLeft: Math.max(rect.left, heroRect.left),
                 visibleRight: Math.min(rect.right, heroRect.right),
                 visibleTop: Math.max(rect.top, heroRect.top, headerBottom),
@@ -459,7 +496,7 @@ const server = http.createServer((req, res) => {
             moon.bottom > moon.visibleBottom
           ) {
             throw new Error(
-              `Moon is cropped or covered at ${width}px: ${JSON.stringify(moon)}`
+              `Artwork subject is cropped or covered at ${width}px: ${JSON.stringify(moon)}`
             )
           }
           const header = page.locator('.silvermoon-public-header')
@@ -958,7 +995,7 @@ const server = http.createServer((req, res) => {
         await page.waitForFunction(
           () => document.body.dataset.themePreset === 'silvermoon-dream'
         )
-        await page.screenshot({ path: `${out}/theme-picker-${mode}-390.png` })
+
         await page
           .getByRole('radiogroup', { name: '主题', exact: true })
           .getByRole('radio', { name: '默认', exact: true })
@@ -975,12 +1012,16 @@ const server = http.createServer((req, res) => {
         await page.waitForFunction(
           () => document.body.dataset.themePreset === 'silvermoon-dream'
         )
-        if (mode === 'default') {
+        if (mode !== 'silvermoon-dream') {
           await page
             .getByRole('radiogroup', { name: '主题', exact: true })
-            .getByRole('radio', { name: '默认', exact: true })
+            .getByRole('radio', {
+              name: mode === 'default' ? '默认' : '绯月流霞',
+              exact: true,
+            })
             .click()
         }
+        await page.screenshot({ path: `${out}/theme-picker-${mode}-390.png` })
         await page.keyboard.press('Escape')
         await page.getByRole('dialog').waitFor({ state: 'hidden' })
         if (
@@ -990,6 +1031,13 @@ const server = http.createServer((req, res) => {
         }
         await page.reload()
         await page.locator('.silvermoon-welcome').waitFor()
+        if (process.env.SILVERMOON_REVIEW_FONT) {
+          await page.addStyleTag({
+            content:
+              "@font-face{font-family:'Review Sans';src:url('/__review_font.ttf')} body{font-family:'Review Sans',sans-serif;--font-serif:'Review Sans',serif;--font-sans:'Review Sans',sans-serif;--font-ui-sans:'Review Sans',sans-serif;--font-body:'Review Sans',sans-serif}",
+          })
+          await page.evaluate(() => document.fonts.ready)
+        }
         if (
           (await page.locator('html').getAttribute('data-theme-package')) !==
           mode
@@ -1010,6 +1058,17 @@ const server = http.createServer((req, res) => {
         const trigger = page.locator('[data-slot="sidebar-trigger"]').first()
         await trigger.click()
         await page.locator('[data-mobile="true"]').waitFor()
+        await page.evaluate(async () => {
+          await Promise.allSettled(
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.effect?.getComputedTiming().iterations !== Infinity
+              )
+              .map((animation) => animation.finished)
+          )
+        })
         await page.screenshot({
           path: `${out}/console-${mode}-mobile-menu.png`,
         })
@@ -1092,6 +1151,7 @@ const server = http.createServer((req, res) => {
   )
   await browser.close()
   server.close()
+  server.closeAllConnections()
   process.stdout.write(
     `${JSON.stringify({ checks: results.length, errors, unknown: [...unknown] })}\n`
   )

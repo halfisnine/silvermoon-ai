@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { AnnouncementsPanel } from '@/features/dashboard/components/overview/announcements-panel'
 import { useApiInfo } from '@/features/dashboard/hooks/use-status-data'
 import { useStatus } from '@/hooks/use-status'
@@ -31,6 +32,7 @@ import { isHttpUrl } from '@/lib/content-format'
 import { SilvermoonIntegration } from './silvermoon-integration'
 
 export function SilvermoonHome() {
+  const { appearance } = useThemeCustomization()
   const { t } = useTranslation()
   const [guideOpen, setGuideOpen] = useState(false)
   const { status, loading } = useStatus()
@@ -55,10 +57,10 @@ export function SilvermoonHome() {
       <section className='silvermoon-hero' aria-labelledby='silvermoon-title'>
         <img
           className='silvermoon-hero-art'
-          src='/silvermoon/moonlight.webp'
+          src={appearance.artwork}
           alt=''
-          width={1254}
-          height={1254}
+          width={appearance.width}
+          height={appearance.height}
           fetchPriority='high'
         />
         <div className='silvermoon-home-width silvermoon-hero-content'>

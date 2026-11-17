@@ -1,0 +1,378 @@
+/* 绯月流霞 / Crimson Moon, Flowing Clouds — an independent visual package. */
+html[data-theme-package='crimson-clouds'] {
+  background: #f7eaf0;
+}
+body[data-theme-preset='crimson-clouds'] {
+  --background: #f7eaf0;
+  --foreground: #44364d;
+  --card: #fff9f7;
+  --card-foreground: #44364d;
+  --popover: #fff9f7;
+  --popover-foreground: #44364d;
+  --primary: #a94e70;
+  --primary-foreground: #fff;
+  --secondary: #f4dde4;
+  --secondary-foreground: #713e57;
+  --muted: #f3e3e8;
+  --muted-foreground: #775c6b;
+  --accent: #f3d3df;
+  --accent-foreground: #743b55;
+  --border: #e6cdd8;
+  --input: #cba6b8;
+  --ring: #ac5479;
+  --radius: 0.875rem;
+  --chart-1: #a95379;
+  --chart-2: #6b729d;
+  --chart-3: #bf8051;
+  --chart-4: #aa6b54;
+  --chart-5: #708c88;
+  --sidebar: #493650;
+  --sidebar-foreground: #fff2f4;
+  --sidebar-primary: #a94e70;
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: #f2cfdb;
+  --sidebar-accent-foreground: #683b53;
+  --sidebar-border: #97758f;
+  --sidebar-ring: #ac5479;
+  background:
+    radial-gradient(ellipse at 85% 5%, #e4def7 0, transparent 50%),
+    radial-gradient(ellipse at 10% 70%, #f6e8f1 0, transparent 55%),
+    var(--background);
+}
+/* User-supplied landscape is shared across console pages, with quiet reading surfaces. */
+body[data-theme-preset='crimson-clouds'] [data-slot='sidebar-wrapper'] {
+  position: relative;
+  isolation: isolate;
+  background: linear-gradient(120deg, #ebd8e6, #f2d6d7 55%, #fbe2cf);
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='sidebar-wrapper']::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  left: auto;
+  width: 100%;
+  z-index: -1;
+  pointer-events: none;
+  background: url('../../public/silvermoon/crimson-clouds.jpg') center 58% /
+    cover no-repeat;
+  mask-image: linear-gradient(90deg, #0008, #000 60%);
+  opacity: 0.64;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='sidebar-inner'],
+body[data-theme-preset='crimson-clouds']
+  [data-slot='sidebar'][data-mobile='true'] {
+  background-color: #493650;
+  background-image:
+    linear-gradient(180deg, #352c4bed, #4a3452d6 48%, #63425fa3),
+    url('../../public/silvermoon/crimson-clouds.jpg');
+  background-size:
+    cover,
+    auto 100%;
+  background-position:
+    center,
+    88% bottom;
+  background-repeat: no-repeat;
+  --foreground: var(--sidebar-foreground);
+  --muted-foreground: #e3ccd9;
+  --accent: var(--sidebar-accent);
+  --accent-foreground: var(--sidebar-accent-foreground);
+}
+body[data-theme-preset='crimson-clouds'] [data-sidebar='menu-button'] {
+  min-height: 44px;
+  border: 0;
+  box-shadow: none;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-sidebar='menu-button'][data-active],
+body[data-theme-preset='crimson-clouds']
+  :is(
+    [data-sidebar='menu-button'],
+    [data-sidebar='menu-sub-button'],
+    [data-sidebar='menu-action'],
+    [data-sidebar='group-action']
+  ):is(:hover, :focus-visible) {
+  color: var(--sidebar-accent-foreground);
+  background: var(--sidebar-accent);
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='sidebar-inset'] {
+  background: transparent;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-slot='sidebar-wrapper']
+  > header {
+  background: #fff4f2e8;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid #ffffff9c;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-welcome {
+  min-height: 300px;
+  padding: 36px;
+  border-radius: 20px;
+  background: #57435f;
+  color: #fff5f0;
+  box-shadow: 0 12px 32px -20px #67508866;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-welcome > img {
+  width: 70%;
+  max-width: none;
+  object-position: center bottom;
+  mask-image: linear-gradient(90deg, transparent, #000 38%);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-welcome::before {
+  background: linear-gradient(
+    90deg,
+    #57435f 0%,
+    #57435ff5 27%,
+    #57435fa8 52%,
+    #57435f10 85%
+  );
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-welcome > div {
+  max-width: 54%;
+}
+body[data-theme-preset='crimson-clouds']
+  .silvermoon-welcome
+  .silvermoon-eyebrow {
+  color: #ffdbc5;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-welcome h1 {
+  font-size: clamp(26px, 2.8vw, 38px);
+}
+body[data-theme-preset='crimson-clouds']
+  :is(
+    .silvermoon-summary-stats,
+    .silvermoon-balance,
+    .silvermoon-quick-actions
+  ) {
+  border: 1px solid #ffffffb8;
+  border-radius: 18px;
+  background: linear-gradient(125deg, #fff8f1e0, #f9e7eecc);
+  box-shadow: 0 8px 28px -20px #70508b55;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-summary-card {
+  border-radius: 12px;
+  background: linear-gradient(125deg, #f5dce8c9, #fae9e0c9);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-balance {
+  background: linear-gradient(130deg, #f8d9e7ee, #ffe8d4ee 62%, #e9dff0);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-setup-backdrop {
+  background:
+    radial-gradient(ellipse at 90% 5%, #d8c8eb85, transparent 65%),
+    linear-gradient(115deg, #fff5f2, #f7e5ed);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-home {
+  background: linear-gradient(180deg, #f7eaf0, #fce9df 75%, #f7eaf0);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-integration-panel {
+  border-radius: 20px;
+  background: linear-gradient(125deg, #fff5ec, #f2dce9 60%, #fce3d7);
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='sidebar-inset'] {
+  box-shadow: none;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='section-page-header'] {
+  background: linear-gradient(100deg, #fff8f2e6, #f9e5e870);
+  border-bottom: 1px solid #ffffff94;
+  margin-bottom: 10px;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-slot='data-table-page']
+  > :first-child:not([data-slot='data-table-surface']) {
+  padding: 12px;
+  border-radius: 14px;
+  background: #fff7f3e8;
+  box-shadow: 0 6px 18px -16px #493a76;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='data-table-surface'] {
+  border: 1px solid #ffffffe0;
+  border-radius: 18px;
+  background: linear-gradient(120deg, #ffffffa3, #ffe9ed59);
+  box-shadow: 0 10px 34px -24px #3e335b80;
+  --table-header: #fff3ed;
+  container-type: inline-size;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-slot='data-table-surface']
+  [data-slot='empty'] {
+  position: sticky;
+  left: 0;
+  width: 100cqw;
+}
+/* Filled rows and pinned cells must remain legible over the scenery. */
+body[data-theme-preset='crimson-clouds']
+  [data-slot='data-table-surface']
+  [data-slot='table-body']
+  > [data-slot='table-row']:not(:has([data-slot='empty'])) {
+  background: #fff9f5f2;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-slot='data-table-surface']
+  [data-slot='table-row']:has([data-slot='empty']) {
+  background: transparent;
+}
+body[data-theme-preset='crimson-clouds']
+  [data-slot='data-table-surface']
+  [data-slot='table-body']
+  > [data-slot='table-row']:not(:has([data-slot='empty'])):is(
+    :hover,
+    [data-state='selected']
+  ) {
+  background: #f4d9e4;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='empty-header'] {
+  padding: 26px 32px;
+  border: 1px solid #ffffffb3;
+  border-radius: 24px;
+  background: linear-gradient(135deg, #fff8f2f2, #fae8efed);
+  box-shadow: 0 12px 32px -24px #55427680;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='empty-icon'] {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #eec6d8, #ffe2bd);
+  color: #994967;
+}
+body[data-theme-preset='crimson-clouds'] [data-slot='section-page-footer'] {
+  border-top: 1px solid #ffffffb3;
+  background: #fff6f1ed;
+}
+@media (max-width: 640px) {
+  body[data-theme-preset='crimson-clouds']
+    [data-slot='sidebar-wrapper']::before {
+    background-position: 53% center;
+    mask-image: none;
+    opacity: 0.6;
+  }
+  body[data-theme-preset='crimson-clouds'] [data-slot='empty-header'] {
+    padding: 22px 18px;
+  }
+  body[data-theme-preset='crimson-clouds']
+    [data-slot='sidebar-wrapper']
+    > header {
+    backdrop-filter: none;
+    background: #fff6f1f2;
+  }
+}
+
+body[data-theme-preset='crimson-clouds'] .silvermoon-summary-card:nth-child(2) {
+  background: linear-gradient(135deg, #e5def2d9, #f0e2edd9);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-summary-card:nth-child(3) {
+  background: linear-gradient(135deg, #f9dfc9d9, #fbeae1d9);
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero {
+  background: #423552;
+  color: #fff5f0;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero-art {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-position: center bottom;
+  mask-image: none;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero::before {
+  background: linear-gradient(
+    90deg,
+    #342b49ed,
+    #443252b8 34%,
+    #47345335 65%,
+    transparent
+  );
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero::after {
+  height: 64px;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero h1 em {
+  color: #ffd6bd;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-hero .silvermoon-eyebrow {
+  color: #ffe0cc;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-nav-sign-in {
+  background: linear-gradient(110deg, #9c4768, #795582);
+  border-color: #e4adbc70;
+}
+body[data-theme-preset='crimson-clouds'] .silvermoon-nav-sign-in:hover {
+  background: linear-gradient(110deg, #873956, #684673);
+}
+[data-preview='crimson-clouds'] {
+  background: #f7eaf0;
+}
+[data-preview='crimson-clouds'] .silvermoon-theme-preview-sidebar {
+  background: linear-gradient(160deg, #443552, #785372);
+}
+[data-preview='crimson-clouds'] .silvermoon-theme-preview-sidebar i {
+  background: #f0c9d6;
+}
+[data-preview='crimson-clouds']
+  .silvermoon-theme-preview-main
+  > span:first-child::after {
+  background: linear-gradient(90deg, #65436699, transparent);
+}
+[data-preview='crimson-clouds'] .silvermoon-theme-preview-main img {
+  object-position: center 60%;
+}
+[data-preview='crimson-clouds'] .silvermoon-theme-preview-main i:nth-child(2) {
+  background: #eedbea;
+}
+[data-preview='crimson-clouds'] .silvermoon-theme-preview-main i:nth-child(3) {
+  background: #ffe4ce;
+}
+@media (max-width: 640px) {
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome {
+    min-height: 290px;
+    padding: 24px 20px;
+    align-items: flex-start;
+    border-radius: 16px;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome > img {
+    width: 100%;
+    object-position: 54% center;
+    mask-image: none;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome::before {
+    background: linear-gradient(180deg, #392d51d9, #49345575 54%, #4934550a);
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome > div {
+    max-width: 100%;
+  }
+  body[data-theme-preset='crimson-clouds']
+    .silvermoon-welcome
+    .silvermoon-eyebrow {
+    margin-bottom: 10px;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome h1 {
+    font-size: 25px;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-welcome h1 + p {
+    margin-top: 4px;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-hero {
+    background: var(--background);
+    color: var(--foreground);
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-hero-art {
+    top: 56px;
+    height: 330px;
+    object-position: 53% center;
+    mask-image: linear-gradient(#000 76%, transparent);
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-hero::before {
+    height: 56px;
+    background: #423552;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-hero-content {
+    padding-top: 300px;
+  }
+  body[data-theme-preset='crimson-clouds'] .silvermoon-hero h1 em {
+    color: #a94e70;
+  }
+  body[data-theme-preset='crimson-clouds']
+    .silvermoon-hero
+    .silvermoon-eyebrow {
+    color: #775c6b;
+  }
+}

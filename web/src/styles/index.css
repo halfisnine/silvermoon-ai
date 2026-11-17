@@ -31,6 +31,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import './theme-presets.css';
 @import './silvermoon.css';
 @import './silvermoon-dream.css';
+@import './crimson-clouds.css';
 
 @layer base {
   :root {

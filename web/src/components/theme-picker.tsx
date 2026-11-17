@@ -58,7 +58,7 @@ export function ThemePicker() {
               </span>
               <span className='silvermoon-theme-preview-main'>
                 <span>
-                  <img src='/silvermoon/moonlight.webp' alt='' loading='lazy' />
+                  <img src={preset.artwork} alt='' loading='lazy' />
                 </span>
                 <span>
                   <i />

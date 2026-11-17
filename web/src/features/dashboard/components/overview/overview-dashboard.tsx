@@ -48,6 +48,7 @@ import {
 } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
+import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -461,6 +462,7 @@ function CompactQuickAction(props: { action: QuickAction }) {
 }
 
 export function OverviewDashboard() {
+  const { appearance } = useThemeCustomization()
   const { t } = useTranslation()
   const setupGuideId = useId()
   const setupGuideToggleRef = useRef<HTMLButtonElement>(null)
@@ -652,10 +654,10 @@ export function OverviewDashboard() {
             aria-label={t('Welcome back')}
           >
             <img
-              src='/silvermoon/moonlight.webp'
+              src={appearance.artwork}
               alt=''
-              width={1254}
-              height={1254}
+              width={appearance.width}
+              height={appearance.height}
             />
             <div>
               <p className='silvermoon-eyebrow'>{t('Under the same moon.')}</p>

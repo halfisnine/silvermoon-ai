@@ -19,23 +19,23 @@
          Apply before React and before body content to prevent a theme flash. -->
     <script>
       ;(function () {
+        var surfaces = {
+          default: '#eeedf6',
+          'silvermoon-dream': '#f1ecf8',
+          'crimson-clouds': '#f7eaf0',
+        }
         var theme = 'default'
         try {
-          if (
-            localStorage.getItem('silvermoon:theme:v1:package') ===
-            'silvermoon-dream'
-          )
-            theme = 'silvermoon-dream'
+          var saved = localStorage.getItem('silvermoon:theme:v1:package')
+          if (Object.prototype.hasOwnProperty.call(surfaces, saved))
+            theme = saved
         } catch (e) {}
         document.documentElement.classList.remove('dark')
         document.documentElement.classList.add('light')
         document.documentElement.dataset.themePackage = theme
         document
           .querySelector('meta[name="theme-color"]')
-          .setAttribute(
-            'content',
-            theme === 'silvermoon-dream' ? '#f1ecf8' : '#eeedf6'
-          )
+          .setAttribute('content', surfaces[theme])
       })()
     </script>
     <!--umami-->
@@ -44,10 +44,9 @@
 
   <body>
     <script>
-      if (
-        document.documentElement.dataset.themePackage === 'silvermoon-dream'
-      ) {
-        document.body.dataset.themePreset = 'silvermoon-dream'
+      if (document.documentElement.dataset.themePackage !== 'default') {
+        document.body.dataset.themePreset =
+          document.documentElement.dataset.themePackage
       }
       document.body.dataset.themeFont = 'system'
     </script>

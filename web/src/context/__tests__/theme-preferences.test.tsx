@@ -104,35 +104,40 @@ describe('complete theme packages', () => {
       expect(localStorage.getItem(key)).toBeNull()
     }
   })
-  it('switches the whole package through shared controls without losing form state, then restores on remount', async () => {
-    const user = userEvent.setup()
-    const first = render(<Fixture />)
-    await user.click(screen.getByRole('button', { name: 'Reading' }))
-    await user.click(screen.getByRole('radio', { name: 'Silvermoon Dream' }))
-    expect(document.body).toHaveAttribute(
-      'data-theme-preset',
-      'silvermoon-dream'
-    )
-    expect(screen.getByLabelText('Unsaved work')).toHaveValue('keep my input')
-    await user.click(screen.getByRole('button', { name: 'Toggle theme' }))
-    expect(
-      screen.getByRole('menuitemradio', { name: 'Silvermoon Dream' })
-    ).toHaveAttribute('aria-checked', 'true')
-    await user.click(screen.getByRole('menuitemradio', { name: 'Default' }))
-    expect(document.body).not.toHaveAttribute('data-theme-preset')
-    expect(document.body).toHaveAttribute('data-theme-scale', 'lg')
-    await user.click(screen.getByRole('radio', { name: 'Silvermoon Dream' }))
-    first.unmount()
-    render(<Fixture />)
-    expect(
-      screen.getByRole('radio', { name: 'Silvermoon Dream' })
-    ).toHaveAttribute('aria-checked', 'true')
-    expect(document.body).toHaveAttribute(
-      'data-theme-content-layout',
-      'centered'
-    )
-    expect(screen.getByLabelText('Surface mode')).toHaveTextContent('light')
-  })
+  it.each([
+    ['silvermoon-dream', 'Silvermoon Dream'],
+    ['crimson-clouds', 'Crimson Moon, Flowing Clouds'],
+  ])(
+    'switches %s through shared controls without losing form state, then restores on remount',
+    async (preset, name) => {
+      const user = userEvent.setup()
+      const first = render(<Fixture />)
+      await user.click(screen.getByRole('button', { name: 'Reading' }))
+      await user.click(screen.getByRole('radio', { name }))
+      expect(document.body).toHaveAttribute('data-theme-preset', preset)
+      expect(screen.getByLabelText('Unsaved work')).toHaveValue('keep my input')
+      await user.click(screen.getByRole('button', { name: 'Toggle theme' }))
+      expect(screen.getByRole('menuitemradio', { name })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      )
+      await user.click(screen.getByRole('menuitemradio', { name: 'Default' }))
+      expect(document.body).not.toHaveAttribute('data-theme-preset')
+      expect(document.body).toHaveAttribute('data-theme-scale', 'lg')
+      await user.click(screen.getByRole('radio', { name }))
+      first.unmount()
+      render(<Fixture />)
+      expect(screen.getByRole('radio', { name })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      )
+      expect(document.body).toHaveAttribute(
+        'data-theme-content-layout',
+        'centered'
+      )
+      expect(screen.getByLabelText('Surface mode')).toHaveTextContent('light')
+    }
+  )
   it('persists reset and leaves unrelated preferences alone', async () => {
     localStorage.setItem(keys.package, 'silvermoon-dream')
     localStorage.setItem('unrelated', 'keep')

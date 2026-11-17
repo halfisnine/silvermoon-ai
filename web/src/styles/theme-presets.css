@@ -431,7 +431,7 @@ For commercial licensing, please contact support@quantumnous.com
     [data-theme-preset='anthropic']
   ):not([data-theme-preset='simple-large']):not(
     [data-theme-preset='silvermoon-dream']
-  ) {
+  ):not([data-theme-preset='crimson-clouds']) {
   --card: color-mix(in oklch, var(--primary) 3%, var(--background));
   --popover: color-mix(in oklch, var(--primary) 5%, var(--background));
   --muted: color-mix(in oklch, var(--primary) 7%, var(--background));
@@ -458,7 +458,7 @@ For commercial licensing, please contact support@quantumnous.com
     [data-theme-preset='anthropic']
   ):not([data-theme-preset='simple-large']):not(
     [data-theme-preset='silvermoon-dream']
-  ) {
+  ):not([data-theme-preset='crimson-clouds']) {
   --card: color-mix(in oklch, var(--primary) 8%, var(--background));
   --popover: color-mix(in oklch, var(--primary) 12%, var(--background));
   --muted: color-mix(in oklch, var(--primary) 12%, var(--background));

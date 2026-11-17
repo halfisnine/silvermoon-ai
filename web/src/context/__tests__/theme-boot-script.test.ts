@@ -49,25 +49,27 @@ afterEach(() => {
   delete document.body.dataset.themeFont
 })
 describe('theme before React mounts', () => {
-  it('restores dream on html and body before content renders', () => {
-    localStorage.setItem(keys.package, 'silvermoon-dream')
-    boot()
-    expect(document.documentElement).toHaveAttribute(
-      'data-theme-package',
-      'silvermoon-dream'
-    )
-    expect(document.body).toHaveAttribute(
-      'data-theme-preset',
-      'silvermoon-dream'
-    )
-    expect(document.documentElement).toHaveClass('light')
-    expect(document.documentElement).not.toHaveClass('dark')
-    expect(document.querySelector('meta[name="theme-color"]')).toHaveAttribute(
-      'content',
-      '#f1ecf8'
-    )
-  })
-  it.each([null, 'unknown', 'dark', 'rose-garden'])(
+  it.each([
+    ['silvermoon-dream', '#f1ecf8'],
+    ['crimson-clouds', '#f7eaf0'],
+  ])(
+    'restores %s on html and body before content renders',
+    (preset, surface) => {
+      localStorage.setItem(keys.package, preset)
+      boot()
+      expect(document.documentElement).toHaveAttribute(
+        'data-theme-package',
+        preset
+      )
+      expect(document.body).toHaveAttribute('data-theme-preset', preset)
+      expect(document.documentElement).toHaveClass('light')
+      expect(document.documentElement).not.toHaveClass('dark')
+      expect(
+        document.querySelector('meta[name="theme-color"]')
+      ).toHaveAttribute('content', surface)
+    }
+  )
+  it.each([null, 'unknown', 'dark', 'rose-garden', '__proto__', 'toString'])(
     'uses default for %j, ignoring legacy dark and OS mode',
     (value) => {
       if (value !== null) localStorage.setItem(keys.package, value)

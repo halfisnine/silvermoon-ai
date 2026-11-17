@@ -31,6 +31,7 @@ import {
   type ContentLayout,
   DEFAULT_THEME_CUSTOMIZATION,
   THEME_PRESET_VALUES,
+  THEME_PRESETS,
   THEME_SCALE_VALUES,
   type ThemeCustomization,
   type ThemePreset,
@@ -55,6 +56,7 @@ function applyAttribute(name: string, value: string | null) {
 
 type ThemeCustomizationContextType = {
   defaults: ThemeCustomization
+  appearance: (typeof THEME_PRESETS)[number]
   customization: ThemeCustomization
   setPreset: (preset: ThemePreset) => void
   setScale: (scale: ThemeScale) => void
@@ -68,6 +70,7 @@ type ThemeCustomizationContextType = {
 // like the defaults until the real provider re-mounts.
 const FALLBACK_CONTEXT: ThemeCustomizationContextType = {
   defaults: DEFAULT_THEME_CUSTOMIZATION,
+  appearance: THEME_PRESETS[0],
   customization: DEFAULT_THEME_CUSTOMIZATION,
   setPreset: () => {},
   setScale: () => {},
@@ -103,6 +106,9 @@ export function ThemeCustomizationProvider(props: {
     )
   )
 
+  const appearance =
+    THEME_PRESETS.find((item) => item.value === preset) ?? THEME_PRESETS[0]
+
   useLayoutEffect(() => {
     const value = preset === 'default' ? null : preset
     applyAttribute('data-theme-preset', value)
@@ -111,11 +117,8 @@ export function ThemeCustomizationProvider(props: {
     applyAttribute('data-theme-radius', null)
     document
       .querySelector("meta[name='theme-color']")
-      ?.setAttribute(
-        'content',
-        preset === 'silvermoon-dream' ? '#f1ecf8' : '#eeedf6'
-      )
-  }, [preset])
+      ?.setAttribute('content', appearance.surface)
+  }, [preset, appearance.surface])
 
   useEffect(() => {
     // Old mix-and-match settings are intentionally retired. Reading preferences survive.
@@ -173,6 +176,7 @@ export function ThemeCustomizationProvider(props: {
   const value = useMemo<ThemeCustomizationContextType>(
     () => ({
       defaults: DEFAULT_THEME_CUSTOMIZATION,
+      appearance,
       customization: { preset, radius: 'default', scale, contentLayout },
       setPreset,
       setScale,
@@ -180,6 +184,7 @@ export function ThemeCustomizationProvider(props: {
       resetCustomization,
     }),
     [
+      appearance,
       preset,
       scale,
       contentLayout,
