@@ -27,6 +27,8 @@ import type {
 import { getCurrencyDisplay } from '@/lib/currency'
 import { formatChartTime, type TimeGranularity } from '@/lib/time'
 
+import type { DashboardChartAppearance } from './chart-theme'
+
 type TFunction = (key: string) => string
 type TooltipLineItem = {
   key: string
@@ -71,7 +73,8 @@ export function processChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  chartCornerRadius?: number
+  chartCornerRadius?: number,
+  appearance?: DashboardChartAppearance
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
   const otherLabel = tt('Other')
@@ -270,8 +273,12 @@ export function processChartData(
     .map(([time]) => time)
   const sortedModels = [...allModels].sort()
   const modelColorDomain = [...new Set([...sortedModels, otherLabel])]
-  const modelColorRange = getDashboardChartColors(modelColorDomain.length)
-  const otherColor = modelColorRange[modelColorDomain.indexOf(otherLabel)]
+  const modelColorRange =
+    appearance?.palette ?? getDashboardChartColors(modelColorDomain.length)
+  const otherColor =
+    modelColorRange[
+      modelColorDomain.indexOf(otherLabel) % modelColorRange.length
+    ]
   const otherTooltipColor =
     typeof otherColor === 'string' ? otherColor : '#FF8A00'
   const modelColor = {
@@ -468,8 +475,16 @@ export function processChartData(
         style:
           chartCornerRadius == null ? {} : { cornerRadius: chartCornerRadius },
         state: {
-          hover: { outerRadius: 0.85, stroke: '#000', lineWidth: 1 },
-          selected: { outerRadius: 0.85, stroke: '#000', lineWidth: 1 },
+          hover: {
+            outerRadius: 0.85,
+            stroke: appearance?.textColor ?? '#000',
+            lineWidth: 1,
+          },
+          selected: {
+            outerRadius: 0.85,
+            stroke: appearance?.textColor ?? '#000',
+            lineWidth: 1,
+          },
         },
       },
       title: {
@@ -504,7 +519,7 @@ export function processChartData(
       color: modelColor,
       bar: {
         state: {
-          hover: { stroke: '#000', lineWidth: 1 },
+          hover: { stroke: appearance?.textColor ?? '#000', lineWidth: 1 },
         },
       },
       tooltip: {
@@ -671,7 +686,7 @@ export function processChartData(
       },
       bar: {
         state: {
-          hover: { stroke: '#000', lineWidth: 1 },
+          hover: { stroke: appearance?.textColor ?? '#000', lineWidth: 1 },
         },
       },
       tooltip: {
@@ -710,8 +725,10 @@ export function processUserChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  limit = 10
+  limit = 10,
+  appearance?: DashboardChartAppearance
 ): ProcessedUserChartData {
+  const userColors = appearance?.palette ?? USER_COLORS
   const tt: TFunction = t ?? ((x) => x)
   const { config } = getCurrencyDisplay()
   const quotaPerUnit = config.quotaPerUnit
@@ -732,7 +749,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: false },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       background: { fill: 'transparent' },
     },
     spec_user_trend: {
@@ -747,7 +764,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: true, selectMode: 'single' },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       point: { visible: false },
       background: { fill: 'transparent' },
     },
@@ -775,7 +792,7 @@ export function processUserChartData(
 
   const userColorMap = topUsers.reduce<Record<string, string>>(
     (acc, user, i) => {
-      acc[user] = USER_COLORS[i % USER_COLORS.length]
+      acc[user] = userColors[i % userColors.length]
       return acc
     },
     {}
@@ -835,7 +852,9 @@ export function processUserChartData(
       },
       legends: { visible: false },
       bar: {
-        state: { hover: { stroke: '#000', lineWidth: 1 } },
+        state: {
+          hover: { stroke: appearance?.textColor ?? '#000', lineWidth: 1 },
+        },
       },
       label: {
         visible: true,

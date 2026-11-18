@@ -61,6 +61,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getFlowQuotaDates } from '@/features/dashboard/api'
+import { useDashboardChartTheme } from '@/features/dashboard/hooks/use-dashboard-chart-theme'
 import {
   buildDashboardFlowData,
   buildFlowSankeySpec,
@@ -87,9 +88,7 @@ import type {
 import { formatQuota } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
-import { useThemeColor } from '@/lib/theme-color'
 import { computeTimeRange } from '@/lib/time'
-import { useChartTheme } from '@/lib/use-chart-theme'
 import { cn } from '@/lib/utils'
 import { VCHART_OPTION } from '@/lib/vchart'
 import { useAuthStore } from '@/stores/auth-store'
@@ -256,8 +255,8 @@ function formatFlowMetricNumber(value: number): string {
 
 export function FlowCharts(props: FlowChartsProps) {
   const { t } = useTranslation()
-  const { resolvedTheme, themeReady } = useChartTheme()
-  const textColor = useThemeColor('--foreground')
+  const { preset, appearance } = useDashboardChartTheme()
+  const { theme: chartTheme, palette, textColor } = appearance
   const chartInstanceRef = useRef<IVChart | null>(null)
   const user = useAuthStore((state) => state.auth.user)
   const isRoot = Boolean(user?.role && user.role >= ROLE.SUPER_ADMIN)
@@ -351,6 +350,7 @@ export function FlowCharts(props: FlowChartsProps) {
     () =>
       buildDashboardFlowData(isLoading ? [] : (flowRows ?? []), metric, {
         role: flowRole,
+        colorPalette: palette,
         selectedUsers,
         selectedNodes,
         activeNode: activeFlowNode,
@@ -364,6 +364,7 @@ export function FlowCharts(props: FlowChartsProps) {
       }),
     [
       flowRole,
+      palette,
       flowRows,
       isLoading,
       metric,
@@ -472,7 +473,6 @@ export function FlowCharts(props: FlowChartsProps) {
       ),
     [chartTitle, flowData.flow, t, textColor]
   )
-  const chartTheme = resolvedTheme === 'dark' ? 'dark' : 'light'
   const chartKey = [
     metric,
     topNodeLimit,
@@ -487,13 +487,13 @@ export function FlowCharts(props: FlowChartsProps) {
     visibleStages.join(','),
     maskSensitive ? 'masked' : 'plain',
     flowRows?.length ?? 0,
-    resolvedTheme,
+    preset,
   ].join('-')
   const displayState = flowDisplayState({
     isLoading,
     isError,
     linkCount: flowData.flow.links.length,
-    themeReady: themeReady && textColor !== undefined,
+    themeReady: true,
   })
   const flowErrorMessage =
     flowError instanceof Error
@@ -674,7 +674,7 @@ export function FlowCharts(props: FlowChartsProps) {
         </div>
       </div>
 
-      <div className='overflow-hidden rounded-lg border'>
+      <div className='dashboard-chart-panel overflow-hidden rounded-lg border'>
         <div className='flex w-full flex-col gap-2 border-b px-3 py-2 sm:px-5 sm:py-3 lg:flex-row lg:items-center lg:justify-between'>
           <div className='flex min-w-0 items-center gap-2'>
             <IconBadge tone='info' size='sm'>
