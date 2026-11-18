@@ -34,6 +34,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { isHttpUrl } from '@/lib/content-format'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -142,6 +143,31 @@ export function RechargeFormCard({
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
   const redemptionEnabled = topupInfo?.enable_redemption !== false
+
+  const shopUrl = topupLink?.trim() || ''
+  const showRedemptionShop = redemptionEnabled && isHttpUrl(shopUrl)
+  const redemptionShopCard = showRedemptionShop ? (
+    <Button
+      role='link'
+      variant='outline'
+      className='h-auto min-h-14 min-w-0 justify-start gap-3 rounded-lg px-3 py-3 text-left whitespace-normal'
+      render={<a href={shopUrl} target='_blank' rel='noopener noreferrer' />}
+    >
+      <span
+        className='text-emerald-600 dark:text-emerald-400'
+        aria-hidden='true'
+      >
+        {getPaymentIcon('wxpay', 'size-5')}
+      </span>
+      <span className='flex min-w-0 flex-1 flex-col gap-1'>
+        <span>{t('WeChat Pay · Redemption Code')}</span>
+        <span className='text-muted-foreground text-xs leading-relaxed font-normal'>
+          {t('Choose an amount in the shop, then return here to redeem.')}
+        </span>
+      </span>
+      <ExternalLink className='size-4 shrink-0' aria-hidden='true' />
+    </Button>
+  ) : null
 
   if (loading) {
     return (
@@ -327,8 +353,8 @@ export function RechargeFormCard({
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                   {t('Payment Method')}
                 </Label>
-                {hasStandardPaymentMethods ? (
-                  <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
+                {hasStandardPaymentMethods || showRedemptionShop ? (
+                  <div className='grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3'>
                     {topupInfo?.pay_methods?.map((method) => {
                       const minTopup = Math.max(
                         method.min_topup || 0,
@@ -356,7 +382,7 @@ export function RechargeFormCard({
                               ? `${method.name}. ${disabledReason}`
                               : method.name
                           }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                          className='h-auto min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
                         >
                           {paymentLoading === method.type ? (
                             <Loader2 className='h-4 w-4 animate-spin' />
@@ -392,17 +418,20 @@ export function RechargeFormCard({
                         button
                       )
                     })}
+                    {redemptionShopCard}
                   </div>
                 ) : null}
-                {!hasStandardPaymentMethods && !hasWaffoPaymentMethods && (
-                  <Alert>
-                    <AlertDescription>
-                      {t(
-                        'No payment methods available. Please contact administrator.'
-                      )}
-                    </AlertDescription>
-                  </Alert>
-                )}
+                {!hasStandardPaymentMethods &&
+                  !hasWaffoPaymentMethods &&
+                  !showRedemptionShop && (
+                    <Alert>
+                      <AlertDescription>
+                        {t(
+                          'No payment methods available. Please contact administrator.'
+                        )}
+                      </AlertDescription>
+                    </Alert>
+                  )}
               </div>
 
               {enableWaffoTopup &&
@@ -497,6 +526,17 @@ export function RechargeFormCard({
         </Alert>
       )}
 
+      {!hasConfigurableTopup && showRedemptionShop && (
+        <div className='space-y-2.5 sm:space-y-3'>
+          <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
+            {t('Payment Method')}
+          </Label>
+          <div className='grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 lg:grid-cols-3'>
+            {redemptionShopCard}
+          </div>
+        </div>
+      )}
+
       {/* Creem Products Section */}
       {enableCreemTopup &&
         Array.isArray(creemProducts) &&
@@ -545,20 +585,6 @@ export function RechargeFormCard({
               {t('Redeem')}
             </Button>
           </div>
-          {topupLink && (
-            <p className='text-muted-foreground text-xs'>
-              {t('Need a redemption code?')}{' '}
-              <a
-                href={topupLink}
-                target='_blank'
-                rel='noopener noreferrer'
-                className='inline-flex items-center gap-1 underline-offset-4 hover:underline'
-              >
-                {t('Get one here')}
-                <ExternalLink className='h-3 w-3' />
-              </a>
-            </p>
-          )}
         </div>
       ) : (
         <Alert className='border-t'>

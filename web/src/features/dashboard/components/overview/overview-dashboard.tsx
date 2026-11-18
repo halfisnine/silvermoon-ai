@@ -52,9 +52,11 @@ import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import { useStatus } from '@/hooks/use-status'
 import { getUserModels } from '@/lib/api'
 import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
+import { getModuleAccessFromStatus } from '@/lib/nav-modules'
 import { ROLE } from '@/lib/roles'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
@@ -462,6 +464,8 @@ function CompactQuickAction(props: { action: QuickAction }) {
 }
 
 export function OverviewDashboard() {
+  const { status } = useStatus()
+  const showModelSquare = getModuleAccessFromStatus(status, 'pricing').enabled
   const { appearance } = useThemeCustomization()
   const { t } = useTranslation()
   const setupGuideId = useId()
@@ -555,8 +559,8 @@ export function OverviewDashboard() {
         icon: FileText,
       },
       {
-        title: t('Pricing'),
-        description: t('Review model rates before scaling traffic'),
+        title: t('Model Square'),
+        description: t('Browse available models and pricing'),
         to: '/pricing',
         icon: BookOpen,
       },
@@ -565,8 +569,13 @@ export function OverviewDashboard() {
   )
 
   const visibleQuickActions = useMemo(
-    () => quickActions.filter((action) => !action.adminOnly || isAdmin),
-    [isAdmin, quickActions]
+    () =>
+      quickActions.filter(
+        (action) =>
+          (!action.adminOnly || isAdmin) &&
+          (action.to !== '/pricing' || showModelSquare)
+      ),
+    [isAdmin, quickActions, showModelSquare]
   )
 
   const heroSignals = useMemo<HeroSignal[]>(

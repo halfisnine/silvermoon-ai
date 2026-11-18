@@ -100,14 +100,17 @@ const server = http.createServer((req, res) => {
         sessionStorage.setItem('review-package-seeded', 'yes')
       }
     }, mode)
+    let shopLink = 'https://shop.example.com/silvermoon'
     let footerSettings = {}
     let populatedKeys = false
+    let headerNavModules = {}
     await context.route('**/api/**', async (route) => {
       const path = new URL(route.request().url()).pathname
       let data
       if (path === '/api/status') {
         data = {
           ...footerSettings,
+          HeaderNavModules: JSON.stringify(headerNavModules),
           system_name: '银月',
           logo: '/silvermoon/moonlight.webp',
           server_address: 'https://api.silvermoon.example',
@@ -134,6 +137,19 @@ const server = http.createServer((req, res) => {
           display_in_currency: true,
           quota_per_unit: 500000,
         }
+      } else if (path === '/api/pricing') {
+        await route.fulfill({
+          json: {
+            success: true,
+            data: [],
+            vendors: [],
+            group_ratio: {},
+            usable_group: {},
+            supported_endpoint: {},
+            auto_groups: [],
+          },
+        })
+        return
       } else if (path === '/api/setup') data = { status: true }
       else if (
         path === '/api/home_page_content' ||
@@ -158,7 +174,20 @@ const server = http.createServer((req, res) => {
             expires_at: now + 3600,
           },
         }
-      } else if (path === '/api/user/self') data = user
+      } else if (path === '/api/user/topup/info') {
+        data = {
+          enable_online_topup: true,
+          enable_stripe_topup: false,
+          enable_redemption: true,
+          topup_link: shopLink,
+          min_topup: 1,
+          amount_options: [5, 10, 20, 30],
+          discount: {},
+          pay_methods: [{ name: '支付宝', type: 'alipay', icon: 'SiAlipay' }],
+        }
+      } else if (path === '/api/user/amount') data = '0'
+      else if (path === '/api/user/aff') data = 'review'
+      else if (path === '/api/user/self') data = user
       else if (path === '/api/token/' || path === '/api/token') {
         const items = populatedKeys
           ? [
@@ -237,6 +266,197 @@ const server = http.createServer((req, res) => {
     const targets = process.env.SILVERMOON_REVIEW_TARGET
       ? [process.env.SILVERMOON_REVIEW_TARGET]
       : ['home', 'console']
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'wallet-shop') {
+      page.setDefaultTimeout(20000)
+      const widths = process.env.SILVERMOON_REVIEW_WIDTHS
+        ? process.env.SILVERMOON_REVIEW_WIDTHS.split(',').map(Number)
+        : [320, 390, 1440]
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 1100 })
+        await page.goto(`${baseUrl}/wallet`)
+        const shop = page.getByRole('link', { name: /微信支付 · 兑换码/ })
+        await shop.waitFor()
+        if (process.env.SILVERMOON_REVIEW_FONT) {
+          await page.addStyleTag({
+            content:
+              "@font-face{font-family:'Review Sans';src:url('/__review_font.ttf')}body{font-family:'Review Sans',sans-serif;--font-sans:'Review Sans',sans-serif;--font-ui-sans:'Review Sans',sans-serif;--font-body:'Review Sans',sans-serif}",
+          })
+          await page.evaluate(() => document.fonts.ready)
+        }
+        const alipay = page.getByRole('button', { name: /^支付宝/ })
+        const shopBox = await shop.boundingBox()
+        const alipayBox = await alipay.boundingBox()
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth
+        )
+        if (overflow || !shopBox || shopBox.width < 200) {
+          throw new Error(`Wallet shop overflow at ${mode}/${width}`)
+        }
+        if (width < 640 && shopBox.y < alipayBox.y + alipayBox.height) {
+          throw new Error('Mobile payment cards must stack')
+        }
+        if (width >= 1024 && Math.abs(shopBox.y - alipayBox.y) > 2) {
+          throw new Error('Desktop payment cards must share a row')
+        }
+        const clipped = await shop.evaluate(
+          (element) =>
+            element.scrollWidth > element.clientWidth ||
+            element.scrollHeight > element.clientHeight
+        )
+        if (clipped) throw new Error('Shop card text is clipped')
+        const popupPromise = context.waitForEvent('page')
+        await context.route('https://shop.example.com/**', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: '<p>Review shop</p>',
+          })
+        )
+        await shop.click()
+        const popup = await popupPromise
+        await popup.waitForURL(shopLink)
+        await popup.close()
+        await page.screenshot({
+          path: `${out}/wallet-shop-${mode}-${width}.png`,
+          fullPage: true,
+        })
+        results.push({
+          mode,
+          target: 'wallet-shop',
+          width,
+          destination: shopLink,
+        })
+      }
+      shopLink = ''
+      await page.reload()
+      await page.getByLabel('有兑换码吗？', { exact: true }).waitFor()
+      if (await page.getByRole('link', { name: /微信支付 · 兑换码/ }).count()) {
+        throw new Error('Cleared shop link still displays a purchase card')
+      }
+      results.push({ mode, target: 'wallet-shop-cleared' })
+      await context.close()
+      continue
+    }
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'navigation') {
+      headerNavModules = { pricing: { enabled: true, requireAuth: true } }
+      const widths = process.env.SILVERMOON_REVIEW_WIDTHS
+        ? process.env.SILVERMOON_REVIEW_WIDTHS.split(',').map(Number)
+        : [320, 390, 768, 1024, 1440]
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 1000 })
+        await page.goto(`${baseUrl}/dashboard/overview`)
+        const shortcut = page.getByRole('button', {
+          name: '模型广场',
+          exact: true,
+        })
+        await shortcut.waitFor()
+        if (
+          (await shortcut.getAttribute('href')) !== '/pricing' ||
+          (await page
+            .getByRole('button', { name: '定价', exact: true })
+            .count())
+        ) {
+          throw new Error(
+            'Overview model square label or destination is incorrect'
+          )
+        }
+        if (process.env.SILVERMOON_REVIEW_FONT) {
+          await page.addStyleTag({
+            content:
+              "@font-face{font-family:'Review Sans';src:url('/__review_font.ttf')} body{font-family:'Review Sans',sans-serif;--font-serif:'Review Sans',serif;--font-sans:'Review Sans',sans-serif;--font-ui-sans:'Review Sans',sans-serif;--font-body:'Review Sans',sans-serif}",
+          })
+          await page.evaluate(() => document.fonts.ready)
+        }
+        if (
+          await page.evaluate(
+            () => document.documentElement.scrollWidth > innerWidth
+          )
+        ) {
+          throw new Error(`Navigation causes overflow at ${width}px`)
+        }
+        if (width < 768) {
+          await page.locator('[data-slot="sidebar-trigger"]').first().click()
+        }
+        const entry = page.locator(
+          '[data-sidebar="menu-button"][href="/pricing"]:visible'
+        )
+        await entry.waitFor()
+        await page.evaluate(async () => {
+          await Promise.allSettled(
+            document
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation.effect?.getComputedTiming().iterations !== Infinity
+              )
+              .map((animation) => animation.finished)
+          )
+        })
+        const rect = await entry.boundingBox()
+        if (
+          !rect ||
+          rect.height < 44 ||
+          rect.x < 0 ||
+          rect.x + rect.width > width ||
+          rect.y + rect.height > 1000
+        ) {
+          throw new Error(
+            `Model square entry is clipped or too small at ${width}px`
+          )
+        }
+        if (width === 390 || width === 1440) {
+          await page.screenshot({
+            path: `${out}/model-square-${mode}-${width}.png`,
+          })
+        }
+        if (width === 1440) {
+          await entry.focus()
+          await page.keyboard.press('Enter')
+        } else {
+          await entry.click()
+        }
+        await page.waitForURL('**/pricing')
+        await page
+          .getByRole('heading', { name: '模型广场', exact: true })
+          .waitFor()
+        if (await page.locator('[data-mobile="true"]').count()) {
+          throw new Error(
+            'Mobile drawer remained open after navigating to Model Square'
+          )
+        }
+        results.push({
+          mode,
+          target: 'navigation',
+          width,
+          destination: '/pricing',
+        })
+      }
+      await page.goto(`${baseUrl}/dashboard/overview`)
+      await page.getByRole('button', { name: '模型广场', exact: true }).click()
+      await page.waitForURL('**/pricing')
+      await page
+        .getByRole('heading', { name: '模型广场', exact: true })
+        .waitFor()
+
+      headerNavModules = { pricing: { enabled: false } }
+      for (const width of [390, 1440]) {
+        await page.setViewportSize({ width, height: 1000 })
+        await page.goto(`${baseUrl}/dashboard/overview`)
+        await page
+          .getByRole('button', { name: '设置引导', exact: true })
+          .waitFor()
+        if (width < 768) {
+          await page.locator('[data-slot="sidebar-trigger"]').first().click()
+        }
+        if (await page.locator('a[href="/pricing"]:visible').count()) {
+          throw new Error(
+            'Disabled Model Square is still visible in console navigation'
+          )
+        }
+        results.push({ mode, target: 'navigation-disabled', width })
+      }
+      await context.close()
+      continue
+    }
     if (process.env.SILVERMOON_REVIEW_TARGET === 'keys') {
       for (const populated of [false, true]) {
         populatedKeys = populated

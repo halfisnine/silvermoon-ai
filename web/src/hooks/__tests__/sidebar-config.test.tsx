@@ -66,12 +66,18 @@ afterEach(() => {
   useAuthStore.getState().auth.reset()
 })
 
-function sidebarFor(admin?: object, user?: object, canConfigure = true) {
+function sidebarFor(
+  admin?: object,
+  user?: object,
+  canConfigure = true,
+  headerNavModules?: object
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
   client.setQueryData(['status'], {
     SidebarModulesAdmin: admin ? JSON.stringify(admin) : '',
+    HeaderNavModules: headerNavModules ? JSON.stringify(headerNavModules) : '',
   })
   useAuthStore.getState().auth.setUser({
     id: 1,
@@ -91,7 +97,7 @@ function sidebarFor(admin?: object, user?: object, canConfigure = true) {
     () => useSidebarConfig(useSidebarData().navGroups),
     { wrapper: Wrapper }
   )
-  return result
+  return { ...result, client }
 }
 
 describe('security sidebar visibility', () => {
@@ -318,5 +324,65 @@ describe('model pricing badge', () => {
     ).toBeInTheDocument()
     expect(get).not.toHaveBeenCalledWith('/api/option/model_pricing/issues')
     expect(badgedEntries()).toHaveLength(0)
+  })
+})
+
+describe('model square sidebar entry', () => {
+  it.each([
+    undefined,
+    { pricing: true },
+    { pricing: { enabled: true, requireAuth: true } },
+  ])(
+    'shows Model Square immediately after Overview for signed-in users (%j)',
+    (modules) => {
+      const { result } = sidebarFor(undefined, undefined, true, modules)
+      const items =
+        result.current.find((group) => group.id === 'general')?.items ?? []
+      expect(items.slice(0, 3).map((item) => item.title)).toEqual([
+        'Overview',
+        'Model Square',
+        'Dashboard',
+      ])
+      expect(items.find((item) => item.title === 'Model Square')).toMatchObject(
+        { url: '/pricing' }
+      )
+    }
+  )
+
+  it('hides the entry when disabled and follows updates to the shared module configuration', async () => {
+    const { result, client } = sidebarFor(undefined, undefined, true, {
+      pricing: { enabled: false },
+    })
+    expect(
+      result.current
+        .flatMap((group) => group.items)
+        .some((item) => item.url === '/pricing')
+    ).toBe(false)
+    act(() => {
+      client.setQueryData(['status'], {
+        HeaderNavModules: JSON.stringify({
+          pricing: { enabled: true, requireAuth: true },
+        }),
+      })
+    })
+    await waitFor(() =>
+      expect(
+        result.current
+          .flatMap((group) => group.items)
+          .some((item) => item.url === '/pricing')
+      ).toBe(true)
+    )
+    act(() => {
+      client.setQueryData(['status'], {
+        HeaderNavModules: JSON.stringify({ pricing: false }),
+      })
+    })
+    await waitFor(() =>
+      expect(
+        result.current
+          .flatMap((group) => group.items)
+          .some((item) => item.url === '/pricing')
+      ).toBe(false)
+    )
   })
 })

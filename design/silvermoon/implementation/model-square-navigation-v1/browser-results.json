@@ -1,0 +1,163 @@
+{
+  "checks": 23,
+  "runs": [
+    {
+      "run": "default/navigation",
+      "results": [
+        {
+          "mode": "default",
+          "target": "navigation",
+          "width": 320,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "default",
+          "target": "navigation",
+          "width": 390,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "default",
+          "target": "navigation",
+          "width": 768,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "default",
+          "target": "navigation",
+          "width": 1024,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "default",
+          "target": "navigation",
+          "width": 1440,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "default",
+          "target": "navigation-disabled",
+          "width": 390
+        },
+        {
+          "mode": "default",
+          "target": "navigation-disabled",
+          "width": 1440
+        }
+      ],
+      "errors": [],
+      "unknown": []
+    },
+    {
+      "run": "crimson-clouds/navigation",
+      "results": [
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation",
+          "width": 320,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation",
+          "width": 390,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation",
+          "width": 768,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation",
+          "width": 1024,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation",
+          "width": 1440,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation-disabled",
+          "width": 390
+        },
+        {
+          "mode": "crimson-clouds",
+          "target": "navigation-disabled",
+          "width": 1440
+        }
+      ],
+      "errors": [],
+      "unknown": []
+    },
+    {
+      "run": "silvermoon-dream/navigation/320,390",
+      "results": [
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation",
+          "width": 320,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation",
+          "width": 390,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation-disabled",
+          "width": 390
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation-disabled",
+          "width": 1440
+        }
+      ],
+      "errors": [],
+      "unknown": []
+    },
+    {
+      "run": "silvermoon-dream/navigation/768,1024,1440",
+      "results": [
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation",
+          "width": 768,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation",
+          "width": 1024,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation",
+          "width": 1440,
+          "destination": "/pricing"
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation-disabled",
+          "width": 390
+        },
+        {
+          "mode": "silvermoon-dream",
+          "target": "navigation-disabled",
+          "width": 1440
+        }
+      ],
+      "errors": [],
+      "unknown": []
+    }
+  ]
+}
