@@ -36,6 +36,7 @@ import { OverviewDashboard } from '../overview-dashboard'
 const storageKey = 'dashboard_overview_setup_guide_expanded'
 let client: QueryClient
 let keyLookupError: Error | null
+let headerNavModules: string
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -52,6 +53,7 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false } },
   })
   keyLookupError = null
+  headerNavModules = ''
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     switch (url) {
       case '/api/token/?p=1&size=10':
@@ -68,6 +70,7 @@ beforeEach(() => {
         return {
           data: {
             data: {
+              HeaderNavModules: headerNavModules,
               api_info_enabled: false,
               announcements_enabled: false,
               faq_enabled: false,
@@ -121,7 +124,7 @@ describe('overview setup guide', () => {
     ])
     expect(screen.queryByText('Setup guide complete')).not.toBeInTheDocument()
     expect(screen.queryByText('Setup progress: 3/3')).not.toBeInTheDocument()
-    for (const name of ['API Keys', 'Usage Logs', 'Pricing']) {
+    for (const name of ['API Keys', 'Usage Logs', 'Model Square']) {
       expect(screen.getByRole('button', { name })).toBeVisible()
     }
     expect(
@@ -132,6 +135,39 @@ describe('overview setup guide', () => {
     )
     expect(panel).toBeInTheDocument()
     expect(panel).not.toBeVisible()
+  })
+
+  it('uses the module switch for the Model Square shortcut and keeps its destination', async () => {
+    headerNavModules = JSON.stringify({ pricing: { enabled: false } })
+    await renderOverview()
+    await screen.findByRole('button', { name: 'Setup guide' })
+    expect(
+      screen.queryByRole('button', { name: 'Model Square' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Pricing' })
+    ).not.toBeInTheDocument()
+
+    act(() => {
+      client.setQueryData(['status'], {
+        HeaderNavModules: JSON.stringify({
+          pricing: { enabled: true, requireAuth: true },
+        }),
+      })
+    })
+    expect(
+      await screen.findByRole('button', { name: 'Model Square' })
+    ).toHaveAttribute('href', '/pricing')
+    act(() => {
+      client.setQueryData(['status'], {
+        HeaderNavModules: JSON.stringify({ pricing: false }),
+      })
+    })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Model Square' })
+      ).not.toBeInTheDocument()
+    )
   })
 
   it('toggles the completed guide with the keyboard and restores focus after hiding it', async () => {

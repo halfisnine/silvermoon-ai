@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import {
   Activity,
+  BookOpen,
   Box,
   ClipboardList,
   CreditCard,
@@ -40,7 +41,10 @@ import {
 import { useTranslation } from 'react-i18next'
 
 import type { SidebarBadges, SidebarData } from '@/components/layout/types'
+import { getModuleAccessFromStatus } from '@/lib/nav-modules'
 import { ROLE } from '@/lib/roles'
+
+import { useStatus } from './use-status'
 
 /**
  * Root navigation groups for the application sidebar.
@@ -50,6 +54,8 @@ import { ROLE } from '@/lib/roles'
  */
 export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
   const { t } = useTranslation()
+  const { status } = useStatus()
+  const showModelSquare = getModuleAccessFromStatus(status, 'pricing').enabled
 
   return {
     navGroups: [
@@ -78,6 +84,9 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             url: '/dashboard/overview',
             icon: Activity,
           },
+          ...(showModelSquare
+            ? [{ title: t('Model Square'), url: '/pricing', icon: BookOpen }]
+            : []),
           {
             title: t('Dashboard'),
             url: '/dashboard/models',
