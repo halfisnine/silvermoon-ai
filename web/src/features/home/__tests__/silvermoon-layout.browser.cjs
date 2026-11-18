@@ -100,6 +100,7 @@ const server = http.createServer((req, res) => {
         sessionStorage.setItem('review-package-seeded', 'yes')
       }
     }, mode)
+    let shopLink = 'https://shop.example.com/silvermoon'
     let footerSettings = {}
     let populatedKeys = false
     let headerNavModules = {}
@@ -173,7 +174,20 @@ const server = http.createServer((req, res) => {
             expires_at: now + 3600,
           },
         }
-      } else if (path === '/api/user/self') data = user
+      } else if (path === '/api/user/topup/info') {
+        data = {
+          enable_online_topup: true,
+          enable_stripe_topup: false,
+          enable_redemption: true,
+          topup_link: shopLink,
+          min_topup: 1,
+          amount_options: [5, 10, 20, 30],
+          discount: {},
+          pay_methods: [{ name: '支付宝', type: 'alipay', icon: 'SiAlipay' }],
+        }
+      } else if (path === '/api/user/amount') data = '0'
+      else if (path === '/api/user/aff') data = 'review'
+      else if (path === '/api/user/self') data = user
       else if (path === '/api/token/' || path === '/api/token') {
         const items = populatedKeys
           ? [
@@ -252,6 +266,76 @@ const server = http.createServer((req, res) => {
     const targets = process.env.SILVERMOON_REVIEW_TARGET
       ? [process.env.SILVERMOON_REVIEW_TARGET]
       : ['home', 'console']
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'wallet-shop') {
+      page.setDefaultTimeout(20000)
+      const widths = process.env.SILVERMOON_REVIEW_WIDTHS
+        ? process.env.SILVERMOON_REVIEW_WIDTHS.split(',').map(Number)
+        : [320, 390, 1440]
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 1100 })
+        await page.goto(`${baseUrl}/wallet`)
+        const shop = page.getByRole('link', { name: /微信支付 · 兑换码/ })
+        await shop.waitFor()
+        if (process.env.SILVERMOON_REVIEW_FONT) {
+          await page.addStyleTag({
+            content:
+              "@font-face{font-family:'Review Sans';src:url('/__review_font.ttf')}body{font-family:'Review Sans',sans-serif;--font-sans:'Review Sans',sans-serif;--font-ui-sans:'Review Sans',sans-serif;--font-body:'Review Sans',sans-serif}",
+          })
+          await page.evaluate(() => document.fonts.ready)
+        }
+        const alipay = page.getByRole('button', { name: /^支付宝/ })
+        const shopBox = await shop.boundingBox()
+        const alipayBox = await alipay.boundingBox()
+        const overflow = await page.evaluate(
+          () => document.documentElement.scrollWidth > innerWidth
+        )
+        if (overflow || !shopBox || shopBox.width < 200) {
+          throw new Error(`Wallet shop overflow at ${mode}/${width}`)
+        }
+        if (width < 640 && shopBox.y < alipayBox.y + alipayBox.height) {
+          throw new Error('Mobile payment cards must stack')
+        }
+        if (width >= 1024 && Math.abs(shopBox.y - alipayBox.y) > 2) {
+          throw new Error('Desktop payment cards must share a row')
+        }
+        const clipped = await shop.evaluate(
+          (element) =>
+            element.scrollWidth > element.clientWidth ||
+            element.scrollHeight > element.clientHeight
+        )
+        if (clipped) throw new Error('Shop card text is clipped')
+        const popupPromise = context.waitForEvent('page')
+        await context.route('https://shop.example.com/**', (route) =>
+          route.fulfill({
+            contentType: 'text/html',
+            body: '<p>Review shop</p>',
+          })
+        )
+        await shop.click()
+        const popup = await popupPromise
+        await popup.waitForURL(shopLink)
+        await popup.close()
+        await page.screenshot({
+          path: `${out}/wallet-shop-${mode}-${width}.png`,
+          fullPage: true,
+        })
+        results.push({
+          mode,
+          target: 'wallet-shop',
+          width,
+          destination: shopLink,
+        })
+      }
+      shopLink = ''
+      await page.reload()
+      await page.getByLabel('有兑换码吗？', { exact: true }).waitFor()
+      if (await page.getByRole('link', { name: /微信支付 · 兑换码/ }).count()) {
+        throw new Error('Cleared shop link still displays a purchase card')
+      }
+      results.push({ mode, target: 'wallet-shop-cleared' })
+      await context.close()
+      continue
+    }
     if (process.env.SILVERMOON_REVIEW_TARGET === 'navigation') {
       headerNavModules = { pricing: { enabled: true, requireAuth: true } }
       const widths = process.env.SILVERMOON_REVIEW_WIDTHS
