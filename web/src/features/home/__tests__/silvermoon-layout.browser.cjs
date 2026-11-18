@@ -75,7 +75,7 @@ const server = http.createServer((req, res) => {
     display_name: process.env.SILVERMOON_REVIEW_LONG_NAME
       ? 'SilvermoonTravelerWithAnUnbrokenVeryLongDisplayName'
       : '旅行者',
-    role: 1,
+    role: process.env.SILVERMOON_REVIEW_TARGET === 'dashboard' ? 10 : 1,
     quota: 64300000,
     used_quota: 11500000,
     request_count: 186,
@@ -107,6 +107,25 @@ const server = http.createServer((req, res) => {
     await context.route('**/api/**', async (route) => {
       const path = new URL(route.request().url()).pathname
       let data
+      if (
+        process.env.SILVERMOON_REVIEW_TARGET === 'sign-in' &&
+        path === '/api/user/auth/refresh'
+      ) {
+        await route.fulfill({
+          status: 401,
+          json: { success: false, message: 'Not signed in' },
+        })
+        return
+      }
+      if (
+        process.env.SILVERMOON_REVIEW_TARGET === 'sign-in' &&
+        path === '/api/user/login'
+      ) {
+        await route.fulfill({
+          json: { success: false, message: 'Invalid username or password' },
+        })
+        return
+      }
       if (path === '/api/status') {
         data = {
           ...footerSettings,
@@ -221,7 +240,21 @@ const server = http.createServer((req, res) => {
       } else if (path === '/api/user/self/groups') {
         data = { default: { ratio: 1, desc: 'Default' } }
       } else if (path === '/api/user/models') data = ['gpt-4o-mini']
-      else if (path === '/api/data/self') {
+      else if (
+        process.env.SILVERMOON_REVIEW_TARGET === 'dashboard' &&
+        [
+          '/api/data',
+          '/api/data/self',
+          '/api/data/users',
+          '/api/data/flow',
+          '/api/data/flow/self',
+        ].includes(path)
+      ) {
+        data =
+          require('../../dashboard/__tests__/chart-theme.browser.cjs').usageRows(
+            now
+          )
+      } else if (path === '/api/data/self') {
         data = [
           {
             created_at: now - 3600,
@@ -266,6 +299,34 @@ const server = http.createServer((req, res) => {
     const targets = process.env.SILVERMOON_REVIEW_TARGET
       ? [process.env.SILVERMOON_REVIEW_TARGET]
       : ['home', 'console']
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'sign-in') {
+      results.push(
+        ...(await require('../../auth/sign-in/__tests__/layout.browser.cjs').reviewSignIn(
+          {
+            page,
+            baseUrl,
+            mode,
+            out,
+            user,
+            now,
+            setStatus: (settings) => {
+              footerSettings = settings
+            },
+          }
+        ))
+      )
+      await context.close()
+      continue
+    }
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'dashboard') {
+      results.push(
+        ...(await require('../../dashboard/__tests__/chart-theme.browser.cjs').reviewCharts(
+          { page, baseUrl, mode, out }
+        ))
+      )
+      await context.close()
+      continue
+    }
     if (process.env.SILVERMOON_REVIEW_TARGET === 'wallet-shop') {
       page.setDefaultTimeout(20000)
       const widths = process.env.SILVERMOON_REVIEW_WIDTHS
@@ -423,6 +484,51 @@ const server = http.createServer((req, res) => {
             'Mobile drawer remained open after navigating to Model Square'
           )
         }
+        if (width < 768) {
+          const trigger = page.locator('[data-slot="sidebar-trigger"]')
+          await trigger.waitFor()
+          if ((await trigger.count()) !== 1) {
+            throw new Error('Model Square must have one console menu trigger')
+          }
+          await trigger.click()
+          const activeEntry = page.locator(
+            '[data-sidebar="menu-button"][href="/pricing"]:visible'
+          )
+          await activeEntry.waitFor()
+          if ((await activeEntry.getAttribute('data-active')) === null) {
+            throw new Error('Model Square sidebar entry is not active')
+          }
+          await page
+            .locator(
+              '[data-sidebar="menu-button"][href="/dashboard/overview"]:visible'
+            )
+            .click()
+          await page.waitForURL('**/dashboard/overview')
+          await page.goto(`${baseUrl}/pricing/missing-demo-model`)
+          await trigger.waitFor()
+          await trigger.click()
+          await page
+            .locator('[data-sidebar="menu-button"][href="/pricing"]:visible')
+            .click()
+          await page.waitForURL('**/pricing')
+          await page
+            .getByRole('heading', { name: '模型广场', exact: true })
+            .waitFor()
+          if (
+            await page.evaluate(
+              () => document.documentElement.scrollWidth > innerWidth
+            )
+          ) {
+            throw new Error('Mobile model square overflows')
+          }
+          await page.screenshot({
+            path: `${out}/model-square-navigation-${mode}-${width}.png`,
+          })
+        } else if (
+          await page.locator('[data-slot="sidebar-trigger"]').count()
+        ) {
+          throw new Error('Desktop public layout unexpectedly changed')
+        }
         results.push({
           mode,
           target: 'navigation',
@@ -454,6 +560,23 @@ const server = http.createServer((req, res) => {
         }
         results.push({ mode, target: 'navigation-disabled', width })
       }
+      headerNavModules = { pricing: { enabled: true, requireAuth: false } }
+      await context.route('**/api/user/auth/refresh', (route) =>
+        route.fulfill({
+          status: 401,
+          json: { success: false, message: 'Not signed in' },
+        })
+      )
+      await page.setViewportSize({ width: 390, height: 1000 })
+      await page.goto(`${baseUrl}/pricing`)
+      await page
+        .getByRole('heading', { name: '模型广场', exact: true })
+        .waitFor()
+      if (await page.locator('[data-slot="sidebar-trigger"]').count()) {
+        throw new Error('Guest pricing page exposes console navigation')
+      }
+      await page.locator('a[href="/sign-in"]:visible').first().waitFor()
+      results.push({ mode, target: 'navigation-guest', width: 390 })
       await context.close()
       continue
     }

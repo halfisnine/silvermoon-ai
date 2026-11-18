@@ -1,0 +1,214 @@
+.silvermoon-auth {
+  --auth-art: url('../../public/silvermoon/moonlight.webp');
+  --auth-sky: #243c68;
+  --auth-shade: #253453;
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+.silvermoon-auth[data-auth-theme='silvermoon-dream'] {
+  --auth-sky: #51466f;
+  --auth-shade: #44325d;
+}
+.silvermoon-auth[data-auth-theme='crimson-clouds'] {
+  --auth-art: url('../../public/silvermoon/crimson-clouds.jpg');
+  --auth-sky: #69516d;
+  --auth-shade: #51384e;
+}
+.silvermoon-auth-scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--auth-sky);
+}
+.silvermoon-auth-scene::before {
+  content: '';
+  position: absolute;
+  inset: -24px;
+  background: var(--auth-art) center / cover no-repeat;
+  filter: blur(20px);
+  opacity: 0.7;
+}
+.silvermoon-auth-artwork {
+  position: absolute;
+  inset: 0 auto auto 0;
+  width: 100%;
+  height: auto;
+  max-width: none;
+  mask-image: linear-gradient(#000 70%, transparent);
+}
+.silvermoon-auth-scene::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    #13213b1a 0%,
+    transparent 22%,
+    color-mix(in srgb, var(--auth-shade) 45%, transparent) 55%,
+    color-mix(in srgb, var(--auth-shade) 70%, transparent)
+  );
+}
+.silvermoon-auth[data-auth-theme='crimson-clouds'] .silvermoon-auth-artwork {
+  height: 100%;
+  object-fit: cover;
+  object-position: 48% center;
+  mask-image: none;
+}
+.silvermoon-auth-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 1600px;
+  margin: auto;
+  padding: max(16px, env(safe-area-inset-top)) clamp(16px, 4vw, 64px) 0;
+}
+.silvermoon-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 12px 6px 6px;
+  border-radius: 999px;
+  color: #fff;
+  background: color-mix(in srgb, var(--auth-shade) 72%, transparent);
+}
+.silvermoon-auth-brand h1 {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.silvermoon-auth-brand > div {
+  flex-shrink: 0;
+}
+.silvermoon-auth-tools {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px;
+  border-radius: 999px;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  box-shadow: 0 4px 20px #25233c12;
+}
+.silvermoon-auth-tools button {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+.silvermoon-auth-main {
+  display: grid;
+  gap: 24px;
+  width: min(100% - 32px, 480px);
+  margin: auto;
+  padding-top: clamp(100px, 45vw, 190px);
+}
+.silvermoon-auth-welcome {
+  color: #fff;
+  text-shadow: 0 2px 18px #182039;
+}
+.silvermoon-auth-title {
+  font-size: clamp(26px, 4vw, 48px);
+  line-height: 1.25;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.silvermoon-auth-description {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.7;
+}
+.silvermoon-auth-panel {
+  min-width: 0;
+  padding: 28px 22px;
+  border-radius: 24px;
+  color: var(--foreground);
+  background:
+    radial-gradient(
+      ellipse at 100% 0,
+      color-mix(in srgb, var(--chart-2) 10%, transparent),
+      transparent 65%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--card) 97%, transparent),
+      color-mix(in srgb, var(--card) 92%, transparent)
+    );
+  box-shadow:
+    0 24px 80px #1d1a3d30,
+    inset 0 1px 0 #ffffffb3;
+  backdrop-filter: blur(14px);
+}
+.silvermoon-auth-panel input {
+  min-height: 44px;
+  background: color-mix(in srgb, var(--card) 75%, transparent);
+}
+.silvermoon-auth-panel button[type='submit'] {
+  min-height: 44px;
+  background: linear-gradient(
+    120deg,
+    var(--primary),
+    color-mix(in srgb, var(--primary) 80%, #26395d)
+  );
+  color: var(--primary-foreground);
+}
+.silvermoon-auth-panel a {
+  text-underline-offset: 4px;
+}
+@media (min-width: 1024px) {
+  .silvermoon-auth-header {
+    padding-top: 28px;
+  }
+  .silvermoon-auth-main {
+    width: min(100% - 112px, 1280px);
+    min-height: calc(100svh - 116px);
+    grid-template-columns: minmax(0, 1fr) 440px;
+    align-items: center;
+    gap: clamp(48px, 8vw, 120px);
+    padding: 48px 0;
+  }
+  .silvermoon-auth-artwork {
+    width: min(72vw, 100svh);
+    height: 100%;
+    object-fit: contain;
+    object-position: left center;
+    mask-image: linear-gradient(90deg, #000 75%, transparent);
+  }
+  .silvermoon-auth[data-auth-theme='crimson-clouds'] .silvermoon-auth-artwork {
+    width: 100%;
+    object-position: center;
+  }
+  .silvermoon-auth-scene::after {
+    background:
+      linear-gradient(
+        180deg,
+        transparent 60%,
+        color-mix(in srgb, var(--auth-shade) 85%, transparent)
+      ),
+      linear-gradient(
+        90deg,
+        transparent 35%,
+        color-mix(in srgb, var(--auth-shade) 20%, transparent) 70%
+      );
+  }
+  .silvermoon-auth-welcome {
+    align-self: end;
+    padding-bottom: 32px;
+  }
+  .silvermoon-auth-description {
+    font-size: 16px;
+    max-width: 32rem;
+  }
+  .silvermoon-auth-panel {
+    padding: 40px;
+  }
+}
+@media (max-height: 560px) and (min-width: 600px) and (max-width: 1023px) {
+  .silvermoon-auth-main {
+    padding-top: 32px;
+  }
+}

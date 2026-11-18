@@ -16,13 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useIsMobile } from '@/hooks/use-mobile'
+import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/stores/auth-store'
+
 import type { TopNavLink } from '../types'
+import { AuthenticatedLayout } from './authenticated-layout'
 import { PublicHeader, type PublicHeaderProps } from './public-header'
 
 type PublicLayoutProps = {
   className?: string
   children: React.ReactNode
   showMainContainer?: boolean
+  mobileConsoleNavigation?: boolean
   navContent?: React.ReactNode
   headerProps?: Omit<PublicHeaderProps, 'navContent'>
   navLinks?: TopNavLink[]
@@ -34,6 +40,28 @@ type PublicLayoutProps = {
 }
 
 export function PublicLayout(props: PublicLayoutProps) {
+  const isMobile = useIsMobile()
+  const signedIn = useAuthStore((state) => !!state.auth.user)
+
+  // Public routes keep their access rules; this only preserves the console
+  // navigation for signed-in mobile visitors who opt into this layout.
+  if (props.mobileConsoleNavigation && isMobile && signedIn) {
+    return (
+      <AuthenticatedLayout>
+        <main
+          data-mobile-console='true'
+          className={cn(
+            'group/public-layout h-full min-h-0 overflow-x-hidden overflow-y-auto',
+            props.showMainContainer !== false && 'container px-4 py-6',
+            props.className
+          )}
+        >
+          {props.children}
+        </main>
+      </AuthenticatedLayout>
+    )
+  }
+
   return (
     <div
       className={[

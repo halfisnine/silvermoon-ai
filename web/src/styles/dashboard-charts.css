@@ -1,0 +1,36 @@
+/* A quiet reading surface keeps illustration detail behind the data. */
+.dashboard-chart-panel {
+  background:
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--chart-2) 9%, transparent),
+      transparent 65%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--card) 94%, transparent),
+      color-mix(in srgb, var(--card) 86%, transparent)
+    );
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  box-shadow: 0 6px 24px color-mix(in srgb, var(--primary) 5%, transparent);
+}
+
+body[data-theme-preset='silvermoon-dream'] .dashboard-chart-panel,
+body[data-theme-preset='crimson-clouds'] .dashboard-chart-panel {
+  background:
+    radial-gradient(
+      ellipse at 100% 0%,
+      color-mix(in srgb, var(--chart-2) 13%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 0% 100%,
+      color-mix(in srgb, var(--chart-3) 9%, transparent),
+      transparent 65%
+    ),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--card) 95%, transparent),
+      color-mix(in srgb, var(--card) 88%, transparent)
+    );
+}

@@ -21,6 +21,7 @@ import { describe, expect, test } from 'vitest'
 import type { QuotaDataItem } from '@/features/dashboard/types'
 import type { TimeGranularity } from '@/lib/time'
 
+import { DASHBOARD_CHART_THEMES } from '../chart-theme'
 import { processChartData, processUserChartData } from '../charts'
 
 const cases: Array<{
@@ -154,3 +155,90 @@ describe.each(cases)('dashboard $granularity chart chronology', (scenario) => {
     }
   })
 })
+
+describe.each(Object.entries(DASHBOARD_CHART_THEMES))(
+  'dashboard %s chart colors',
+  (_, appearance) => {
+    const data: QuotaDataItem[] = [
+      {
+        created_at: 1767225600,
+        model_name: 'claude',
+        username: 'alice',
+        quota: 500000,
+        count: 3,
+      },
+      {
+        created_at: 1767225600,
+        model_name: 'gemini',
+        username: 'bob',
+        quota: 1000000,
+        count: 5,
+      },
+      {
+        created_at: 1767229200,
+        model_name: 'claude',
+        username: 'alice',
+        quota: 1500000,
+        count: 7,
+      },
+    ]
+
+    test('recolors every model view consistently without changing data or totals', () => {
+      const original = structuredClone(data)
+      const baseline = processChartData(data, 'hour')
+      const result = processChartData(
+        data,
+        'hour',
+        undefined,
+        undefined,
+        appearance
+      )
+      for (const key of [
+        'spec_line',
+        'spec_area',
+        'spec_model_line',
+        'spec_pie',
+        'spec_rank_bar',
+      ] as const) {
+        expect(result[key].data).toEqual(baseline[key].data)
+        expect(result[key].color.range).toEqual(appearance.palette)
+        expect(result[key].color).toEqual(result.spec_line.color)
+      }
+      expect(result.totalQuotaDisplay).toEqual(baseline.totalQuotaDisplay)
+      expect(result.totalCountDisplay).toEqual(baseline.totalCountDisplay)
+      expect(data).toEqual(original)
+    })
+
+    test('keeps user ranking, limits and time buckets while applying the same user colors to both views', () => {
+      const baseline = processUserChartData(data, 'hour', undefined, 1)
+      const result = processUserChartData(
+        data,
+        'hour',
+        undefined,
+        1,
+        appearance
+      )
+      expect(result.spec_user_rank.data).toEqual(baseline.spec_user_rank.data)
+      expect(result.spec_user_trend.data).toEqual(baseline.spec_user_trend.data)
+      expect(result.spec_user_rank.color.specified).toEqual({
+        alice: appearance.palette[0],
+      })
+      expect(result.spec_user_trend.color).toEqual(result.spec_user_rank.color)
+      expect(result.spec_user_rank.title).toEqual(baseline.spec_user_rank.title)
+    })
+
+    test('renders empty datasets with the selected package palette', () => {
+      const models = processChartData(
+        [],
+        'day',
+        undefined,
+        undefined,
+        appearance
+      )
+      const users = processUserChartData([], 'day', undefined, 10, appearance)
+      expect(models.spec_pie.data[0].values).toEqual([])
+      expect(users.spec_user_rank.data[0].values).toEqual([])
+      expect(users.spec_user_rank.color.range).toEqual(appearance.palette)
+    })
+  }
+)
