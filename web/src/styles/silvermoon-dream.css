@@ -183,12 +183,15 @@ body[data-theme-preset='silvermoon-dream'] [data-slot='section-page-header'] {
   border-bottom: 1px solid #ffffff94;
   margin-bottom: 10px;
 }
+body[data-theme-preset='silvermoon-dream'] [data-slot='data-table-page'] {
+  --data-table-card-bg: rgb(252 250 255 / 68%);
+}
 body[data-theme-preset='silvermoon-dream']
   [data-slot='data-table-page']
   > :first-child:not([data-slot='data-table-surface']) {
   padding: 12px;
   border-radius: 14px;
-  background: #faf7ffe0;
+  background: #faf7ffa6;
   box-shadow: 0 6px 18px -16px #493a76;
 }
 body[data-theme-preset='silvermoon-dream'] [data-slot='data-table-surface'] {
@@ -206,12 +209,12 @@ body[data-theme-preset='silvermoon-dream']
   left: 0;
   width: 100cqw;
 }
-/* Filled rows and pinned cells must remain legible over the scenery. */
+/* Ordinary rows reveal the scene; pinned cells keep their opaque overlap guard. */
 body[data-theme-preset='silvermoon-dream']
   [data-slot='data-table-surface']
   [data-slot='table-body']
   > [data-slot='table-row']:not(:has([data-slot='empty'])) {
-  background: #fcfaffed;
+  background: #fcfaff4d;
 }
 body[data-theme-preset='silvermoon-dream']
   [data-slot='data-table-surface']
@@ -225,7 +228,7 @@ body[data-theme-preset='silvermoon-dream']
     :hover,
     [data-state='selected']
   ) {
-  background: #e9def7;
+  background: #e9def799;
 }
 body[data-theme-preset='silvermoon-dream'] [data-slot='empty-header'] {
   padding: 26px 32px;
@@ -243,7 +246,7 @@ body[data-theme-preset='silvermoon-dream'] [data-slot='empty-icon'] {
 }
 body[data-theme-preset='silvermoon-dream'] [data-slot='section-page-footer'] {
   border-top: 1px solid #ffffffb3;
-  background: #faf7ffed;
+  background: #faf7ffbf;
 }
 @media (max-width: 640px) {
   body[data-theme-preset='silvermoon-dream']

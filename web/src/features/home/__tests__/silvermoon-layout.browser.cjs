@@ -299,6 +299,15 @@ const server = http.createServer((req, res) => {
     const targets = process.env.SILVERMOON_REVIEW_TARGET
       ? [process.env.SILVERMOON_REVIEW_TARGET]
       : ['home', 'console']
+    if (process.env.SILVERMOON_REVIEW_TARGET === 'table-surfaces') {
+      results.push(
+        ...(await require('../../../components/data-table/core/__tests__/surfaces.browser.cjs').reviewTableSurfaces(
+          { page, baseUrl, mode, out, now }
+        ))
+      )
+      await context.close()
+      continue
+    }
     if (process.env.SILVERMOON_REVIEW_TARGET === 'sign-in') {
       results.push(
         ...(await require('../../auth/sign-in/__tests__/layout.browser.cjs').reviewSignIn(
