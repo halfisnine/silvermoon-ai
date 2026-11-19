@@ -2472,7 +2472,10 @@ test('fetched upstream models can be redirected in bulk with the model list sync
   ).not.toBeChecked()
   await user.click(dialog.getByRole('checkbox', { name: 'upstream-model' }))
   await user.type(dialog.getByRole('textbox', { name: 'Suffix' }), '-model')
-  await user.click(dialog.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(dialog.getByRole('button', { name: 'Finish adding' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   await waitFor(() =>
     expect(
       screen.queryByRole('dialog', { name: 'Batch add mappings' })
@@ -2693,7 +2696,8 @@ test('redirecting a recognized upstream name opens an empty alias draft without 
   expect(screen.queryByText('1 model(s) redirected')).not.toBeInTheDocument()
 })
 
-test('the redirect panel batch action starts empty and only applies explicitly selected models after preview', async () => {
+test('the redirect panel accumulates confirmed batches in the draft without saving the channel', async () => {
+  vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true } })
   useWideScreen()
   editingChannel.models = 'custom-model,gpt-4o-all,o3-all'
   const baseGet = vi.mocked(api.get).getMockImplementation()
@@ -2728,6 +2732,8 @@ test('the redirect panel batch action starts empty and only applies explicitly s
   expect(dialog.getByRole('checkbox', { name: 'o3-all' })).not.toBeChecked()
   await user.click(dialog.getByRole('checkbox', { name: 'gpt-4o-all' }))
   await user.type(dialog.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(dialog.getByRole('button', { name: 'Continue adding' }))
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
   await user.click(dialog.getByRole('button', { name: 'Cancel' }))
   const picker = within(screen.getByRole('group', { name: 'Models' }))
   expect(picker.getByRole('button', { name: 'gpt-4o-all' })).toBeVisible()
@@ -2741,16 +2747,28 @@ test('the redirect panel batch action starts empty and only applies explicitly s
   await user.click(dialog.getByRole('checkbox', { name: 'gpt-4o-all' }))
   await user.type(dialog.getByRole('textbox', { name: 'Suffix' }), '-all')
   expect(dialog.getByRole('list', { name: 'Preview' })).toHaveTextContent(
-    'gpt-4ogpt-4o-all'
+    'gpt-4o→gpt-4o-all'
   )
-  await user.click(dialog.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(dialog.getByRole('button', { name: 'Continue adding' }))
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(api.put).not.toHaveBeenCalled()
+  expect(dialog.getByRole('checkbox', { name: 'gpt-4o-all' })).not.toBeChecked()
+  expect(dialog.getByRole('textbox', { name: 'Suffix' })).toHaveValue('-all')
+  await user.click(dialog.getByRole('checkbox', { name: 'o3-all' }))
+  await user.click(dialog.getByRole('button', { name: 'Finish adding' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Add 2 mapping(s) and close' })
+  )
+  expect(api.put).not.toHaveBeenCalled()
   expect(
     panel.getAllByRole('combobox', { name: 'Request Model Name' })
-  ).toHaveLength(1)
+  ).toHaveLength(2)
   expect(picker.getByRole('button', { name: 'gpt-4o' })).toBeVisible()
-  expect(picker.getByRole('button', { name: 'o3-all' })).toBeVisible()
-  expect(picker.queryByRole('button', { name: 'o3' })).not.toBeInTheDocument()
-  expect(screen.getByText('1 model(s) redirected')).toBeVisible()
+  expect(
+    picker.queryByRole('button', { name: 'o3-all' })
+  ).not.toBeInTheDocument()
+  expect(picker.getByRole('button', { name: 'o3' })).toBeVisible()
+  expect(screen.getByText('2 model(s) redirected')).toBeVisible()
 
   await user.click(panel.getByRole('button', { name: 'Collapse panel' }))
   expect(

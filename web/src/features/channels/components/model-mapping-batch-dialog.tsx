@@ -16,14 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ArrowRight01Icon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
-import { useId, useMemo, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Field,
   FieldDescription,
@@ -49,6 +46,10 @@ import {
   type ModelMappingPair,
   type ModelMappingRule,
 } from '../lib'
+import {
+  ModelMappingConfirmation,
+  ModelMappingPreview,
+} from './model-mapping-confirmation'
 import { UpstreamModelSelection } from './upstream-model-selection'
 
 /** Where the selectable names come from. */
@@ -66,7 +67,8 @@ type ModelMappingBatchDialogProps = {
   upstreamModels?: string[]
   channelModels: string[]
   initialSource?: ModelMappingBatchSource
-  onApply: (result: ModelMappingBatchResult) => void
+  currentMapping?: string
+  onApply: (result: ModelMappingBatchResult) => boolean | void
 }
 
 export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
@@ -89,6 +91,12 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
   const [find, setFind] = useState('')
   const [replaceWith, setReplaceWith] = useState('')
   const [syncModels, setSyncModels] = useState(true)
+  const [confirmation, setConfirmation] = useState(false)
+  const [draft, setDraft] = useState<
+    Array<ModelMappingPair & { publish: boolean }>
+  >([])
+  const [failed, setFailed] = useState(false)
+  const applying = useRef(false)
   const candidates =
     source === 'upstream' ? upstreamModels : props.channelModels
   const rule = useMemo<ModelMappingRule>(() => {
@@ -104,6 +112,17 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
     () => deriveModelMappingPairs(selected, direction, rule),
     [selected, direction, rule]
   )
+  // Later batches replace earlier entries with the same request name.
+  // Nothing reaches the parent form until the final confirmation.
+  const pending = useMemo(() => {
+    const mappings = new Map(draft.map((pair) => [pair.from, pair]))
+    for (const pair of derivation.pairs) {
+      mappings.set(pair.from, { ...pair, publish: direction === 'upstream' })
+    }
+    return [...mappings.values()]
+  }, [draft, derivation.pairs, direction])
+  const pendingPairs = pending.map(({ from, to }) => ({ from, to }))
+  const canSyncModels = pending.some((pair) => pair.publish)
   const hasRule =
     ruleType === 'replace' ? find.length > 0 : affix.trim().length > 0
   const isPrefix = ruleType === 'add-prefix' || ruleType === 'strip-prefix'
@@ -127,8 +146,17 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
       )}
       contentClassName='sm:max-w-4xl'
       bodyClassName='flex flex-col gap-5'
+      footerClassName='flex-wrap'
       footer={
         <>
+          <p
+            className='text-muted-foreground w-full text-sm sm:mr-auto sm:w-auto'
+            aria-live='polite'
+          >
+            {t('Pending mappings: {{count}}', {
+              count: derivation.pairs.length,
+            })}
+          </p>
           <Button
             type='button'
             variant='outline'
@@ -138,20 +166,45 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
           </Button>
           <Button
             type='button'
-            disabled={!hasRule || derivation.pairs.length === 0}
+            variant='outline'
+            disabled={pending.length === 0}
             onClick={() => {
-              props.onApply({
-                pairs: derivation.pairs,
-                syncModels: direction === 'upstream' && syncModels,
-              })
-              props.onOpenChange(false)
+              applying.current = false
+              setFailed(false)
+              setConfirmation(true)
             }}
           >
-            {t('Add {{count}} mapping(s)', { count: derivation.pairs.length })}
+            {t('Finish adding')}
+          </Button>
+          <Button
+            type='button'
+            disabled={!hasRule || derivation.pairs.length === 0}
+            onClick={() => {
+              setDraft(pending)
+              setSelected([])
+            }}
+          >
+            {t('Continue adding')}
           </Button>
         </>
       }
     >
+      {draft.length > 0 && (
+        <section
+          aria-label={t('Draft mappings: {{count}}', { count: draft.length })}
+          className='space-y-3 rounded-lg border p-3'
+        >
+          <p role='status' className='text-sm font-medium'>
+            {t('Draft mappings: {{count}}', { count: draft.length })}
+          </p>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Mappings stay in this dialog until you finish and confirm. Later batches replace earlier mappings with the same request name.'
+            )}
+          </p>
+          <ModelMappingPreview pairs={draft} />
+        </section>
+      )}
       <FieldSet>
         <FieldLegend id={`${id}-task`} variant='label'>
           {t('What do you want to change?')}
@@ -352,31 +405,8 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
             <h3 id={`${id}-preview`} className='text-sm font-semibold'>
               {t('3. Review mappings')}
             </h3>
-            <div className='text-muted-foreground grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 text-xs'>
-              <span>{t('Users call')}</span>
-              <span aria-hidden='true'>→</span>
-              <span>{t('Upstream receives')}</span>
-            </div>
             {derivation.pairs.length > 0 && hasRule && (
-              <ul
-                aria-label={t('Preview')}
-                className='flex max-h-56 flex-col gap-2 overflow-y-auto font-mono text-xs'
-              >
-                {derivation.pairs.map((pair) => (
-                  <li
-                    key={pair.from}
-                    className='grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-start gap-2'
-                  >
-                    <span className='min-w-0 wrap-anywhere'>{pair.from}</span>
-                    <HugeiconsIcon
-                      icon={ArrowRight01Icon}
-                      className='size-3.5 shrink-0'
-                      aria-hidden='true'
-                    />
-                    <span className='min-w-0 wrap-anywhere'>{pair.to}</span>
-                  </li>
-                ))}
-              </ul>
+              <ModelMappingPreview pairs={derivation.pairs} />
             )}
             {(!hasRule || selected.length === 0) && (
               <p className='text-muted-foreground text-sm'>
@@ -406,25 +436,39 @@ export function ModelMappingBatchDialog(props: ModelMappingBatchDialogProps) {
               </p>
             )}
           </section>
-          {direction === 'upstream' && (
-            <Field orientation='horizontal'>
-              <Checkbox
-                id={`${id}-sync`}
-                checked={syncModels}
-                onCheckedChange={(checked) => setSyncModels(checked === true)}
-              />
-              <FieldLabel
-                htmlFor={`${id}-sync`}
-                className='leading-5 font-normal'
-              >
-                {t(
-                  'Publish the request names and remove the raw upstream names from the model list'
-                )}
-              </FieldLabel>
-            </Field>
-          )}
         </section>
       </div>
+      <ModelMappingConfirmation
+        open={confirmation}
+        onOpenChange={setConfirmation}
+        pairs={pendingPairs}
+        currentMapping={props.currentMapping ?? ''}
+        showSync={canSyncModels}
+        syncModels={syncModels}
+        onSyncChange={setSyncModels}
+        failed={failed}
+        onConfirm={() => {
+          if (!confirmation || applying.current) return
+          applying.current = true
+          try {
+            const applied = props.onApply({
+              pairs: pendingPairs,
+              syncModels: canSyncModels && syncModels,
+            })
+            if (applied === false) {
+              applying.current = false
+              setFailed(true)
+              return
+            }
+          } catch {
+            applying.current = false
+            setFailed(true)
+            return
+          }
+          setConfirmation(false)
+          props.onOpenChange(false)
+        }}
+      />
     </Dialog>
   )
 }

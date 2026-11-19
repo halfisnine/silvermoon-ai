@@ -45,9 +45,7 @@ test('creating user aliases starts unselected, previews request-to-upstream pair
     'Strip suffix'
   )
   expect(screen.getByRole('checkbox', { name: 'gpt-4o-all' })).not.toBeChecked()
-  expect(
-    screen.getByRole('button', { name: 'Add 0 mapping(s)' })
-  ).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Continue adding' })).toBeDisabled()
   expect(
     screen.getByText(
       'Example: users call gpt-4o; upstream receives gpt-4o-all.'
@@ -60,12 +58,16 @@ test('creating user aliases starts unselected, previews request-to-upstream pair
   expect(screen.queryByText(/unchanged by the rule/)).not.toBeInTheDocument()
   await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
   const preview = within(screen.getByRole('list', { name: 'Preview' }))
-  expect(preview.getByRole('listitem')).toHaveTextContent('gpt-4ogpt-4o-all')
+  expect(preview.getByRole('listitem')).toHaveTextContent('gpt-4o→gpt-4o-all')
   expect(
     screen.getByText('1 model(s) unchanged by the rule were skipped')
   ).toBeVisible()
   expect(onApply).not.toHaveBeenCalled()
-  await user.click(screen.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: [{ from: 'gpt-4o', to: 'gpt-4o-all' }],
     syncModels: true,
@@ -91,7 +93,11 @@ test('changing upstream names preserves the request name and leaves model-list s
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole('checkbox', { name: 'gemini-2.5-flash' }))
   await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
-  await user.click(screen.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: [{ from: 'gemini-2.5-flash', to: 'gemini-2.5-flash-all' }],
     syncModels: false,
@@ -117,11 +123,13 @@ test('switching the model list clears selection without changing the chosen task
     screen.getByRole('radio', { name: 'Create aliases for users' })
   ).toBeChecked()
   expect(screen.getByRole('textbox', { name: 'Suffix' })).toHaveValue('-all')
-  expect(
-    screen.getByRole('button', { name: 'Add 0 mapping(s)' })
-  ).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Continue adding' })).toBeDisabled()
   await user.click(screen.getByRole('checkbox', { name: 'claude-all' }))
-  await user.click(screen.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: [{ from: 'claude', to: 'claude-all' }],
     syncModels: true,
@@ -154,10 +162,14 @@ test('creating aliases from channel models reports conflicts and allows opting o
       '1 model(s) skipped because another model derives the same request name'
     )
   ).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
   await user.click(
     screen.getByRole('checkbox', { name: /Publish the request names/ })
   )
-  await user.click(screen.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: [{ from: 'claude', to: 'claude-all' }],
     syncModels: false,
@@ -186,7 +198,11 @@ test('the alias task can add a prefix and only shows fields for the selected rul
     screen.queryByRole('textbox', { name: 'Suffix' })
   ).not.toBeInTheDocument()
   await user.type(screen.getByRole('textbox', { name: 'Prefix' }), 'team/')
-  await user.click(screen.getByRole('button', { name: 'Add 1 mapping(s)' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: [{ from: 'team/gpt-4o', to: 'gpt-4o' }],
     syncModels: true,
@@ -218,7 +234,11 @@ test('replacement previews include every selected model even when several share 
   const preview = within(screen.getByRole('list', { name: 'Preview' }))
   expect(preview.getAllByRole('listitem')).toHaveLength(10)
   expect(preview.getAllByText('gpt4oa')).toHaveLength(2)
-  await user.click(screen.getByRole('button', { name: 'Add 10 mapping(s)' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(
+    screen.getByRole('button', { name: 'Add 10 mapping(s) and close' })
+  )
   expect(onApply).toHaveBeenCalledWith({
     pairs: models.map((from) => ({ from, to: from.replaceAll('-', '') })),
     syncModels: false,
@@ -266,4 +286,213 @@ test('long translated source labels wrap inside their row without covering the m
   expect(
     screen.getByRole('textbox', { name: 'Rechercher des modèles...' })
   ).toBeVisible()
+})
+
+test('continuing accumulates local drafts and finishing confirms all batches in one application', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={onOpenChange}
+      upstreamModels={['gpt-4o-all', 'o3-all']}
+      channelModels={[]}
+      onApply={onApply}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o-all' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Continue adding' }))
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(onApply).not.toHaveBeenCalled()
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(screen.getByRole('checkbox', { name: 'gpt-4o-all' })).not.toBeChecked()
+  expect(screen.getByRole('textbox', { name: 'Suffix' })).toHaveValue('-all')
+  expect(screen.getByRole('button', { name: 'Finish adding' })).toBeEnabled()
+  await user.click(screen.getByRole('checkbox', { name: 'o3-all' }))
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  const confirm = within(screen.getByRole('alertdialog'))
+  expect(confirm.getAllByRole('listitem')).toHaveLength(2)
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(confirm.getByRole('button', { name: 'Back to editing' }))
+  expect(screen.getByRole('checkbox', { name: 'o3-all' })).toBeChecked()
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Add 2 mapping(s) and close' })
+  )
+  expect(onApply).toHaveBeenCalledExactlyOnceWith({
+    pairs: [
+      { from: 'gpt-4o', to: 'gpt-4o-all' },
+      { from: 'o3', to: 'o3-all' },
+    ],
+    syncModels: true,
+  })
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+test('cancel discards accumulated drafts without applying anything to the channel', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={onOpenChange}
+      channelModels={['gpt-4o']}
+      onApply={onApply}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Continue adding' }))
+  await user.click(screen.getByRole('button', { name: 'Cancel' }))
+  expect(onApply).not.toHaveBeenCalled()
+  expect(onOpenChange).toHaveBeenCalledWith(false)
+})
+
+test('finishing with only saved drafts deduplicates request names using the latest batch', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={vi.fn()}
+      channelModels={['gpt-4o']}
+      onApply={onApply}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-first')
+  await user.click(screen.getByRole('button', { name: 'Continue adding' }))
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o' }))
+  await user.clear(screen.getByRole('textbox', { name: 'Suffix' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-last')
+  await user.click(screen.getByRole('button', { name: 'Continue adding' }))
+  expect(onApply).not.toHaveBeenCalled()
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  const confirm = within(screen.getByRole('alertdialog'))
+  expect(confirm.getAllByRole('listitem')).toHaveLength(1)
+  expect(confirm.getByText('gpt-4o-last')).toBeVisible()
+  expect(confirm.queryByRole('checkbox')).not.toBeInTheDocument()
+  await user.click(
+    confirm.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
+  expect(onApply).toHaveBeenCalledExactlyOnceWith({
+    pairs: [{ from: 'gpt-4o', to: 'gpt-4o-last' }],
+    syncModels: false,
+  })
+})
+
+test('confirmation shows existing targets before overwrite and keeps failed applications open', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn(() => false)
+  const onOpenChange = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={onOpenChange}
+      upstreamModels={['gpt-4o-all']}
+      channelModels={[]}
+      currentMapping='{"gpt-4o":"old-upstream"}'
+      onApply={onApply}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o-all' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  const confirm = within(
+    screen.getByRole('alertdialog', { name: 'Confirm mappings' })
+  )
+  expect(confirm.getByText('Will overwrite')).toBeVisible()
+  expect(confirm.getByText('old-upstream')).toBeVisible()
+  await user.click(
+    confirm.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  )
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(confirm.getByRole('alert')).toBeVisible()
+  await user.click(confirm.getByRole('button', { name: 'Back to editing' }))
+  expect(screen.getByRole('checkbox', { name: 'gpt-4o-all' })).toBeChecked()
+})
+
+test('Escape closes only confirmation and preserves the editor selection, rule, search and sync choice', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn()
+  const onOpenChange = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={onOpenChange}
+      upstreamModels={['gpt-4o-all']}
+      channelModels={[]}
+      onApply={onApply}
+    />
+  )
+  await user.type(
+    screen.getByRole('textbox', { name: 'Search models...' }),
+    'gpt'
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o-all' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  await user.click(
+    screen.getByRole('checkbox', { name: /Publish the request names/ })
+  )
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  expect(onOpenChange).not.toHaveBeenCalled()
+  expect(onApply).not.toHaveBeenCalled()
+  expect(screen.getByRole('textbox', { name: 'Search models...' })).toHaveValue(
+    'gpt'
+  )
+  expect(screen.getByRole('checkbox', { name: 'gpt-4o-all' })).toBeChecked()
+  expect(screen.getByRole('textbox', { name: 'Suffix' })).toHaveValue('-all')
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(
+    screen.getByRole('checkbox', { name: /Publish the request names/ })
+  ).not.toBeChecked()
+})
+
+test('invalid existing mapping blocks confirmation without applying changes', async () => {
+  const user = userEvent.setup()
+  const onApply = vi.fn()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={vi.fn()}
+      channelModels={['gpt-4o']}
+      currentMapping='{"broken"'
+      onApply={onApply}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  expect(screen.getByRole('alert')).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Add 1 mapping(s) and close' })
+  ).toBeDisabled()
+  expect(onApply).not.toHaveBeenCalled()
+})
+
+test('confirmation distinguishes identical mappings from new mappings', async () => {
+  const user = userEvent.setup()
+  render(
+    <ModelMappingBatchDialog
+      open
+      onOpenChange={vi.fn()}
+      upstreamModels={['gpt-4o-all', 'o3-all']}
+      channelModels={[]}
+      currentMapping='{"gpt-4o":"gpt-4o-all"}'
+      onApply={vi.fn()}
+    />
+  )
+  await user.click(screen.getByRole('checkbox', { name: 'gpt-4o-all' }))
+  await user.click(screen.getByRole('checkbox', { name: 'o3-all' }))
+  await user.type(screen.getByRole('textbox', { name: 'Suffix' }), '-all')
+  await user.click(screen.getByRole('button', { name: 'Finish adding' }))
+  const confirm = within(screen.getByRole('alertdialog'))
+  expect(confirm.getByText('Already mapped')).toBeVisible()
+  expect(confirm.getByText('New mapping')).toBeVisible()
+  expect(confirm.queryByText('Will overwrite')).not.toBeInTheDocument()
 })
