@@ -1442,9 +1442,10 @@ export function ChannelMutateDrawer({
         form.getValues('model_mapping') || '',
         pairs
       )
-      if (merged === null) return
+      if (merged === null) return false
       form.setValue('model_mapping', merged, { shouldDirty: true })
       if (sync) syncModelsWithMapping(merged)
+      return true
     },
     [form, syncModelsWithMapping]
   )
@@ -5126,6 +5127,7 @@ export function ChannelMutateDrawer({
           upstreamModels={upstreamModelList}
           channelModels={currentModelsArray}
           initialSource={batchMapping.source}
+          currentMapping={formValues.model_mapping || ''}
           onOpenChange={(nextOpen) => {
             if (!nextOpen) setBatchMapping(null)
           }}
