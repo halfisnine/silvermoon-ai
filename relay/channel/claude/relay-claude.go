@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
@@ -382,6 +383,22 @@ func HandleClaudeResponseData(c *gin.Context, info *relaycommon.RelayInfo, claud
 		claudeInfo.Usage.PromptTokensDetails.CachedCreationTokens = claudeResponse.Usage.CacheCreationInputTokens
 		claudeInfo.Usage.ClaudeCacheCreation5mTokens = claudeResponse.Usage.GetCacheCreation5mTokens()
 		claudeInfo.Usage.ClaudeCacheCreation1hTokens = claudeResponse.Usage.GetCacheCreation1hTokens()
+	}
+	for _, field := range []string{"input_tokens", "output_tokens"} {
+		if _, present := ojson.GetBytes(data, "usage."+field).Value().(float64); !present {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}
+	// Returned content without output usage is incomplete billing evidence;
+	// preserve the provider's numeric values instead of pricing an estimate.
+	if claudeInfo.Usage.CompletionTokens == 0 {
+		for _, block := range claudeResponse.Content {
+			if block.GetText() != "" || (block.Thinking != nil && *block.Thinking != "") ||
+				block.Type == "tool_use" || block.Type == "server_tool_use" || block.Type == "redacted_thinking" {
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+				break
+			}
+		}
 	}
 	var responseData []byte
 	switch info.RelayFormat {

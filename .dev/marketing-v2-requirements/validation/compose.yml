@@ -30,3 +30,17 @@ services:
   redis:
     image: mirror.ccs.tencentyun.com/library/redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f
     command: [redis-server, --save, '', --appendonly, 'no']
+  clickhouse:
+    image: mirror.ccs.tencentyun.com/clickhouse/clickhouse-server@sha256:0152dd511befe6a2c2ef53e930726179669b08116da78500b37c51c96ff5ee77
+    environment:
+      CLICKHOUSE_USER: marketing_test
+      CLICKHOUSE_PASSWORD: local-marketing-test-only
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    tmpfs:
+      - /var/lib/clickhouse
+      - /var/log/clickhouse-server
+    healthcheck:
+      test: [CMD, clickhouse-client, --user, marketing_test, --password, local-marketing-test-only, --query, SELECT 1]
+      interval: 2s
+      timeout: 2s
+      retries: 45

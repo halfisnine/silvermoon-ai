@@ -4,7 +4,9 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -30,6 +32,9 @@ func OaiResponsesCompactionHandler(c *gin.Context, resp *http.Response) (*dto.Us
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
+	if !service.CompleteTokenUsageEvidence([]byte(ojson.GetBytes(responseBody, "usage").Raw)) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	usage := dto.Usage{}
 	if compactResp.Usage != nil {
 		usage.PromptTokens = compactResp.Usage.InputTokens

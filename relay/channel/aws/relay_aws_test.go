@@ -14,15 +14,21 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	relaytypes "github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream/eventstreamapi"
@@ -30,8 +36,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 const awsTestModel = "anthropic.claude-3-5-sonnet-20240620-v1:0"
@@ -1053,6 +1061,208 @@ func TestAWSApiKeyTypeInvokesThroughSDKWithBearerToken(t *testing.T) {
 			assert.Equal(t, "bedrock-runtime.us-east-1.amazonaws.com", seen.URL.Host)
 			assert.Equal(t, "/model/us."+awsTestModel+"/"+action, seen.URL.Path)
 			assert.Equal(t, "Bearer test-api-key", seen.Header.Get("Authorization"))
+		})
+	}
+}
+
+// The provider is a real HTTP server and the SDK uses its normal transport and
+// retry defaults. SQLite is the actual asset ledger, not a BillingSettler fake.
+func TestAwsManagedDispatchAndTerminalAccounting(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	pool, err := db.DB()
+	require.NoError(t, err)
+	pool.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	oldDB, oldLogDB := model.DB, model.LOG_DB
+	model.DB, model.LOG_DB = db, db
+	t.Cleanup(func() { model.DB, model.LOG_DB = oldDB, oldLogDB })
+	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	t.Cleanup(func() { common.SetDatabaseTypes(oldMain, oldLog) })
+	oldRedis, oldLogs := common.RedisEnabled, common.LogConsumeEnabled
+	common.RedisEnabled, common.LogConsumeEnabled = false, true
+	t.Cleanup(func() { common.RedisEnabled, common.LogConsumeEnabled = oldRedis, oldLogs })
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}))
+	start := `{"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"claude-test","content":[],"usage":{"input_tokens":4,"output_tokens":0}}}`
+	delta := `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}`
+	stop := `{"type":"message_stop"}`
+	claudeComplete := `{"id":"msg_test","type":"message","role":"assistant","model":"claude-test","content":[{"type":"text","text":"answer"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":3}}`
+	novaComplete := `{"output":{"message":{"content":[{"text":"hello "},{"text":"world"}]}},"stopReason":"end_turn","usage":{"inputTokens":4,"outputTokens":3,"totalTokens":7}}`
+	for i, scenario := range []struct {
+		name, provider, body                           string
+		frames                                         []string
+		disconnect, unavailable, fixed, known, corrupt bool
+		quota, redirect                                int
+	}{
+		{name: "claude_complete", provider: "claude", body: claudeComplete, known: true, quota: 7},
+		{name: "claude_accepted_disconnect", provider: "claude", disconnect: true},
+		{name: "claude_redirect307", provider: "claude", redirect: http.StatusTemporaryRedirect, body: claudeComplete},
+		{name: "nova_redirect308", provider: "nova", redirect: http.StatusPermanentRedirect, body: novaComplete},
+		{name: "stream_redirect307", provider: "stream", redirect: http.StatusTemporaryRedirect, frames: []string{start, delta, stop}},
+		{name: "claude_retryable_unknown", provider: "claude", unavailable: true},
+		{name: "claude_fixed_complete", provider: "claude", body: `{"type":"message","stop_reason":"end_turn","content":[{"type":"text","text":"answer"}]}`, fixed: true, known: true, quota: 7},
+		{name: "claude_fixed_empty_response", provider: "claude", body: `{}`, fixed: true},
+		{name: "stream_complete", provider: "stream", frames: []string{start, delta, stop}, known: true, quota: 7},
+		{name: "stream_accepted_disconnect", provider: "stream", disconnect: true},
+		{name: "stream_retryable_unknown", provider: "stream", unavailable: true},
+		{name: "stream_full_usage_without_stop", provider: "stream", frames: []string{start, delta}},
+		{name: "stream_fixed_without_stop", provider: "stream", frames: []string{start, delta}, fixed: true},
+		{name: "stream_error_after_stop", provider: "stream", frames: []string{start, delta, stop, `{"type":"error","error":{"type":"overloaded_error","message":"provider failed"}}`}},
+		{name: "stream_sdk_error_after_stop", provider: "stream", frames: []string{start, delta, stop}, corrupt: true},
+		{name: "stream_fixed_no_usage", provider: "stream", frames: []string{`{"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"claude-test","content":[]}}`, `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"answer"}}`, `{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`, stop}, fixed: true, known: true, quota: 7},
+		{name: "stream_malformed", provider: "stream", frames: []string{start, `{broken`}},
+		{name: "stream_fixed_complete", provider: "stream", frames: []string{start, delta, stop}, fixed: true, known: true, quota: 7},
+		{name: "nova_complete", provider: "nova", body: novaComplete, known: true, quota: 7},
+		{name: "nova_accepted_disconnect", provider: "nova", disconnect: true},
+		{name: "nova_retryable_unknown", provider: "nova", unavailable: true},
+		{name: "nova_missing_output_usage", provider: "nova", body: `{"output":{"message":{"content":[{"text":"answer"}]}},"stopReason":"end_turn","usage":{"inputTokens":4,"totalTokens":4}}`},
+		{name: "nova_zero_output_with_text", provider: "nova", body: `{"output":{"message":{"content":[{"text":"answer"}]}},"stopReason":"end_turn","usage":{"inputTokens":4,"outputTokens":0,"totalTokens":4}}`},
+		{name: "nova_empty_content", provider: "nova", body: `{"output":{"message":{"content":[]}},"stopReason":"end_turn","usage":{"inputTokens":4,"outputTokens":0,"totalTokens":4}}`, known: true, quota: 4},
+		{name: "nova_fixed_complete", provider: "nova", body: `{"output":{"message":{"content":[{"text":"answer"}]}},"stopReason":"end_turn"}`, fixed: true, known: true, quota: 7},
+		{name: "nova_fixed_empty_response", provider: "nova", body: `{}`, fixed: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			name := fmt.Sprintf("aws-managed-%d", i)
+			user := model.User{Username: name, AffCode: name, Status: common.UserStatusEnabled}
+			require.NoError(t, db.Create(&user).Error)
+			require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "test registration"}).Error)
+			token := model.Token{UserId: user.Id, Key: name, Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 100}
+			require.NoError(t, db.Create(&token).Error)
+			now := common.GetTimestamp()
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: name, PaidCents: 100, PostedAt: now, Money: model.MarketingMoneySnapshot{Amount: "100", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
+				if err != nil {
+					return err
+				}
+				_, err = model.GrantMarketingGift(tx, model.MarketingGiftInput{UserID: user.Id, Kind: "recharge", Reference: name, GrantedAt: now, ExpiresAt: now + 3600, Money: model.MarketingMoneySnapshot{Amount: "5", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
+				return err
+			}))
+			info := newAwsTestRelayInfo()
+			info.UserId, info.TokenId, info.RequestId = user.Id, token.Id, name
+			info.StartTime, info.IsStream = time.Unix(now, 0), scenario.provider == "stream"
+			info.PriceData = hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}
+			if scenario.fixed {
+				expression := fmt.Sprintf("tier(\"request\", fixed(%g))", 7/common.QuotaPerUnit)
+				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: common.QuotaPerUnit, GroupRatio: 1, EstimatedBillingUnit: billingexpr.BillingUnitRequest}
+			}
+			session, err := service.NewMarketingBillingSession(info, 10)
+			require.NoError(t, err)
+			info.Billing = session
+			var funding model.MarketingFunding
+			require.NoError(t, db.Where("user_id = ?", user.Id).First(&funding).Error)
+			var accepted atomic.Int32
+			var barrierVisible atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.Copy(io.Discard, r.Body)
+				accepted.Add(1)
+				var dispatches int64
+				if err := db.Model(&model.MarketingDispatch{}).Where("funding_id = ?", funding.ID).Count(&dispatches).Error; err == nil && dispatches == 1 {
+					barrierVisible.Store(true)
+				}
+				if scenario.redirect != 0 && r.URL.Path != "/resent" {
+					w.Header().Set("Location", "/resent")
+					w.WriteHeader(scenario.redirect)
+					return
+				}
+				if scenario.disconnect {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					if err == nil {
+						_ = conn.Close()
+					}
+					return
+				}
+				if scenario.unavailable {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusServiceUnavailable)
+					_, _ = io.WriteString(w, `{"message":"unknown execution","__type":"ServiceUnavailableException"}`)
+					return
+				}
+				if scenario.provider == "stream" {
+					w.Header().Set("Content-Type", "application/vnd.amazon.eventstream")
+					w.Header().Set("X-Amzn-Bedrock-Content-Type", "application/json")
+					for _, frame := range scenario.frames {
+						if err := writeAwsStreamEvent(w, frame); err != nil {
+							return
+						}
+					}
+					if scenario.corrupt {
+						_, _ = io.WriteString(w, "truncated-event")
+					}
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, scenario.body)
+			}))
+			defer server.Close()
+			client := bedrockruntime.New(bedrockruntime.Options{Region: "us-east-1", BaseEndpoint: aws.String(server.URL), Credentials: aws.NewCredentialsCache(credentials.NewStaticCredentialsProvider("fixture-access", "fixture-secret", "")), HTTPClient: server.Client()})
+			adaptor := &Adaptor{AwsClient: client, AwsReq: newAwsInvokeModelInput()}
+			handle := awsHandler
+			if scenario.provider == "stream" {
+				handle, adaptor.AwsReq = awsStreamHandler, newAwsStreamInput()
+			}
+			if scenario.provider == "nova" {
+				handle = handleNovaRequest
+			}
+			requestContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			recorder := httptest.NewRecorder()
+			ctx := newAwsTestContext(recorder, requestContext)
+			ctx.Set(common.RequestIdKey, name)
+			apiErr, usage := handle(ctx, info, adaptor)
+			require.EqualValues(t, 1, accepted.Load(), "SDK must not retry unknown execution")
+			assert.True(t, barrierVisible.Load(), "dispatch must be committed before provider receives the request")
+			if scenario.disconnect || scenario.unavailable || scenario.redirect != 0 {
+				require.NotNil(t, apiErr)
+				assert.True(t, relaytypes.IsSkipRetryError(apiErr))
+			}
+			// Even an explicit second handler call cannot bypass durable ownership.
+			retryErr, _ := handle(newAwsTestContext(httptest.NewRecorder(), requestContext), info, adaptor)
+			require.NotNil(t, retryErr)
+			assert.True(t, relaytypes.IsSkipRetryError(retryErr))
+			assert.EqualValues(t, 1, accepted.Load())
+			if scenario.known {
+				require.Nil(t, apiErr)
+			}
+			if apiErr == nil {
+				service.PostTextConsumeQuota(ctx, info, usage, nil)
+			}
+			session.Refund(ctx)
+			require.NoError(t, db.First(&funding, funding.ID).Error)
+			require.NoError(t, db.First(&user, user.Id).Error)
+			require.NoError(t, db.First(&token, token.Id).Error)
+			var gift model.MarketingGift
+			require.NoError(t, db.Where("user_id = ?", user.Id).First(&gift).Error)
+			var hold model.MarketingTokenHold
+			require.NoError(t, db.First(&hold, "token_id = ?", token.Id).Error)
+			if scenario.known {
+				assert.Equal(t, "settled", funding.State)
+				assert.True(t, funding.CostKnown)
+				assert.EqualValues(t, scenario.quota, funding.ActualQuota)
+				assert.Zero(t, funding.ReservedQuota)
+				spentGift := min(5, scenario.quota)
+				assert.EqualValues(t, spentGift, gift.ConsumedQuota)
+				assert.EqualValues(t, 5-spentGift, gift.RemainingQuota)
+				assert.Equal(t, 100-(scenario.quota-spentGift), user.Quota)
+				assert.Equal(t, 100-scenario.quota, token.RemainQuota)
+				assert.Zero(t, hold.ReservedQuota)
+			} else {
+				assert.Equal(t, "review", funding.State)
+				assert.False(t, funding.CostKnown)
+				assert.EqualValues(t, 10, funding.ReservedQuota)
+				assert.Equal(t, 100, user.Quota)
+				assert.EqualValues(t, 5, gift.RemainingQuota)
+				assert.EqualValues(t, 5, gift.ReservedQuota)
+				assert.Equal(t, 100, token.RemainQuota)
+				assert.EqualValues(t, 10, hold.ReservedQuota)
+				if scenario.provider == "stream" {
+					assert.NotContains(t, recorder.Body.String(), "[DONE]")
+				}
+			}
+			if scenario.name == "nova_complete" {
+				assert.Contains(t, recorder.Body.String(), "hello world")
+			}
 		})
 	}
 }

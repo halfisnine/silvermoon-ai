@@ -15,11 +15,13 @@ IMAGE = json.loads((ROOT / '.dev/toolchains.lock.json').read_text())['go']['dome
 
 
 def build():
-    subprocess.run([str(ROOT / '.dev/run'), 'go', 'test', '-c', '-o',
-                    '/artifacts/marketing-v2-model.test', './model'], cwd=ROOT, check=True)
+    for package in ('model', 'service'):
+        subprocess.run([str(ROOT / '.dev/run'), 'go', 'test', '-c', '-o',
+                        f'/artifacts/marketing-v2-{package}.test', f'./{package}'], cwd=ROOT, check=True)
 
 
-def run():
+def run(package="model"):
+    test_filter = "^TestMarketing(MoneyConversion|Persistence)$" if package == "model" else "^TestMarketingBillingSessionLifecycle$"
     command = [
         'docker', 'run', '--rm', '--pull=never', '--cpus=2', '--memory=3g', '--memory-swap=3g',
         '--network', 'silvermoon-marketing-v2_default',
@@ -27,11 +29,11 @@ def run():
         '--env', 'GOMAXPROCS=2', '--env', 'MV2_REQUIRE_DATABASES=1',
         '--env', 'MV2_MYSQL_DSN=marketing_test:local-marketing-test-only@tcp(mysql:3306)/marketing_v2_behavior?charset=utf8mb4&parseTime=true&loc=UTC',
         '--env', 'MV2_POSTGRES_DSN=postgres://marketing_test:local-marketing-test-only@postgres:5432/marketing_v2_behavior?sslmode=disable',
-        '--entrypoint', '/artifacts/marketing-v2-model.test', IMAGE,
-        '-test.run=^TestMarketing(MoneyConversion|Persistence)$', '-test.v', '-test.count=1', '-test.timeout=120s',
+        '--entrypoint', f'/artifacts/marketing-v2-{package}.test', IMAGE,
+        f'-test.run={test_filter}', '-test.v', '-test.count=1', '-test.timeout=120s',
     ]
     result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    (ARTIFACTS / 'marketing-v2-accounting.log').write_text(result.stdout)
+    (ARTIFACTS / f'marketing-v2-accounting-{package}.log').write_text(result.stdout)
     print(result.stdout, end='')
     result.check_returncode()
     if '--- SKIP:' in result.stdout:
@@ -44,4 +46,5 @@ if __name__ == '__main__':
     if sys.argv[1] in ('build', 'all'):
         build()
     if sys.argv[1] in ('run', 'all'):
-        run()
+        run('model')
+        run('service')

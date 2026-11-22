@@ -502,3 +502,32 @@ func TestClaudeResponsePassesInputTransformationsThrough(t *testing.T) {
 	require.Nil(t, HandleStreamResponseData(c, info, &ClaudeResponseInfo{Usage: &dto.Usage{}}, event))
 	assert.Contains(t, w.Body.String(), "data: "+event+"\n")
 }
+
+func TestClaudeReturnedContentNeedsOutputUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name, content, usage string
+		incomplete           bool
+	}{
+		{"missing input", `[{"type":"text","text":"hello"}]`, `{"output_tokens":2}`, true},
+		{"text without output", `[{"type":"text","text":"hello"}]`, `{"input_tokens":4}`, true},
+		{"thinking without output", `[{"type":"thinking","thinking":"reason"}]`, `{"input_tokens":4,"output_tokens":0}`, true},
+		{"tool without output", `[{"type":"tool_use","id":"tool-1","name":"lookup","input":{}}]`, `{"input_tokens":4}`, true},
+		{"empty refusal", `[]`, `{"input_tokens":4,"output_tokens":0}`, false},
+		{"confirmed output", `[{"type":"text","text":"hello"}]`, `{"input_tokens":4,"output_tokens":2}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatClaude, ChannelMeta: &relaycommon.ChannelMeta{}}
+			state := &ClaudeResponseInfo{Usage: &dto.Usage{}}
+			body := []byte(fmt.Sprintf(`{"type":"message","content":%s,"usage":%s}`, tc.content, tc.usage))
+			require.Nil(t, HandleClaudeResponseData(ctx, info, state, &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}, body))
+			assert.Equal(t, tc.incomplete, common.GetContextKeyBool(ctx, constant.ContextKeyEstimatedBillingUsage))
+			if tc.name == "missing input" {
+				assert.Zero(t, state.Usage.PromptTokens)
+			} else {
+				assert.Equal(t, 4, state.Usage.PromptTokens)
+			}
+		})
+	}
+}

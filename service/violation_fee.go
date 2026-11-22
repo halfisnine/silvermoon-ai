@@ -122,14 +122,6 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		return false
 	}
 
-	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true); err != nil {
-		logger.LogError(ctx, common.LogText("failed to charge violation fee: %s", err.Error()))
-		return false
-	}
-
-	model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
-	model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
-
 	useTimeSeconds := time.Now().Unix() - relayInfo.StartTime.Unix()
 	tokenName := ctx.GetString("token_name")
 	oai := apiErr.ToOpenAIError(common.UpstreamAddresses(ctx)...)
@@ -147,7 +139,7 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		"violation_fee_marker": CSAMViolationMarker,
 	})
 
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+	params := model.RecordConsumeLogParams{
 		ChannelId:      relayInfo.ChannelId,
 		ModelName:      relayInfo.OriginModelName,
 		TokenName:      tokenName,
@@ -158,7 +150,26 @@ func ChargeViolationFeeIfNeeded(ctx *gin.Context, relayInfo *relaycommon.RelayIn
 		IsStream:       relayInfo.IsStream,
 		Group:          relayInfo.UsingGroup,
 		Other:          other,
-	})
+	}
+	if session, managed := relayInfo.Billing.(*MarketingBillingSession); managed {
+		record := model.BuildConsumeLog(ctx, relayInfo.UserId, params)
+		record.RequestId = relayInfo.RequestId
+		actual := int64(feeQuota)
+		// This authoritative fee finalizes the same original reservation.
+		if err := session.recordConsumption(*record, &actual, "upstream_terminal", "provider policy violation fee", 1); err != nil {
+			logger.LogError(ctx, common.LogText("failed to charge violation fee: %s", err.Error()))
+			return false
+		}
+		return true
+	}
+	if err := PostConsumeQuota(relayInfo, feeQuota, 0, true); err != nil {
+		logger.LogError(ctx, common.LogText("failed to charge violation fee: %s", err.Error()))
+		return false
+	}
 
+	model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, feeQuota)
+	model.UpdateChannelUsedQuota(relayInfo.ChannelId, feeQuota)
+
+	model.RecordConsumeLog(ctx, relayInfo.UserId, params)
 	return true
 }

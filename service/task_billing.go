@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -24,6 +25,9 @@ import (
 // LogTaskConsumption 记录任务消费日志和统计信息（仅记录，不涉及实际扣费）。
 // 实际扣费已由 BillingSession（PreConsumeBilling + SettleBilling）完成。
 func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model.Task) {
+	if _, managed := info.Billing.(*MarketingBillingSession); managed {
+		return // terminal finance and its single logical log are persisted together
+	}
 	tokenName := c.GetString("token_name")
 	logContent := []*common.Message{common.NewMessage("Action {{action}}", map[string]any{"action": info.Action})}
 	// 支持任务仅按次计费
@@ -261,6 +265,9 @@ func taskModelName(task *model.Task) string {
 // 当异步任务失败时，退还资金与令牌额度，并回减用户和渠道用量。
 // 返回资金来源是否已成功退还；失败时保留 quota，供显式重试或人工对账。
 func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool {
+	if task.MarketingFundingID != 0 {
+		return FinalizeMarketingTask(task) == nil
+	}
 	quota := task.Quota
 	if quota == 0 {
 		return true
@@ -308,6 +315,12 @@ func RefundTaskQuota(ctx context.Context, task *model.Task, reason string) bool 
 // reason 写入日志内容（例如按 token 重算或 adaptor 调整）。
 // clamps 可选：若计算 actualQuota 时发生额度饱和，将其记入日志 admin_info（仅管理员可见）。
 func RecalculateTaskQuota(ctx context.Context, task *model.Task, actualQuota int, reason *common.Message, clamps ...*common.QuotaClamp) {
+	if task.MarketingFundingID != 0 {
+		if err := FinalizeMarketingTask(task); err != nil {
+			common.SysError(fmt.Sprintf("marketing task settlement requires reconciliation: %v", err))
+		}
+		return
+	}
 	if actualQuota < 0 {
 		return
 	}
@@ -438,13 +451,18 @@ func RecalculateTaskQuotaByTokens(ctx context.Context, task *model.Task, totalTo
 // expression. It neither mutates the snapshot nor moves funds: synchronous
 // submission and polling have different persistence and settlement barriers.
 func EvaluateTaskCompletionUsage(snap *billingexpr.BillingSnapshot, facts map[string]any) (billingexpr.TieredResult, map[string]any, error) {
+	return EvaluateTaskCompletionUsageAt(snap, facts, nil)
+}
+
+// EvaluateTaskCompletionUsageAt supplies a stable clock for persisted marketing settlement.
+func EvaluateTaskCompletionUsageAt(snap *billingexpr.BillingSnapshot, facts map[string]any, evaluationTime *time.Time) (billingexpr.TieredResult, map[string]any, error) {
 	if snap == nil {
 		return billingexpr.TieredResult{}, nil, fmt.Errorf("task billing snapshot is missing")
 	}
 	usage := make(map[string]any, len(snap.UsageFacts)+len(facts))
 	maps.Copy(usage, snap.UsageFacts)
 	maps.Copy(usage, facts)
-	result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage})
+	result, err := billingexpr.ComputeTieredQuotaWithRequest(snap, billingexpr.TokenParams{}, billingexpr.RequestInput{Usage: usage, EvaluationTime: evaluationTime})
 	if err == nil && (result.ActualQuotaBeforeGroup < 0 || math.IsNaN(result.ActualQuotaBeforeGroup)) {
 		err = fmt.Errorf("task completion expression produced an invalid cost")
 	}

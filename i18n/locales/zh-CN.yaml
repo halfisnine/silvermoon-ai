@@ -92,3 +92,9 @@ channel.upstream_update_added_models: "新增模型示例（展示 {{.Shown}}/{{
 channel.upstream_update_removed_models: "删除模型示例（展示 {{.Shown}}/{{.Total}}）：{{.Models}}"
 channel.upstream_update_failed_channels: "失败渠道 ID（展示 {{.Shown}}/{{.Total}}）：{{.Ids}}"
 channel.upstream_update_more_omitted: "（其余 {{.Count}} 个已省略）"
+
+funding.insufficient: "可用金额或 API 令牌的消费限额不足，无法执行本次请求。"
+funding.review: "账户资金需要核对，请联系管理员。"
+funding.access: "此账号或 API 令牌当前无法发起新请求。"
+funding.conflict: "此请求已提交或已结算，请勿自动重复提交。"
+funding.input: "资金请求无效。"

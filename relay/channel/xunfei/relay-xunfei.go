@@ -1,21 +1,26 @@
 package xunfei
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
@@ -128,123 +133,146 @@ func buildXunfeiAuthUrl(hostUrl string, apiKey, apiSecret string) string {
 	return callUrl
 }
 
-func xunfeiStreamHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId string, apiSecret string, apiKey string) (*dto.Usage, *types.NewAPIError) {
-	domain, authUrl := getXunfeiAuthUrl(c, apiKey, apiSecret, textRequest.Model)
-	dataChan, stopChan, err := xunfeiMakeRequest(textRequest, domain, authUrl, appId)
-	if err != nil {
-		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
+// One HTTP chat request uses one upstream WebSocket generation. An interrupted
+// socket is not a completed response, even if earlier frames contained usage.
+func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.GeneralOpenAIRequest, appID, domain, authURL string) (*dto.Usage, *types.NewAPIError) {
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
 	}
-	helper.SetEventStreamHeaders(c)
-	var usage dto.Usage
-	c.Stream(func(w io.Writer) bool {
-		select {
-		case xunfeiResponse := <-dataChan:
-			usage.PromptTokens += xunfeiResponse.Payload.Usage.Text.PromptTokens
-			usage.CompletionTokens += xunfeiResponse.Payload.Usage.Text.CompletionTokens
-			usage.TotalTokens += xunfeiResponse.Payload.Usage.Text.TotalTokens
-			response := streamResponseXunfei2OpenAI(&xunfeiResponse)
-			jsonResponse, err := json.Marshal(response)
-			if err != nil {
-				common.SysLog(common.LogText("error marshalling stream response: %s", err.Error()))
-				return true
-			}
-			c.Render(-1, common.CustomEvent{Data: "data: " + string(jsonResponse)})
-			return true
-		case <-stopChan:
-			c.Render(-1, common.CustomEvent{Data: "data: [DONE]"})
-			return false
-		}
-	})
-	return &usage, nil
-}
-
-func xunfeiHandler(c *gin.Context, textRequest dto.GeneralOpenAIRequest, appId string, apiSecret string, apiKey string) (*dto.Usage, *types.NewAPIError) {
-	domain, authUrl := getXunfeiAuthUrl(c, apiKey, apiSecret, textRequest.Model)
-	dataChan, stopChan, err := xunfeiMakeRequest(textRequest, domain, authUrl, appId)
+	info.StreamStatus.RequireTerminal()
+	data, err := common.Marshal(requestOpenAI2Xunfei(textRequest, appID, domain))
 	if err != nil {
-		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed)
+		return nil, types.NewError(errors.New("xunfei request encoding failed"), types.ErrorCodeInvalidRequest)
+	}
+	dialer := websocket.Dialer{HandshakeTimeout: 5 * time.Second}
+	conn, response, err := dialer.DialContext(c.Request.Context(), authURL, nil)
+	if err != nil {
+		if response != nil && response.Body != nil {
+			_ = response.Body.Close()
+		}
+		// The URL contains signed credentials; do not expose the dial error.
+		return nil, types.NewError(errors.New("xunfei websocket connection failed"), types.ErrorCodeDoRequestFailed)
+	}
+	defer conn.Close()
+	stopCancellation := context.AfterFunc(c.Request.Context(), func() { _ = conn.Close() })
+	defer stopCancellation()
+	if c.Request.Context().Err() != nil {
+		return nil, types.NewError(errors.New("xunfei request cancelled before dispatch"), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+	if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		if err := funding.BeginDispatch(); err != nil {
+			return nil, types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+		}
 	}
 	var usage dto.Usage
-	var content string
-	var xunfeiResponse XunfeiChatResponse
-	stop := false
-	for !stop {
-		select {
-		case xunfeiResponse = <-dataChan:
-			if len(xunfeiResponse.Payload.Choices.Text) == 0 {
-				continue
+	if err = conn.WriteMessage(websocket.TextMessage, data); err != nil {
+		return &usage, xunfeiUnknownOutcome(info, usage, "request_write_failed", relaycommon.StreamEndReasonScannerErr)
+	}
+	if info.IsStream {
+		helper.SetEventStreamHeaders(c)
+	}
+	var content strings.Builder
+	observedOutput := false
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			reason := relaycommon.StreamEndReasonScannerErr
+			if c.Request.Context().Err() != nil {
+				reason = relaycommon.StreamEndReasonClientGone
 			}
-			content += xunfeiResponse.Payload.Choices.Text[0].Content
-			usage.PromptTokens += xunfeiResponse.Payload.Usage.Text.PromptTokens
-			usage.CompletionTokens += xunfeiResponse.Payload.Usage.Text.CompletionTokens
-			usage.TotalTokens += xunfeiResponse.Payload.Usage.Text.TotalTokens
-		case stop = <-stopChan:
+			return &usage, xunfeiUnknownOutcome(info, usage, "response_interrupted", reason)
 		}
-	}
-	if len(xunfeiResponse.Payload.Choices.Text) == 0 {
-		xunfeiResponse.Payload.Choices.Text = []XunfeiChatResponseTextItem{
-			{
-				Content: "",
-			},
+		var response XunfeiChatResponse
+		if err := common.Unmarshal(message, &response); err != nil {
+			return &usage, xunfeiUnknownOutcome(info, usage, "response_decode_failed", relaycommon.StreamEndReasonScannerErr)
 		}
-	}
-	xunfeiResponse.Payload.Choices.Text[0].Content = content
-
-	response := responseXunfei2OpenAI(&xunfeiResponse)
-	jsonResponse, err := json.Marshal(response)
-	if err != nil {
-		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
-	}
-	c.Writer.Header().Set("Content-Type", "application/json")
-	_, _ = c.Writer.Write(jsonResponse)
-	return &usage, nil
-}
-
-func xunfeiMakeRequest(textRequest dto.GeneralOpenAIRequest, domain, authUrl, appId string) (chan XunfeiChatResponse, chan bool, error) {
-	d := websocket.Dialer{
-		HandshakeTimeout: 5 * time.Second,
-	}
-	conn, resp, err := d.Dial(authUrl, nil)
-	if err != nil || resp.StatusCode != 101 {
-		return nil, nil, err
-	}
-
-	data := requestOpenAI2Xunfei(textRequest, appId, domain)
-	err = conn.WriteJSON(data)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	dataChan := make(chan XunfeiChatResponse)
-	stopChan := make(chan bool)
-	go func() {
-		defer func() {
-			conn.Close()
-		}()
-		for {
-			_, msg, err := conn.ReadMessage()
-			if err != nil {
-				common.SysLog(common.LogText("error reading stream response: %s", err.Error()))
-				break
+		// Require an explicit success code; a missing field is not code zero.
+		code, codePresent := ojson.GetBytes(message, "header.code").Value().(float64)
+		if !codePresent || code != 0 {
+			if codePresent {
+				info.StreamStatus.MarkFailed(strconv.Itoa(response.Header.Code), "xunfei_error", 502)
 			}
-			var response XunfeiChatResponse
-			err = json.Unmarshal(msg, &response)
-			if err != nil {
-				common.SysLog(common.LogText("error unmarshalling stream response: %s", err.Error()))
-				break
-			}
-			dataChan <- response
-			if response.Payload.Choices.Status == 2 {
-				if err != nil {
-					common.SysLog(common.LogText("error closing websocket connection: %s", err.Error()))
+			return &usage, xunfeiUnknownOutcome(info, usage, "upstream_error", relaycommon.StreamEndReasonHandlerStop)
+		}
+		frameUsage := response.Payload.Usage.Text
+		if frameUsage.PromptTokens < 0 || frameUsage.CompletionTokens < 0 || frameUsage.TotalTokens < 0 ||
+			frameUsage.PromptTokens > common.MaxQuota-usage.PromptTokens || frameUsage.CompletionTokens > common.MaxQuota-usage.CompletionTokens || frameUsage.TotalTokens > common.MaxQuota-usage.TotalTokens {
+			return &usage, xunfeiUnknownOutcome(info, usage, "invalid_usage_quantity", relaycommon.StreamEndReasonHandlerStop)
+		}
+		usage.PromptTokens += response.Payload.Usage.Text.PromptTokens
+		usage.CompletionTokens += response.Payload.Usage.Text.CompletionTokens
+		usage.TotalTokens += response.Payload.Usage.Text.TotalTokens
+		status, statusPresent := ojson.GetBytes(message, "payload.choices.status").Value().(float64)
+		if !statusPresent || (status != 0 && status != 1 && status != 2) {
+			return &usage, xunfeiUnknownOutcome(info, usage, "invalid_response_status", relaycommon.StreamEndReasonHandlerStop)
+		}
+		for _, item := range response.Payload.Choices.Text {
+			observedOutput = observedOutput || item.Content != ""
+		}
+		terminal := status == 2
+		if terminal {
+			// A completed protocol response can still have unknown token cost.
+			// Fixed request prices may settle after this genuine terminal event.
+			completeUsage := !(observedOutput && usage.CompletionTokens == 0)
+			for _, field := range []string{"prompt_tokens", "completion_tokens"} {
+				value, exists := ojson.GetBytes(message, "payload.usage.text."+field).Value().(float64)
+				if !exists || value < 0 {
+					completeUsage = false
 				}
-				break
 			}
+			if !completeUsage {
+				info.BillingUsageEstimated = true
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+			}
+			info.StreamStatus.MarkCompleted()
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 		}
-		stopChan <- true
-	}()
+		if info.IsStream {
+			if err := helper.ObjectData(c, streamResponseXunfei2OpenAI(&response)); err != nil && !terminal {
+				return &usage, xunfeiUnknownOutcome(info, usage, "client_disconnected", relaycommon.StreamEndReasonClientGone)
+			}
+			if terminal {
+				helper.Done(c)
+				return &usage, nil
+			}
+			continue
+		}
+		if len(response.Payload.Choices.Text) != 0 {
+			content.WriteString(response.Payload.Choices.Text[0].Content)
+		}
+		if !terminal {
+			continue
+		}
+		if len(response.Payload.Choices.Text) == 0 {
+			response.Payload.Choices.Text = []XunfeiChatResponseTextItem{{}}
+		}
+		response.Payload.Choices.Text[0].Content = content.String()
+		encoded, err := common.Marshal(responseXunfei2OpenAI(&response))
+		if err != nil {
+			return &usage, xunfeiUnknownOutcome(info, usage, "response_encoding_failed", relaycommon.StreamEndReasonHandlerStop)
+		}
+		c.Writer.Header().Set("Content-Type", "application/json")
+		_, _ = c.Writer.Write(encoded)
+		return &usage, nil
+	}
+}
 
-	return dataChan, stopChan, nil
+// Persist only classification and observed billing quantities. Provider messages
+// and the authenticated URL can contain private data and must not enter evidence.
+func xunfeiUnknownOutcome(info *relaycommon.RelayInfo, usage dto.Usage, reason string, end relaycommon.StreamEndReason) *types.NewAPIError {
+	info.BillingUsageEstimated = true
+	info.StreamStatus.MarkIncomplete(reason)
+	info.StreamStatus.SetEndReason(end, nil)
+	if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		evidence, err := common.Marshal(map[string]any{"protocol": "xunfei_single_chat", "reason": reason, "observed_usage": usage, "stream_outcome": info.StreamStatus.OutcomeSnapshot()})
+		if err == nil {
+			err = funding.PreserveUnknown(string(evidence))
+		}
+		if err != nil && !errors.Is(err, model.ErrMarketingReview) {
+			common.SysError(fmt.Sprintf("xunfei unresolved funding evidence could not be saved: %v", err))
+		}
+	}
+	return types.NewError(errors.New("xunfei response did not complete successfully"), types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
 }
 
 func apiVersion2domain(apiVersion string) string {

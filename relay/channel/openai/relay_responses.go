@@ -35,6 +35,15 @@ func OaiResponsesHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
+	service.ObserveResponsesOutcome(info, &dto.ResponsesStreamResponse{Response: &responsesResponse})
+	if !service.CompleteTokenUsageEvidence([]byte(ojson.GetBytes(responseBody, "usage").Raw)) ||
+		(!hasPositiveOutputUsage(responsesResponse.Usage) && service.ExtractOutputTextFromResponses(&responsesResponse) != "") {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	info.ObserveResponseModel(responsesResponse.Model)
 	responseBody = rewriteSGLangResponsesCreatedAt(info, responseBody, "created_at", responsesResponse.CreatedAt)
 

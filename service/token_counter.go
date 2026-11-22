@@ -57,6 +57,7 @@ func EstimateRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *rela
 // switch. Utility endpoints such as Claude's messages/count_tokens must remain
 // available even when operators disable request-token estimation for relays.
 func CountRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relaycommon.RelayInfo) (int, error) {
+	info.RequestUsageMeasured = false
 	if meta == nil {
 		return 0, errors.New("token count meta is nil")
 	}
@@ -91,6 +92,7 @@ func CountRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relayco
 			// 一分钟 1000 token，与 $price / minute 对齐。
 			totalAudioToken += common.QuotaRound(math.Ceil(duration) / 60.0 * 1000)
 		}
+		info.RequestUsageMeasured = totalAudioToken > 0
 		return totalAudioToken, nil
 	}
 
@@ -167,6 +169,7 @@ func CountRequestToken(c *gin.Context, meta *types.TokenCountMeta, info *relayco
 		}
 	}
 
+	info.RequestUsageMeasured = info.RelayFormat == types.RelayFormatOpenAIAudio && meta.TokenType == types.TokenTypeTextNumber && len(meta.Files) == 0
 	common.SetContextKey(c, constant.ContextKeyPromptTokens, tkm)
 	return tkm, nil
 }

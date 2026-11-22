@@ -2,6 +2,7 @@ package coze
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -56,7 +59,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 	var response dto.TextResponse
 	var cozeResponse CozeChatDetailResponse
 	response.Model = info.UpstreamModelName
-	err = json.Unmarshal(responseBody, &cozeResponse)
+	err = common.Unmarshal(responseBody, &cozeResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -78,6 +81,9 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 			response.Created = data.CreatedAt
 		}
 	}
+	if usage.CompletionTokens == 0 && len(responseContent) > 0 && string(responseContent) != `""` && string(responseContent) != "null" {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	// 添加 response.Choices
 	response.Choices = []dto.OpenAITextResponseChoice{
 		{
@@ -86,7 +92,7 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 			FinishReason: "stop",
 		},
 	}
-	jsonResponse, err := json.Marshal(response)
+	jsonResponse, err := common.Marshal(response)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}
@@ -98,6 +104,11 @@ func cozeChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Res
 }
 
 func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
+	stopClose := context.AfterFunc(c.Request.Context(), func() { _ = resp.Body.Close() })
+	defer stopClose()
+	info.StreamStatus = relaycommon.NewStreamStatus()
+	info.StreamStatus.RequireTerminal()
 	scanner := helper.NewStreamScanner(resp.Body)
 	scanner.Split(bufio.ScanLines)
 	helper.SetEventStreamHeaders(c)
@@ -142,6 +153,10 @@ func cozeChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	}
 	helper.Done(c)
 
+	info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+	if responseText != "" && usage.CompletionTokens == 0 {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	if usage.TotalTokens == 0 {
 		usage = service.ResponseText2Usage(c, responseText, info.UpstreamModelName, c.GetInt("coze_input_count"))
 	}
@@ -154,12 +169,19 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 	case "conversation.chat.completed":
 		// 将 data 解析为 CozeChatResponseData
 		var chatData CozeChatResponseData
-		err := json.Unmarshal([]byte(data), &chatData)
+		err := common.Unmarshal([]byte(data), &chatData)
 		if err != nil {
+			info.StreamStatus.MarkFailed("invalid_response", "", http.StatusBadGateway)
 			common.SysLog(common.LogText("error_unmarshalling_stream_response: %s", err.Error()))
 			return
 		}
 
+		for _, field := range []string{"input_count", "output_count"} {
+			if _, present := ojson.Get(data, "usage."+field).Value().(float64); !present {
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+			}
+		}
+		info.StreamStatus.MarkCompleted()
 		usage.PromptTokens = chatData.Usage.InputCount
 		usage.CompletionTokens = chatData.Usage.OutputCount
 		usage.TotalTokens = chatData.Usage.TokenCount
@@ -171,15 +193,17 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 	case "conversation.message.delta":
 		// 将 data 解析为 CozeChatV3MessageDetail
 		var messageData CozeChatV3MessageDetail
-		err := json.Unmarshal([]byte(data), &messageData)
+		err := common.Unmarshal([]byte(data), &messageData)
 		if err != nil {
+			info.StreamStatus.MarkFailed("invalid_response", "", http.StatusBadGateway)
 			common.SysLog(common.LogText("error_unmarshalling_stream_response: %s", err.Error()))
 			return
 		}
 
 		var content string
-		err = json.Unmarshal(messageData.Content, &content)
+		err = common.Unmarshal(messageData.Content, &content)
 		if err != nil {
+			info.StreamStatus.MarkFailed("invalid_response", "", http.StatusBadGateway)
 			common.SysLog(common.LogText("error_unmarshalling_stream_response: %s", err.Error()))
 			return
 		}
@@ -201,10 +225,12 @@ func handleCozeEvent(c *gin.Context, event string, data string, responseText *st
 
 		helper.ObjectData(c, openaiResponse)
 
-	case "error":
+	case "conversation.chat.failed", "conversation.chat.canceled", "error":
+		info.StreamStatus.MarkFailed("provider_error", "", http.StatusBadGateway)
 		var errorData CozeError
-		err := json.Unmarshal([]byte(data), &errorData)
+		err := common.Unmarshal([]byte(data), &errorData)
 		if err != nil {
+			info.StreamStatus.MarkFailed("invalid_response", "", http.StatusBadGateway)
 			common.SysLog(common.LogText("error_unmarshalling_stream_response: %s", err.Error()))
 			return
 		}
@@ -242,11 +268,16 @@ func checkIfChatComplete(a *Adaptor, c *gin.Context, info *relaycommon.RelayInfo
 	if err != nil {
 		return fmt.Errorf("read response body failed: %w", err), false
 	}
-	err = json.Unmarshal(responseBody, &cozeResponse)
+	err = common.Unmarshal(responseBody, &cozeResponse)
 	if err != nil {
 		return fmt.Errorf("unmarshal response body failed: %w", err), false
 	}
 	if cozeResponse.Data.Status == "completed" {
+		for _, field := range []string{"input_count", "output_count"} {
+			if _, present := ojson.GetBytes(responseBody, "data.usage."+field).Value().(float64); !present {
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+			}
+		}
 		// 在上下文设置 usage
 		c.Set("coze_token_count", cozeResponse.Data.Usage.TokenCount)
 		c.Set("coze_output_count", cozeResponse.Data.Usage.OutputCount)

@@ -2,7 +2,6 @@ package volcengine
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,9 +9,12 @@ import (
 	"strings"
 
 	"github.com/MoeForge/moego/base64"
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -56,7 +58,7 @@ type VolcengineTTSReqInfo struct {
 	Model           string                   `json:"model,omitempty"`
 	TextType        string                   `json:"text_type,omitempty"`
 	SilenceDuration float64                  `json:"silence_duration,omitempty"`
-	WithTimestamp   interface{}              `json:"with_timestamp,omitempty"`
+	WithTimestamp   any                      `json:"with_timestamp,omitempty"`
 	ExtraParam      *VolcengineTTSExtraParam `json:"extra_param,omitempty"`
 }
 
@@ -154,7 +156,7 @@ func handleTTSResponse(c *gin.Context, resp *http.Response, info *relaycommon.Re
 	defer resp.Body.Close()
 
 	var volcResp VolcengineTTSResponse
-	if unmarshalErr := json.Unmarshal(body, &volcResp); unmarshalErr != nil {
+	if unmarshalErr := common.Unmarshal(body, &volcResp); unmarshalErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			errors.New("failed to parse volcengine response"),
 			types.ErrorCodeBadResponseBody,
@@ -183,6 +185,7 @@ func handleTTSResponse(c *gin.Context, resp *http.Response, info *relaycommon.Re
 	c.Header("Content-Type", contentType)
 	c.Data(http.StatusOK, contentType, audioData)
 
+	common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, !info.RequestUsageMeasured)
 	usage = &dto.Usage{
 		PromptTokens:     info.GetEstimatePromptTokens(),
 		CompletionTokens: 0,
@@ -209,7 +212,7 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 	header := http.Header{}
 	header.Set("Authorization", fmt.Sprintf("Bearer;%s", token))
 
-	conn, resp, dialErr := websocket.DefaultDialer.DialContext(context.Background(), requestURL, header)
+	conn, resp, dialErr := websocket.DefaultDialer.DialContext(c.Request.Context(), requestURL, header)
 	if dialErr != nil {
 		if resp != nil {
 			return nil, types.NewErrorWithStatusCode(
@@ -225,8 +228,10 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 		)
 	}
 	defer conn.Close()
+	stopClose := context.AfterFunc(c.Request.Context(), func() { _ = conn.Close() })
+	defer stopClose()
 
-	payload, marshalErr := json.Marshal(volcRequest)
+	payload, marshalErr := common.Marshal(volcRequest)
 	if marshalErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("failed to marshal request: %w", marshalErr),
@@ -235,6 +240,15 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 		)
 	}
 
+	if session, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		if dispatchErr := session.BeginDispatch(); dispatchErr != nil {
+			return nil, types.NewErrorWithStatusCode(errors.New(service.MarketingBillingMessage(c, dispatchErr)), types.ErrorCodeDoRequestFailed, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
+	}
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
 	if sendErr := FullClientRequest(conn, payload); sendErr != nil {
 		return nil, types.NewErrorWithStatusCode(
 			fmt.Errorf("failed to send request: %w", sendErr),
@@ -282,7 +296,10 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 			}
 
 			if msg.Sequence < 0 {
+				info.StreamStatus.MarkCompleted()
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 				c.Status(http.StatusOK)
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, !info.RequestUsageMeasured)
 				usage = &dto.Usage{
 					PromptTokens:     info.GetEstimatePromptTokens(),
 					CompletionTokens: 0,
@@ -296,6 +313,7 @@ func handleTTSWebSocketResponse(c *gin.Context, requestURL string, volcRequest V
 	}
 
 	c.Status(http.StatusOK)
+	common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
 	usage = &dto.Usage{
 		PromptTokens:     info.GetEstimatePromptTokens(),
 		CompletionTokens: 0,

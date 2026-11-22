@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -26,6 +27,7 @@ type ResponsesUsageAccumulator struct {
 }
 
 func NewResponsesUsageAccumulator(info *relaycommon.RelayInfo) *ResponsesUsageAccumulator {
+	info.BillingUsageEstimated = false
 	return &ResponsesUsageAccumulator{info: info, usage: &dto.Usage{}}
 }
 
@@ -43,6 +45,9 @@ func (a *ResponsesUsageAccumulator) Observe(event *dto.ResponsesStreamResponse, 
 	switch event.Type {
 	case "response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled", "response.canceled":
 		if event.Response != nil {
+			if len(raw) > 0 && !CompleteTokenUsageEvidence([]byte(ojson.GetBytes(raw, "response.usage").Raw)) {
+				a.info.BillingUsageEstimated = true
+			}
 			ApplyResponsesUsage(a.usage, event.Response.Usage)
 			if a.outputText.Len() == 0 {
 				// Some upstreams carry the output only on the terminal event.
@@ -98,6 +103,7 @@ func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
 	}
 	if a.usage.CompletionTokens == 0 {
 		if output := a.outputText.String(); output != "" {
+			a.info.BillingUsageEstimated = true
 			a.usage.CompletionTokens = tokenkit.Count(a.info.GetUpstreamModelName(), output)
 		}
 	}
@@ -106,6 +112,7 @@ func (a *ResponsesUsageAccumulator) Finish() *dto.Usage {
 	// upstream reported an explicit failure.
 	billsPrompt := a.usage.CompletionTokens != 0 || (a.started && !a.info.StreamStatus.ResponseFailed())
 	if a.usage.PromptTokens == 0 && billsPrompt {
+		a.info.BillingUsageEstimated = true
 		a.usage.PromptTokens = a.info.GetEstimatePromptTokens()
 	}
 	a.usage.TotalTokens = a.usage.PromptTokens + a.usage.CompletionTokens
@@ -169,4 +176,18 @@ func ApplyResponsesUsage(dst *dto.Usage, src *dto.Usage) {
 	if outputDetails != (dto.OutputTokenDetails{}) {
 		dst.OutputTokensDetails = &outputDetails
 	}
+}
+
+// CompleteTokenUsageEvidence distinguishes omitted dimensions from explicit
+// zero counts before DTO normalization loses that distinction. Some compatible
+// endpoints use chat field names; both dimensions must be supplied together.
+func CompleteTokenUsageEvidence(raw []byte) bool {
+	for _, names := range [][2]string{{"input_tokens", "output_tokens"}, {"prompt_tokens", "completion_tokens"}} {
+		input, hasInput := ojson.GetBytes(raw, names[0]).Value().(float64)
+		output, hasOutput := ojson.GetBytes(raw, names[1]).Value().(float64)
+		if hasInput && hasOutput && input >= 0 && output >= 0 {
+			return true
+		}
+	}
+	return false
 }

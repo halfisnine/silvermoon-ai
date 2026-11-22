@@ -146,6 +146,52 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, "primary", all[2]["channel_name"])
 			assert.Contains(t, all[2]["other"], "admin_info")
 			assert.Equal(t, true, all[3]["success"])
+			// A delayed projection has a higher physical ID but an older request
+			// time. Both user views must use request chronology and positions.
+			for _, item := range []model.Log{
+				{UserId: 8, CreatedAt: now, Type: model.LogTypeConsume, RequestId: "recent-request"},
+				{UserId: 8, CreatedAt: now - 60, Type: model.LogTypeConsume, RequestId: "delayed-request", UsageEventID: "delayed-event", UsageRevision: 1},
+			} {
+				require.NoError(t, model.LOG_DB.Create(&item).Error)
+			}
+			delayedRows, _, err := model.GetUserLogs(8, model.LogFilter{}, 0, 10)
+			require.NoError(t, err)
+			require.Len(t, delayedRows, 2)
+			assert.Equal(t, "recent-request", delayedRows[0].RequestId)
+			delayedExport := callLogHandler(t, ExportUserLogs, 8, common.RoleCommonUser, query)
+			assert.Equal(t, []any{"recent-request", "delayed-request"}, exportedRequestIds(delayedExport))
+			assert.EqualValues(t, delayedRows[0].Id, delayedExport[0]["id"])
+			// Deliver the final snapshot twice, then an older snapshot. Neither
+			// lost acknowledgement nor reverse delivery order duplicates a call.
+			for _, revision := range []int64{2, 2, 1} {
+				quota := 30
+				if revision == 1 {
+					quota = 10
+				}
+				entry := model.Log{UserId: 7, Username: "projection", CreatedAt: now, Type: model.LogTypeConsume, ModelName: "projection-model", TokenId: 7, Quota: quota, PromptTokens: 4, CompletionTokens: 6, RequestId: "projection-call", UsageEventID: "projection-event", UsageRevision: revision, Other: `{"funding":{"paid_quota":10,"gift_quota":20},"admin_info":{"private":"hidden"}}`}
+				require.NoError(t, model.LOG_DB.Create(&entry).Error)
+			}
+			rows, total, err := model.GetUserLogs(7, model.LogFilter{}, 0, 1)
+			require.NoError(t, err)
+			require.EqualValues(t, 1, total)
+			require.Len(t, rows, 1)
+			assert.Equal(t, 30, rows[0].Quota)
+			assert.NotContains(t, rows[0].Other, "admin_info")
+			assert.Contains(t, rows[0].Other, "gift_quota")
+			tokenRows, err := model.GetLogByTokenId(7)
+			require.NoError(t, err)
+			require.Len(t, tokenRows, 1)
+			assert.Equal(t, 30, tokenRows[0].Quota)
+			projectionExport := callLogHandler(t, ExportUserLogs, 7, common.RoleCommonUser, query)
+			require.Len(t, projectionExport, 2)
+			assert.EqualValues(t, 30, projectionExport[0]["quota"])
+			stat, err := model.SumUsedQuota(model.LogTypeConsume, now-1, now+1, "projection-model", "projection", "", 0, "")
+			require.NoError(t, err)
+			assert.Equal(t, 30, stat.Quota)
+			assert.Equal(t, 1, stat.Rpm)
+			assert.Equal(t, 10, stat.Tpm)
+			assert.Equal(t, 10, model.SumUsedToken(model.LogTypeConsume, now-1, now+1, "projection-model", "projection", ""))
+
 		})
 	}
 }

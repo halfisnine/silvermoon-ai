@@ -8,7 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -41,6 +43,14 @@ func OaiResponsesToChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
 
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
+	service.ObserveResponsesOutcome(info, &dto.ResponsesStreamResponse{Response: &responsesResp})
+	if !service.CompleteTokenUsageEvidence([]byte(ojson.GetBytes(body, "usage").Raw)) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	info.ObserveResponseModel(responsesResp.Model)
 	responseValue, usage, err := convertResponsesResponseForClient(c, info, &responsesResp)
 	if err != nil {
@@ -91,6 +101,10 @@ func OaiResponsesToChatBufferedStreamHandler(c *gin.Context, info *relaycommon.R
 		}
 		if streamResp.Response != nil {
 			info.ObserveResponseModel(streamResp.Response.Model)
+		}
+		if streamResp.Response != nil && streamResp.Response.Usage != nil &&
+			!service.CompleteTokenUsageEvidence([]byte(ojson.Get(data, "response.usage").Raw)) {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
 		}
 		service.ObserveResponsesOutcome(info, &streamResp)
 		accumulator.ProcessEvent(&streamResp)
@@ -152,6 +166,9 @@ func convertResponsesResponseForClient(c *gin.Context, info *relaycommon.RelayIn
 		response.ID = responseID
 	}
 
+	if !hasPositiveOutputUsage(response.Usage) && service.ExtractOutputTextFromResponses(response) != "" {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	usage := relayconvert.UsageFromResponsesUsage(response.Usage)
 	if usage == nil || usage.TotalTokens == 0 {
 		text := service.ExtractOutputTextFromResponses(response)

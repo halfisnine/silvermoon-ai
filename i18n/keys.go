@@ -115,3 +115,12 @@ const (
 	MsgChannelUpstreamUpdateFailedChannels  = "channel.upstream_update_failed_channels"
 	MsgChannelUpstreamUpdateMoreOmitted     = "channel.upstream_update_more_omitted"
 )
+
+// Wallet funding errors returned directly to model clients.
+const (
+	MsgFundingInsufficient = "funding.insufficient"
+	MsgFundingReview       = "funding.review"
+	MsgFundingAccess       = "funding.access"
+	MsgFundingConflict     = "funding.conflict"
+	MsgFundingInput        = "funding.input"
+)

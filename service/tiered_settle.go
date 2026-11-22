@@ -2,6 +2,7 @@ package service
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
@@ -257,6 +258,11 @@ func TryTieredSettle(relayInfo *relaycommon.RelayInfo, params billingexpr.TokenP
 		requestInput.ImageCount = snap.EstimatedImageCount
 	}
 
+	if _, managed := relayInfo.Billing.(*MarketingBillingSession); managed {
+		evaluationTime := time.Now()
+		relayInfo.BillingEvaluationTime = &evaluationTime
+		requestInput.EvaluationTime = &evaluationTime
+	}
 	tr, err := billingexpr.ComputeTieredQuotaWithRequest(snap, params, requestInput)
 	if err != nil {
 		quota = relayInfo.FinalPreConsumedQuota

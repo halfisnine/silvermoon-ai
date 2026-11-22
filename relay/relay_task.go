@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -335,7 +336,7 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 
 	// 7. 预扣费：首次尝试创建计费会话；重试时会话已存在，换到更贵的渠道要在
 	//    发起上游请求前补足预扣，余额不足就不发请求。
-	if info.Billing != nil || !info.PriceData.FreeModel {
+	{
 		info.ForcePreConsume = true
 		if apiErr := service.PreConsumeBilling(c, info.PriceData.Quota, info); apiErr != nil {
 			return nil, service.TaskErrorFromAPIError(apiErr)
@@ -380,11 +381,18 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 		finalQuota = 0
 	} else if snap := info.TieredBillingSnapshot; snap != nil {
 		if parsed.Immediate != nil && parsed.Immediate.Status == model.TaskStatusSuccess && len(parsed.Immediate.UsageFacts) > 0 {
-			settlement, facts, err := service.EvaluateTaskCompletionUsage(snap, parsed.Immediate.UsageFacts)
+			var evaluationTime *time.Time
+			if _, managed := info.Billing.(*service.MarketingBillingSession); managed {
+				now := time.Now()
+				evaluationTime = &now
+			}
+			settlement, facts, err := service.EvaluateTaskCompletionUsageAt(snap, parsed.Immediate.UsageFacts, evaluationTime)
 			if err != nil {
+				parsed.Immediate.BillingUnknown = true
 				logger.LogWarn(c, common.LogText("task immediate usage settlement failed; retaining reserved quota: %v", err))
 			} else {
 				finalQuota = settlement.ActualQuotaAfterGroup
+				snap.SettlementTime = evaluationTime
 				snap.UsageFacts = facts
 				snap.EstimatedTier = settlement.MatchedTier
 				noteTaskQuotaClamp(info, settlement.Clamp)
@@ -402,6 +410,11 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	}
 
 	info.PriceData.Quota = finalQuota
+	if session, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		if err := session.RememberTaskReceipt(parsed.UpstreamTaskID, info.PublicTaskID, parsed.Immediate, finalQuota); err != nil {
+			return nil, service.TaskErrorWrapperLocal(err, "task_billing_settlement_failed", http.StatusInternalServerError)
+		}
+	}
 
 	return &TaskSubmitResult{
 		UpstreamTaskID: parsed.UpstreamTaskID,

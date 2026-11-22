@@ -52,8 +52,10 @@ type MarketingDebit struct {
 func (MarketingDebit) TableName() string { return "marketing_v2_debits" }
 
 type MarketingReservationInput struct {
-	UserID           int
-	TokenID          int
+	UserID  int
+	TokenID int
+	// Playground is set only by the authenticated server route, never client JSON.
+	Playground       bool
 	RequestReference string
 	QualifiedAt      int64
 	Quota            int64
@@ -81,6 +83,7 @@ type fundingBook struct {
 	user          *User
 	account       *MarketingAccount
 	token         Token
+	hasToken      bool
 	tokenHold     MarketingTokenHold
 	gifts         []MarketingGift
 	originalGifts []MarketingGift
@@ -95,25 +98,28 @@ func loadMarketingFundingBook(tx *gorm.DB, userID, tokenID int) (*fundingBook, e
 	if err != nil {
 		return nil, err
 	}
-	if tokenID <= 0 {
+	if tokenID < 0 {
 		return nil, ErrMarketingAccess
 	}
-	book := &fundingBook{user: user, account: account}
-	// Existing requests still settle after token deletion/revocation; reservation
-	// below enforces current token and user status for every new request.
-	if err = lockForUpdate(tx.Unscoped()).First(&book.token, tokenID).Error; err != nil {
-		return nil, err
-	}
-	if book.token.UserId != userID {
-		return nil, ErrMarketingAccess
-	}
-	err = lockForUpdate(tx).First(&book.tokenHold, "token_id = ?", tokenID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		book.tokenHold.TokenID = tokenID
-		err = tx.Create(&book.tokenHold).Error
-	}
-	if err != nil {
-		return nil, err
+	book := &fundingBook{user: user, account: account, hasToken: tokenID > 0}
+	// Browser playground calls have an authenticated user but no API token.
+	// They reserve the same assets, without inventing a token or token budget.
+	if book.hasToken {
+		// Existing requests still settle after token deletion/revocation.
+		if err = lockForUpdate(tx.Unscoped()).First(&book.token, tokenID).Error; err != nil {
+			return nil, err
+		}
+		if book.token.UserId != userID {
+			return nil, ErrMarketingAccess
+		}
+		err = lockForUpdate(tx).First(&book.tokenHold, "token_id = ?", tokenID).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			book.tokenHold.TokenID = tokenID
+			err = tx.Create(&book.tokenHold).Error
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 	if user.Quota < 0 || int64(user.Quota) > common.MaxWalletQuota || account.PaidReserved < 0 || book.tokenHold.ReservedQuota < 0 || book.tokenHold.ReservedQuota > common.MaxWalletQuota || book.token.UsedQuota < 0 || int64(book.token.UsedQuota) > common.MaxWalletQuota {
 		return nil, ErrMarketingReview
@@ -180,11 +186,13 @@ func (book *fundingBook) save(tx *gorm.DB, funding *MarketingFunding) error {
 	if err := tx.Unscoped().Model(&User{}).Where("id = ?", book.user.Id).Update("quota", book.user.Quota).Error; err != nil {
 		return err
 	}
-	if err := tx.Unscoped().Model(&Token{}).Where("id = ?", book.token.Id).Updates(map[string]any{"remain_quota": book.token.RemainQuota, "used_quota": book.token.UsedQuota}).Error; err != nil {
-		return err
-	}
-	if err := tx.Model(&MarketingTokenHold{}).Where("token_id = ?", book.token.Id).Update("reserved_quota", book.tokenHold.ReservedQuota).Error; err != nil {
-		return err
+	if book.hasToken {
+		if err := tx.Unscoped().Model(&Token{}).Where("id = ?", book.token.Id).Updates(map[string]any{"remain_quota": book.token.RemainQuota, "used_quota": book.token.UsedQuota}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&MarketingTokenHold{}).Where("token_id = ?", book.token.Id).Update("reserved_quota", book.tokenHold.ReservedQuota).Error; err != nil {
+			return err
+		}
 	}
 	for i := range book.gifts {
 		gift := &book.gifts[i]
@@ -217,6 +225,9 @@ func (book *fundingBook) save(tx *gorm.DB, funding *MarketingFunding) error {
 // ReserveMarketingFunding runs in the caller's transaction. There is no legacy
 // user/token quota call or Redis fallback: database holds are the only authority.
 func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*MarketingFunding, error) {
+	if input.Playground != (input.TokenID == 0) || input.TokenID < 0 {
+		return nil, ErrMarketingAccess
+	}
 	if input.QualifiedAt <= 0 || input.QualifiedAt > common.GetTimestamp() || input.Quota < 0 || input.Quota > common.MaxWalletQuota || strings.TrimSpace(input.PricingEvidence) == "" || len(input.PricingEvidence) > 65536 {
 		return nil, ErrMarketingInput
 	}
@@ -234,7 +245,7 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 	}
 	// Re-check authorization even for reservation retries; revocation must not
 	// turn an old request key into permission to start another upstream request.
-	if book.user.Status != common.UserStatusEnabled || book.user.DeletedAt.Valid || book.token.Status != common.TokenStatusEnabled || book.token.DeletedAt.Valid || (book.token.ExpiredTime != -1 && book.token.ExpiredTime <= common.GetTimestamp()) {
+	if book.user.Status != common.UserStatusEnabled || book.user.DeletedAt.Valid || (book.hasToken && (book.token.Status != common.TokenStatusEnabled || book.token.DeletedAt.Valid || (book.token.ExpiredTime != -1 && book.token.ExpiredTime <= common.GetTimestamp()))) {
 		return nil, ErrMarketingAccess
 	}
 	if book.account.OriginState != "verified" {
@@ -259,7 +270,7 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 	if len(unresolved) > 0 {
 		return nil, ErrMarketingReview
 	}
-	if book.tokenHold.ReservedQuota > common.MaxWalletQuota-input.Quota || (!book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota < input.Quota) {
+	if book.hasToken && (book.tokenHold.ReservedQuota > common.MaxWalletQuota-input.Quota || (!book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota < input.Quota)) {
 		return nil, ErrMarketingInsufficient
 	}
 	funding := MarketingFunding{RequestKey: key, PayloadHash: hash, UserID: input.UserID, TokenID: input.TokenID, QualifiedAt: input.QualifiedAt, ReservedQuota: input.Quota, State: "reserved", PricingEvidence: input.PricingEvidence}
@@ -290,7 +301,9 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 		book.account.PaidReserved += remaining
 		book.allocation(funding.ID, 0).ReservedQuota = remaining
 	}
-	book.tokenHold.ReservedQuota += input.Quota
+	if book.hasToken {
+		book.tokenHold.ReservedQuota += input.Quota
+	}
 	if err = book.save(tx, &funding); err != nil {
 		return nil, err
 	}
@@ -372,8 +385,10 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 	if funding.FinalObserved && !input.Final {
 		return nil, ErrMarketingConflict
 	}
-	if input.EvidenceKind == "pre_dispatch_cancel" && (funding.Revision != 0 || funding.State != "reserved") {
-		return nil, ErrMarketingConflict
+	if input.EvidenceKind == "pre_dispatch_cancel" {
+		if err = marketingRequestCanDispatch(tx, &funding); err != nil {
+			return nil, err
+		}
 	}
 
 	if err = lockForUpdate(tx).Where("funding_id = ?", funding.ID).Find(&book.allocations).Error; err != nil {
@@ -451,7 +466,7 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 // a previously unavailable earlier gift now replaces a paid reservation. Token
 // holds must fall by the total consumed amount, not only the same-source part.
 func (book *fundingBook) releaseHolds(funding *MarketingFunding, amount, preferredGiftID int64) error {
-	if amount < 0 || amount > funding.ReservedQuota || amount > book.tokenHold.ReservedQuota {
+	if amount < 0 || amount > funding.ReservedQuota || (book.hasToken && amount > book.tokenHold.ReservedQuota) {
 		return ErrMarketingReview
 	}
 	released := amount
@@ -485,14 +500,19 @@ func (book *fundingBook) releaseHolds(funding *MarketingFunding, amount, preferr
 		return ErrMarketingReview
 	}
 	funding.ReservedQuota -= released
-	book.tokenHold.ReservedQuota -= released
+	if book.hasToken {
+		book.tokenHold.ReservedQuota -= released
+	}
 	return nil
 }
 
 func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount int64) error {
-	tokenAvailable := common.MaxWalletQuota - int64(book.token.UsedQuota)
-	if !book.token.UnlimitedQuota {
-		tokenAvailable = min(tokenAvailable, int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota)
+	tokenAvailable := int64(common.MaxWalletQuota)
+	if book.hasToken {
+		tokenAvailable -= int64(book.token.UsedQuota)
+		if !book.token.UnlimitedQuota {
+			tokenAvailable = min(tokenAvailable, int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota)
+		}
 	}
 	amount = min(amount, max(int64(0), tokenAvailable))
 	// Gifts and then paid source use current availability, excluding other holds.
@@ -530,11 +550,13 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 		}
 		allocation.ConsumedQuota += take
 		funding.SettledQuota += take
-		book.token.UsedQuota += debitAmount
-		if !book.token.UnlimitedQuota {
-			book.token.RemainQuota -= debitAmount
+		if book.hasToken {
+			book.token.UsedQuota += debitAmount
+			if !book.token.UnlimitedQuota {
+				book.token.RemainQuota -= debitAmount
+			}
 		}
-		debit := MarketingDebit{FundingID: funding.ID, GiftID: sourceID, Quota: take, Version: funding.Revision, TokenQuotaCharged: !book.token.UnlimitedQuota}
+		debit := MarketingDebit{FundingID: funding.ID, GiftID: sourceID, Quota: take, Version: funding.Revision, TokenQuotaCharged: book.hasToken && !book.token.UnlimitedQuota}
 		if err := tx.Create(&debit).Error; err != nil {
 			return err
 		}
@@ -573,7 +595,7 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 			return err
 		}
 		allocation := book.allocation(funding.ID, debit.GiftID)
-		if allocation.ConsumedQuota < take || int64(book.token.UsedQuota) < take {
+		if allocation.ConsumedQuota < take || (book.hasToken && int64(book.token.UsedQuota) < take) {
 			return ErrMarketingReview
 		}
 		// Keep reversed consumption reserved for this in-flight request. Finalization
@@ -601,7 +623,7 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 			gift.ReservedQuota += take
 			gift.ConsumedQuota -= take
 		}
-		if book.tokenHold.ReservedQuota > common.MaxWalletQuota-take || funding.ReservedQuota > common.MaxWalletQuota-take {
+		if (book.hasToken && book.tokenHold.ReservedQuota > common.MaxWalletQuota-take) || funding.ReservedQuota > common.MaxWalletQuota-take {
 			return ErrMarketingInput
 		}
 		if debit.TokenQuotaCharged {
@@ -610,8 +632,10 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 			}
 			book.token.RemainQuota += debitAmount
 		}
-		book.token.UsedQuota -= debitAmount
-		book.tokenHold.ReservedQuota += take
+		if book.hasToken {
+			book.token.UsedQuota -= debitAmount
+			book.tokenHold.ReservedQuota += take
+		}
 		allocation.ConsumedQuota -= take
 		allocation.ReservedQuota += take
 		funding.SettledQuota -= take

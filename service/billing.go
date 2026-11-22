@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
@@ -40,12 +41,33 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 	}
 	if relayInfo != nil && relayInfo.Billing != nil {
 		if err := relayInfo.Billing.ReserveBeforeSubmit(preConsumedQuota); err != nil {
+			if _, managed := relayInfo.Billing.(*MarketingBillingSession); managed {
+				return types.NewErrorWithStatusCode(errors.New(MarketingBillingMessage(c, err)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+			}
 			var apiErr *types.NewAPIError
 			if errors.As(err, &apiErr) {
 				return apiErr
 			}
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 		}
+		return nil
+	}
+	if relayInfo == nil {
+		return types.NewError(model.ErrMarketingInput, types.ErrorCodeInvalidRequest, types.ErrOptionWithSkipRetry())
+	}
+	managed, err := model.HasMarketingAccount(relayInfo.UserId)
+	if err != nil {
+		return types.NewError(errors.New(MarketingBillingMessage(c, err)), types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
+	}
+	if managed {
+		session, err := NewMarketingBillingSession(relayInfo, preConsumedQuota)
+		if err != nil {
+			return types.NewErrorWithStatusCode(errors.New(MarketingBillingMessage(c, err)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		}
+		relayInfo.Billing = session
+		return nil
+	}
+	if relayInfo.PriceData.FreeModel {
 		return nil
 	}
 	session, apiErr := NewBillingSession(c, relayInfo, preConsumedQuota)

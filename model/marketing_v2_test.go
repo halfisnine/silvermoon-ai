@@ -83,12 +83,13 @@ func TestMarketingPersistence(t *testing.T) {
 			DB = db
 			common.SetMainDatabaseType(dbType)
 			initCol()
-			require.NoError(t, db.AutoMigrate(&User{}, &Token{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &QuotaData{}))
 			require.NoError(t, migrateMarketingV2(db))
 			cleanup := func() {
 				userIDs := db.Unscoped().Model(&User{}).Select("id").Where("username LIKE ?", "mv2_%")
 				fundingIDs := db.Model(&MarketingFunding{}).Select("id").Where("user_id IN (?)", userIDs)
-				for _, record := range []any{&MarketingAllocation{}, &MarketingDebit{}, &MarketingFundingOperation{}} {
+				require.NoError(t, db.Where("funding_id IN (?)", fundingIDs).Delete(&QuotaData{}).Error)
+				for _, record := range []any{&MarketingAllocation{}, &MarketingDebit{}, &MarketingFundingOperation{}, &MarketingDispatch{}, &MarketingUsageProjection{}} {
 					require.NoError(t, db.Where("funding_id IN (?)", fundingIDs).Delete(record).Error)
 				}
 				tokenIDs := db.Unscoped().Model(&Token{}).Select("id").Where("user_id IN (?)", userIDs)
@@ -495,6 +496,189 @@ func assertMarketingSources(t *testing.T, db *gorm.DB, userID int) {
 }
 
 func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
+	t.Run("consumption_and_log_snapshot_commit_together", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "usage-snapshot", 100, 100, []marketingGiftFixture{{20, 200}})
+		funding := reserveMarketingTest(t, db, user, token, "usage-snapshot", 100, 30)
+		actual := int64(40)
+		input := MarketingSettlementInput{UserID: user.Id, FundingID: funding.ID, Version: 1, ActualQuota: &actual, Final: false, EvidenceKind: "upstream_progress", Evidence: "provider measured cumulative usage"}
+		record := Log{UserId: user.Id, RequestId: "usage-snapshot", Username: user.Username, PromptTokens: 4, CompletionTokens: 6}
+		// A malformed log cannot leave finance committed without recovery data.
+		record.Other = "invalid"
+		require.Error(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := SettleMarketingConsumption(tx, input, record)
+			return err
+		}))
+		require.NoError(t, db.First(funding, funding.ID).Error)
+		assert.Zero(t, funding.SettledQuota)
+		assert.Zero(t, funding.Revision)
+		record.Other = "{}"
+		for range 2 {
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				var err error
+				funding, err = SettleMarketingConsumption(tx, input, record)
+				return err
+			}))
+		}
+		var projections []MarketingUsageProjection
+		require.NoError(t, db.Where("funding_id = ?", funding.ID).Find(&projections).Error)
+		require.Len(t, projections, 1)
+		assert.Zero(t, projections[0].PublishedAt, "financial commit does not require a working log database")
+		var frozen Log
+		require.NoError(t, common.UnmarshalJsonStr(projections[0].Payload, &frozen))
+		assert.Equal(t, 40, frozen.Quota)
+		assert.EqualValues(t, 100, frozen.CreatedAt)
+		var metadata struct {
+			Funding struct {
+				Paid int64 `json:"paid_quota"`
+				Gift int64 `json:"gift_quota"`
+			} `json:"funding"`
+		}
+		require.NoError(t, common.UnmarshalJsonStr(frozen.Other, &metadata))
+		assert.EqualValues(t, 20, metadata.Funding.Paid)
+		assert.EqualValues(t, 20, metadata.Funding.Gift)
+		var contribution QuotaData
+		require.NoError(t, db.Where("funding_id = ?", funding.ID).First(&contribution).Error)
+		assert.Equal(t, 1, contribution.Count)
+		assert.Equal(t, 40, contribution.Quota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, 40, user.UsedQuota)
+		assert.Equal(t, 1, user.RequestCount)
+		// A lower cumulative final price reverses its real source and updates
+		// the same dashboard contribution, never a second request or refund row.
+		revised := int64(30)
+		final := MarketingSettlementInput{UserID: user.Id, FundingID: funding.ID, Version: 2, ActualQuota: &revised, Final: true, EvidenceKind: "upstream_terminal", Evidence: "provider final cumulative price"}
+		for range 2 {
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				_, err := SettleMarketingConsumption(tx, final, record)
+				return err
+			}))
+		}
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, 90, user.Quota)
+		assert.Equal(t, 30, user.UsedQuota)
+		assert.Equal(t, 1, user.RequestCount)
+		require.NoError(t, db.Where("funding_id = ?", funding.ID).First(&contribution).Error)
+		assert.Equal(t, 30, contribution.Quota)
+		assert.Equal(t, 1, contribution.Count)
+		assertMarketingSources(t, db, user.Id)
+	})
+	t.Run("playground_uses_assets_without_token_budget", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "playground", 100, 100, []marketingGiftFixture{{30, 200}})
+		input := MarketingReservationInput{UserID: user.Id, Playground: true, RequestReference: "playground", QualifiedAt: 100, Quota: 40, PricingEvidence: "fixed:test"}
+		var funding *MarketingFunding
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			var err error
+			funding, err = ReserveMarketingFunding(tx, input)
+			return err
+		}))
+		actual := int64(50)
+		funding = settleMarketingTest(t, db, funding, &actual, false, "upstream_progress")
+		actual = 10
+		funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
+		assert.Equal(t, "settled", funding.State)
+		assertMarketingSources(t, db, user.Id)
+		require.NoError(t, db.First(&token, token.Id).Error)
+		assert.Equal(t, 100, token.RemainQuota)
+		assert.Zero(t, token.UsedQuota)
+		var count int64
+		require.NoError(t, db.Model(&MarketingTokenHold{}).Where("token_id = 0").Count(&count).Error)
+		assert.Zero(t, count, "playground must not invent a shared token hold")
+		input.RequestReference = "playground-invalid"
+		input.Playground = false
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := ReserveMarketingFunding(tx, input)
+			return err
+		}), ErrMarketingAccess)
+		input.Playground = true
+		require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("status", common.UserStatusDisabled).Error)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := ReserveMarketingFunding(tx, input)
+			return err
+		}), ErrMarketingAccess)
+	})
+	t.Run("dispatch_and_reservation_are_durable", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "dispatch", 100, 100, []marketingGiftFixture{{20, 200}})
+		funding := reserveMarketingTest(t, db, user, token, "dispatch-funding", 100, 10)
+		for range 2 {
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				_, err := IncreaseMarketingReservation(tx, user.Id, funding.ID, 40)
+				return err
+			}))
+		}
+		require.NoError(t, db.First(funding, funding.ID).Error)
+		assert.EqualValues(t, 40, funding.ReservedQuota)
+		assert.Zero(t, funding.SettledQuota)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := IncreaseMarketingReservation(tx, user.Id, funding.ID, 101)
+			return err
+		}), ErrMarketingInsufficient)
+		input := MarketingDispatchInput{UserID: user.Id, FundingID: funding.ID, Reference: "dispatch-1", PricingEvidence: "final-channel-price:test"}
+		var dispatch *MarketingDispatch
+		var created bool
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			var err error
+			dispatch, created, err = BeginMarketingDispatch(tx, input)
+			return err
+		}))
+		assert.True(t, created)
+		// Simulate lost acknowledgement: a second connection must not send again.
+		require.NoError(t, other.Transaction(func(tx *gorm.DB) error {
+			_, created, err := BeginMarketingDispatch(tx, input)
+			assert.False(t, created)
+			return err
+		}))
+		zero := int64(0)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := SettleMarketingFunding(tx, MarketingSettlementInput{UserID: user.Id, FundingID: funding.ID, Version: 1, ActualQuota: &zero, Final: true, EvidenceKind: "pre_dispatch_cancel", Evidence: "local save failed"})
+			return err
+		}), ErrMarketingConflict)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := IncreaseMarketingReservation(tx, user.Id, funding.ID, 50)
+			return err
+		}), ErrMarketingConflict)
+		input.Reference = "dispatch-2"
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, input)
+			return err
+		}), ErrMarketingConflict)
+		for range 2 {
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				return RejectMarketingDispatch(tx, user.Id, funding.ID, dispatch.ID, "provider explicitly rejected before execution")
+			}))
+		}
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			_, created, err := BeginMarketingDispatch(tx, input)
+			assert.True(t, created)
+			return err
+		}))
+		funding = settleMarketingTest(t, db, funding, nil, true, "unknown")
+		assert.Equal(t, "review", funding.State)
+		assert.EqualValues(t, 40, funding.ReservedQuota)
+		actual := int64(45)
+		funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
+		assert.Equal(t, "settled", funding.State)
+		assertMarketingSources(t, db, user.Id)
+	})
+	t.Run("dispatch_rechecks_owner_and_revocation", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "dispatch-access", 100, 100, nil)
+		stranger, _, _ := marketingFundingFixture(t, db, "dispatch-stranger", 100, 100, nil)
+		funding := reserveMarketingTest(t, db, user, token, "dispatch-access", 100, 10)
+		input := MarketingDispatchInput{UserID: stranger.Id, FundingID: funding.ID, Reference: "dispatch-access", PricingEvidence: "fixed:test"}
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, input)
+			return err
+		}), ErrMarketingAccess)
+		input.UserID = user.Id
+		require.NoError(t, db.Model(&Token{}).Where("id = ?", token.Id).Update("status", common.TokenStatusDisabled).Error)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, input)
+			return err
+		}), ErrMarketingAccess)
+		zero := int64(0)
+		funding = settleMarketingTest(t, db, funding, &zero, true, "pre_dispatch_cancel")
+		assert.Equal(t, "settled", funding.State)
+		assertMarketingSources(t, db, user.Id)
+	})
 	t.Run("source_order_and_final_replay", func(t *testing.T) {
 		user, token, gifts := marketingFundingFixture(t, db, "order", 100, 500, []marketingGiftFixture{{10, 200}, {20, 200}, {30, 0}})
 		funding := reserveMarketingTest(t, db, user, token, "fund-order", 100, 45)

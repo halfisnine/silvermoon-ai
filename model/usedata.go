@@ -11,6 +11,10 @@ import (
 
 // QuotaData 柱状图数据
 type QuotaData struct {
+	// Nil marks the original hourly aggregates. New durable requests own one
+	// contribution row, updated rather than counted again after repricing.
+	FundingID *int64 `json:"-" gorm:"uniqueIndex"`
+
 	Id                  int    `json:"id"`
 	UserID              int    `json:"user_id" gorm:"index"`
 	Username            string `json:"username" gorm:"index:idx_qdt_model_user_name,priority:2;size:64;default:''"`
@@ -115,7 +119,7 @@ func SaveQuotaDataCache() {
 	// 3. 如果没有数据，就插入数据
 	for _, quotaData := range CacheQuotaData {
 		quotaDataDB := &QuotaData{}
-		DB.Table("quota_data").
+		DB.Table("quota_data").Where("funding_id IS NULL").
 			Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ?",
 				quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName).
 			First(quotaDataDB)
@@ -133,7 +137,7 @@ func SaveQuotaDataCache() {
 }
 
 func increaseQuotaData(quotaData *QuotaData) {
-	err := DB.Table("quota_data").
+	err := DB.Table("quota_data").Where("funding_id IS NULL").
 		Where("user_id = ? and username = ? and model_name = ? and created_at = ? and use_group = ? and token_id = ? and channel_id = ? and node_name = ?",
 			quotaData.UserID, quotaData.Username, quotaData.ModelName, quotaData.CreatedAt, quotaData.UseGroup, quotaData.TokenID, quotaData.ChannelID, quotaData.NodeName).
 		Updates(map[string]any{

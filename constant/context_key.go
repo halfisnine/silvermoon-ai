@@ -60,6 +60,8 @@ const (
 	ContextKeyUserName    ContextKey = "username"
 
 	ContextKeyLocalCountTokens ContextKey = "local_count_tokens"
+	// Host-only provenance: a fallback estimate is not confirmed billable usage.
+	ContextKeyEstimatedBillingUsage ContextKey = "estimated_billing_usage"
 
 	ContextKeySystemPromptOverride ContextKey = "system_prompt_override"
 

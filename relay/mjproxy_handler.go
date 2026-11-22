@@ -118,6 +118,9 @@ func RelayMidjourneyNotify(c *gin.Context) *dto.MidjourneyResponse {
 			Result:      "",
 		}
 	}
+	if midjourneyTask.MarketingFundingID > 0 {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "task_requires_authenticated_polling")
+	}
 	midjourneyTask.Progress = midjRequest.Progress
 	midjourneyTask.PromptEn = midjRequest.PromptEn
 	midjourneyTask.State = midjRequest.State
@@ -212,25 +215,31 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 		}
 	}
 
-	userQuota, err := model.GetUserQuota(info.UserId, false)
+	info.PriceData = priceData
+	marketingSession, err := service.ReserveMidjourneyFunding(info, priceData.Quota)
 	if err != nil {
-		return &dto.MidjourneyResponse{
-			Code:        4,
-			Description: err.Error(),
-		}
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, service.MarketingBillingMessage(c, err))
 	}
-
-	if userQuota-priceData.Quota < 0 {
-		return &dto.MidjourneyResponse{
-			Code:        4,
-			Description: "quota_not_enough",
+	taskStored := false
+	defer func() {
+		if marketingSession != nil && !taskStored {
+			marketingSession.Refund(c)
+		}
+	}()
+	if marketingSession == nil {
+		userQuota, err := model.GetUserQuota(info.UserId, false)
+		if err != nil {
+			return service.MidjourneyErrorWrapper(constant.MjRequestError, err.Error())
+		}
+		if userQuota-priceData.Quota < 0 {
+			return service.MidjourneyErrorWrapper(constant.MjRequestError, "quota_not_enough")
 		}
 	}
 	requestURL := getMjRequestPath(c.Request.URL.String())
 	baseURL := c.GetString("base_url")
 	fullRequestURL := fmt.Sprintf("%s%s", baseURL, requestURL)
 	service.RequestPolicy(c).BeginAttempt(&model.Channel{Id: c.GetInt("channel_id")}, info.UsingGroup)
-	mjResp, _, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
+	mjResp, _, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL, marketingSession)
 	accepted := service.RecordMidjourneyPolicyResponse(c, mjResp, err)
 	if err != nil {
 		return &mjResp.Response
@@ -263,10 +272,14 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 	if billingErr != nil {
 		common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))
 	}
+	if err := service.AttachMarketingMidjourney(c, info, midjourneyTask, mjResp.StatusCode); err != nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "persist_task_billing_failed")
+	}
 	err = midjourneyTask.Insert()
 	if err != nil {
 		return service.MidjourneyErrorWrapper(constant.MjRequestError, "insert_midjourney_task_failed")
 	}
+	taskStored = true
 	billingApplied, billingErr := service.SettleMidjourneyTaskBilling(info, midjourneyTask, billingPrepared)
 	if billingErr != nil {
 		common.SysLog(common.LogText("error settling Midjourney quota: %s", billingErr.Error()))
@@ -535,23 +548,34 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 		}
 	}
 
-	userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
-	if err != nil {
-		return &dto.MidjourneyResponse{
-			Code:        4,
-			Description: err.Error(),
-		}
+	estimate := priceData.Quota
+	if !consumeQuota {
+		estimate = 0
 	}
-
-	if consumeQuota && userQuota-priceData.Quota < 0 {
-		return &dto.MidjourneyResponse{
-			Code:        4,
-			Description: "quota_not_enough",
+	relayInfo.PriceData = priceData
+	relayInfo.ChannelId = c.GetInt("channel_id")
+	marketingSession, err := service.ReserveMidjourneyFunding(relayInfo, estimate)
+	if err != nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, service.MarketingBillingMessage(c, err))
+	}
+	taskStored := false
+	defer func() {
+		if marketingSession != nil && !taskStored {
+			marketingSession.Refund(c)
+		}
+	}()
+	if marketingSession == nil {
+		userQuota, err := model.GetUserQuota(relayInfo.UserId, false)
+		if err != nil {
+			return service.MidjourneyErrorWrapper(constant.MjRequestError, err.Error())
+		}
+		if consumeQuota && userQuota-priceData.Quota < 0 {
+			return service.MidjourneyErrorWrapper(constant.MjRequestError, "quota_not_enough")
 		}
 	}
 
 	service.RequestPolicy(c).BeginAttempt(&model.Channel{Id: c.GetInt("channel_id")}, relayInfo.UsingGroup)
-	midjResponseWithStatus, responseBody, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL)
+	midjResponseWithStatus, responseBody, err := service.DoMidjourneyHttpRequest(c, time.Second*60, fullRequestURL, marketingSession)
 	accepted := service.RecordMidjourneyPolicyResponse(c, midjResponseWithStatus, err)
 	if err != nil {
 		return &midjResponseWithStatus.Response
@@ -638,6 +662,9 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 	if billingErr != nil {
 		common.SysLog(common.LogText("error consuming Midjourney quota: %s", billingErr.Error()))
 	}
+	if err := service.AttachMarketingMidjourney(c, relayInfo, midjourneyTask, midjResponseWithStatus.StatusCode); err != nil {
+		return service.MidjourneyErrorWrapper(constant.MjRequestError, "persist_task_billing_failed")
+	}
 	err = midjourneyTask.Insert()
 	if err != nil {
 		return &dto.MidjourneyResponse{
@@ -645,6 +672,7 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 			Description: "insert_midjourney_task_failed",
 		}
 	}
+	taskStored = true
 	billingApplied, billingErr := service.SettleMidjourneyTaskBilling(relayInfo, midjourneyTask, billingPrepared)
 	if billingErr != nil {
 		common.SysLog(common.LogText("error settling Midjourney quota: %s", billingErr.Error()))

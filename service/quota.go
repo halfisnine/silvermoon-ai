@@ -290,6 +290,8 @@ func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData)
 }
 
 func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usage *dto.Usage, extraContent []*common.Message) {
+	_, marketingManaged := relayInfo.Billing.(*MarketingBillingSession)
+	originalUsage := usage
 	if usage == nil {
 		usage = &dto.Usage{PromptTokens: relayInfo.GetEstimatePromptTokens(), TotalTokens: relayInfo.GetEstimatePromptTokens()}
 	}
@@ -369,13 +371,15 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		logContent = append(logContent, common.NewMessage("Possibly an upstream timeout"))
 		logger.LogError(ctx, common.LogText("total tokens is 0, cannot consume quota, userId %d, channelId %d, tokenId %d, model %s， pre-consumed quota %d",
 			relayInfo.UserId, relayInfo.ChannelId, relayInfo.TokenId, billingModelName, relayInfo.FinalPreConsumedQuota))
-	} else {
+	} else if !marketingManaged {
 		model.UpdateUserUsedQuotaAndRequestCount(relayInfo.UserId, quota)
 		model.UpdateChannelUsedQuota(relayInfo.ChannelId, quota)
 	}
 
-	if err := SettleBilling(ctx, relayInfo, quota); err != nil {
-		logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
+	if !marketingManaged {
+		if err := SettleBilling(ctx, relayInfo, quota); err != nil {
+			logger.LogError(ctx, common.LogText("error settling billing: %s", err.Error()))
+		}
 	}
 
 	logModel := billingModelName
@@ -386,7 +390,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		InjectTieredBillingInfo(other, relayInfo, tieredResult)
 	}
 	attachQuotaSaturation(ctx, relayInfo, other)
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+	logParams := model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     usage.PromptTokens,
 		CompletionTokens: usage.CompletionTokens,
@@ -399,7 +403,10 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-	})
+	}
+	if !RecordMarketingConsumption(ctx, relayInfo, logParams, originalUsage, relayInfo.TieredBillingSnapshot == nil || tieredResult != nil, fixedPriceBilling || usePrice) {
+		model.RecordConsumeLog(ctx, relayInfo.UserId, logParams)
+	}
 	relayInfo.PerformanceOutputTokens = int64(usage.CompletionTokens)
 }
 

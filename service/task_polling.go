@@ -84,7 +84,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 	timedOutCount := 0
 
 	for _, task := range tasks {
-		isLegacy := task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
+		isLegacy := task.MarketingFundingID == 0 && task.SubmitTime > 0 && task.SubmitTime < model.TaskRefundLegacyCutoff
 
 		oldStatus := task.Status
 		task.Status = model.TaskStatusFailure
@@ -99,6 +99,12 @@ func sweepTimedOutTasks(ctx context.Context) {
 			task.FailReason = reason
 		}
 
+		if task.MarketingFundingID != 0 {
+			if err := PrepareMarketingTaskOutcome(task, nil, nil, nil); err != nil {
+				common.SysError(fmt.Sprintf("marketing timeout evidence failed: %v", err))
+				continue
+			}
+		}
 		won, err := task.UpdateWithStatus(oldStatus)
 		if err != nil {
 			logger.LogError(ctx, common.LogText("sweepTimedOutTasks CAS update error for task %s: %v", task.TaskID, err))
@@ -109,7 +115,7 @@ func sweepTimedOutTasks(ctx context.Context) {
 			continue
 		}
 		timedOutCount++
-		if !isLegacy && task.Quota != 0 {
+		if !isLegacy && (task.Quota != 0 || task.MarketingFundingID != 0) {
 			RefundTaskQuota(ctx, task, reason)
 		}
 	}
@@ -134,13 +140,19 @@ type TaskPollSummary struct {
 // adaptor factory has not been wired yet, to avoid a nil call during startup.
 func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) TaskPollSummary {
 	summary := TaskPollSummary{}
-	if GetTaskAdaptorFunc == nil {
-		return summary
-	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
+	if err := RecoverMarketingTasks(ctx); err != nil {
+		common.SysError(fmt.Sprintf("marketing task recovery failed: %v", err))
+	}
+	if err := model.RecoverMarketingUsage(ctx, 100); err != nil {
+		common.SysError(fmt.Sprintf("marketing usage recovery failed: %v", err))
+	}
+	if GetTaskAdaptorFunc == nil {
+		return summary
+	}
 	common.SysLog(common.LogText("task progress polling started"))
 	sweepTimedOutTasks(ctx)
 	allTasks := model.GetAllUnFinishSyncTasks(constant.TaskQueryLimit)
@@ -170,6 +182,12 @@ func RunTaskPollingOnce(ctx context.Context, report func(processed, total int)) 
 		for _, task := range tasks {
 			upstreamID := task.GetUpstreamTaskID()
 			if upstreamID == "" {
+				if task.MarketingFundingID != 0 {
+					if err := failTaskFromPoll(ctx, nil, task, task.Status, "Upstream task not found"); err != nil {
+						common.SysError(fmt.Sprintf("marketing task without provider identity remains pending: %v", err))
+					}
+					continue
+				}
 				// 统计失败的未完成任务
 				nullTaskIds = append(nullTaskIds, task.ID)
 				continue
@@ -376,6 +394,11 @@ func updateBatchTasks(ctx context.Context, adaptor BatchTaskPollingAdaptor, chan
 
 		isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 		terminalTransition := isDone && snap.Status != task.Status
+		if terminalTransition {
+			if err := PrepareMarketingTaskOutcome(task, &responseItem.TaskInfo, adaptor, nil); err != nil {
+				return err
+			}
+		}
 		won, updateErr := task.UpdateWithStatus(snap.Status)
 		if updateErr != nil {
 			common.SysLog(common.LogText("UpdateSunoTask task error: %s", updateErr.Error()))
@@ -613,6 +636,9 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 	isDone := task.Status == model.TaskStatusSuccess || task.Status == model.TaskStatusFailure
 	if isDone && snap.Status != task.Status {
+		if err := PrepareMarketingTaskOutcome(task, taskResult, adaptor, nil); err != nil {
+			return err
+		}
 		won, err := task.UpdateWithStatus(snap.Status)
 		if err != nil {
 			logger.LogError(ctx, common.LogText("UpdateWithStatus failed for task %s: %s", task.TaskID, err.Error()))
@@ -639,6 +665,12 @@ func updateVideoSingleTask(ctx context.Context, adaptor TaskPollingAdaptor, ch *
 
 // finalizeTerminalTask 终态统一收尾（状态 CAS 赢家调用，恰好一次）：采样 + 结算 + 失败兜底退款。
 func finalizeTerminalTask(ctx context.Context, adaptor TaskPollingAdaptor, task *model.Task, taskResult *relaycommon.TaskInfo) {
+	if task.MarketingFundingID != 0 {
+		if err := FinalizeMarketingTask(task); err != nil {
+			common.SysError(fmt.Sprintf("marketing task settlement remains pending: %v", err))
+		}
+		return
+	}
 	perfmetrics.RecordTaskResult(task, taskResult)
 	billingSettled := settleTaskBillingOnComplete(ctx, adaptor, task, taskResult)
 	if task.Status == model.TaskStatusFailure && !billingSettled && task.Quota != 0 {
@@ -826,6 +858,9 @@ func failTaskFromPoll(ctx context.Context, adaptor TaskPollingAdaptor, task *mod
 		task.FinishTime = now
 	}
 	task.FailReason = reason
+	if err := PrepareMarketingTaskOutcome(task, nil, nil, nil); err != nil {
+		return err
+	}
 	won, err := task.UpdateWithStatus(fromStatus)
 	if err != nil {
 		return err

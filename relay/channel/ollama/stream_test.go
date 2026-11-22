@@ -1,11 +1,15 @@
 package ollama
 
 import (
+	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/iotest"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -241,4 +245,150 @@ func TestOllamaStreamHandlerDoneToolCalls(t *testing.T) {
 	assert.Equal(t, 1, *toolCalls[1].Index)
 	assert.Equal(t, constant.FinishReasonToolCalls, *chunks[stopChunkIndex].Choices[0].FinishReason)
 	assert.Contains(t, w.Body.String(), "data: [DONE]")
+}
+
+// A positive prompt count does not establish complete output usage. Keep the
+// provider numbers intact, but force reconciliation for incomplete evidence.
+func TestOllamaUsageProvenance(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, tc := range []struct {
+			name      string
+			body      string
+			estimated bool
+			terminal  bool
+		}{
+			{"reported output", `{"done":true,"message":{"content":"hello"},"prompt_eval_count":4,"eval_count":2}`, false, true},
+			{"empty output", `{"done":true,"message":{"content":"","thinking":""},"prompt_eval_count":4,"eval_count":0}`, false, true},
+			{"missing text count", `{"done":true,"message":{"content":"hello"},"prompt_eval_count":4,"eval_count":0}`, true, true},
+			{"missing reasoning count", `{"done":true,"message":{"thinking":"reasoning"},"prompt_eval_count":4,"eval_count":0}`, true, true},
+			{"missing tool count", `{"done":true,"message":{"tool_calls":[{"function":{"name":"weather","arguments":{}}}]},"prompt_eval_count":4,"eval_count":0}`, true, true},
+			{"missing terminal", `{"done":false,"message":{"content":"hello"},"prompt_eval_count":4,"eval_count":2}`, stream, false},
+			{"output in earlier chunk", "{\"done\":false,\"response\":\"hello\"}\n{\"done\":true,\"prompt_eval_count\":4,\"eval_count\":0}", true, true},
+		} {
+			t.Run(fmt.Sprintf("stream=%v/%s", stream, tc.name), func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+				info := &relaycommon.RelayInfo{IsStream: stream, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "llama3.1"}}
+				resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(tc.body))}
+				handler := ollamaChatHandler
+				if stream {
+					handler = ollamaStreamHandler
+				}
+				usage, apiErr := handler(c, info, resp)
+				require.Nil(t, apiErr)
+				require.NotNil(t, usage)
+				assert.Equal(t, tc.estimated, common.GetContextKeyBool(c, constant.ContextKeyEstimatedBillingUsage))
+				outcome := info.StreamStatus.OutcomeSnapshot()
+				assert.True(t, outcome.ExpectsTerminal)
+				assert.Equal(t, tc.terminal, outcome.Response == relaycommon.ResponseOutcomeCompleted)
+				if tc.terminal {
+					assert.Equal(t, 4, usage.PromptTokens)
+					assert.Equal(t, relaycommon.StreamEndReasonDone, outcome.EndReason)
+				} else {
+					assert.Equal(t, relaycommon.StreamEndReasonEOF, outcome.EndReason)
+				}
+				if stream {
+					assert.Equal(t, tc.terminal, strings.Contains(w.Body.String(), "[DONE]"))
+				}
+			})
+		}
+	}
+}
+
+func TestOllamaMalformedChunkCannotBecomeKnownUsage(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprint(stream), func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+			info := &relaycommon.RelayInfo{IsStream: stream, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "llama3.1"}}
+			resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("invalid\n{\"done\":true,\"prompt_eval_count\":4,\"eval_count\":2}"))}
+			if stream {
+				_, apiErr := ollamaStreamHandler(c, info, resp)
+				require.NotNil(t, apiErr)
+			} else {
+				_, apiErr := ollamaChatHandler(c, info, resp)
+				require.Nil(t, apiErr)
+			}
+			assert.Equal(t, relaycommon.ResponseOutcomeIncomplete, info.StreamStatus.OutcomeSnapshot().Response)
+		})
+	}
+}
+
+func TestOllamaUsageFieldPresence(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		for _, tc := range []struct {
+			name           string
+			counts         string
+			prompt, output int
+			estimated      bool
+		}{
+			{"explicit zeros", `"prompt_eval_count":0,"eval_count":0`, 0, 0, false},
+			{"explicit zero input", `"prompt_eval_count":0,"eval_count":2`, 0, 2, false},
+			{"missing input", `"eval_count":2`, 0, 2, true},
+			{"null input", `"prompt_eval_count":null,"eval_count":2`, 0, 2, true},
+			{"missing output", `"prompt_eval_count":4`, 4, 0, true},
+			{"null output", `"prompt_eval_count":4,"eval_count":null`, 4, 0, true},
+		} {
+			t.Run(fmt.Sprintf("stream=%v/%s", stream, tc.name), func(t *testing.T) {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+				info := &relaycommon.RelayInfo{IsStream: stream, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "llama3.1"}}
+				resp := &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"done":true,` + tc.counts + `}`))}
+				handler := ollamaChatHandler
+				if stream {
+					handler = ollamaStreamHandler
+				}
+				usage, apiErr := handler(c, info, resp)
+				require.Nil(t, apiErr)
+				assert.Equal(t, tc.prompt, usage.PromptTokens)
+				assert.Equal(t, tc.output, usage.CompletionTokens)
+				assert.Equal(t, tc.estimated, common.GetContextKeyBool(c, constant.ContextKeyEstimatedBillingUsage))
+				assert.Equal(t, relaycommon.ResponseOutcomeCompleted, info.StreamStatus.OutcomeSnapshot().Response)
+			})
+		}
+	}
+}
+
+func TestOllamaStreamReadFailureAndCancellation(t *testing.T) {
+	t.Run("upstream read failure", func(t *testing.T) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+		info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "llama3.1"}}
+		body := io.NopCloser(io.MultiReader(strings.NewReader("{\"response\":\"hello\"}\n"), iotest.ErrReader(io.ErrUnexpectedEOF)))
+		_, apiErr := ollamaStreamHandler(c, info, &http.Response{Body: body})
+		require.Nil(t, apiErr)
+		assert.Equal(t, relaycommon.StreamEndReasonScannerErr, info.StreamStatus.OutcomeSnapshot().EndReason)
+		assert.NotEqual(t, relaycommon.ResponseOutcomeCompleted, info.StreamStatus.OutcomeSnapshot().Response)
+	})
+	t.Run("cancel blocked read", func(t *testing.T) {
+		reader, writer := io.Pipe()
+		defer writer.Close()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx)
+		info := &relaycommon.RelayInfo{IsStream: true, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "llama3.1"}}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = ollamaStreamHandler(c, info, &http.Response{Body: reader})
+		}()
+		written := make(chan error, 1)
+		go func() { _, err := io.WriteString(writer, "{\"response\":\"hello\"}\n"); written <- err }()
+		select {
+		case err := <-written:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatal("handler did not read the first chunk")
+		}
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("handler did not exit after cancellation")
+		}
+		assert.Equal(t, relaycommon.StreamEndReasonClientGone, info.StreamStatus.OutcomeSnapshot().EndReason)
+		assert.NotEqual(t, relaycommon.ResponseOutcomeCompleted, info.StreamStatus.OutcomeSnapshot().Response)
+	})
 }

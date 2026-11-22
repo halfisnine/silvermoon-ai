@@ -354,6 +354,10 @@ func runLogCleanupTask(ctx context.Context, task *model.SystemTask, runnerID str
 		failSystemTask(task, runnerID, err)
 		return
 	}
+	if err := model.AdvanceMarketingUsageRetention(ctx, payload.TargetTimestamp); err != nil {
+		failSystemTask(task, runnerID, err)
+		return
+	}
 
 	for {
 		remaining, err := model.CountOldLog(ctx, payload.TargetTimestamp)

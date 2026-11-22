@@ -34,9 +34,10 @@ type MarketingAccount struct {
 	UserID       int   `gorm:"primaryKey;autoIncrement:false"`
 	OpeningQuota int64 `gorm:"not null"`
 	// Existing balances can contain old gifts. Empty/unknown is never proof of cash.
-	OriginState     string `gorm:"size:24;not null"`
-	PaidReserved    int64  `gorm:"not null"`
-	PaymentSequence int64  `gorm:"not null"`
+	OriginState       string `gorm:"size:24;not null"`
+	PaidReserved      int64  `gorm:"not null"`
+	UsageRetainedFrom int64  `gorm:"not null;default:0"`
+	PaymentSequence   int64  `gorm:"not null"`
 	// None is established only by the trusted transaction that inserts a NEW
 	// user (registration integration, MV2-009), never inferred from zero balance.
 	// Legacy discovery defaults to unknown; paid proves a prior payment exists.
@@ -134,7 +135,7 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{})
+	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{})
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion
@@ -408,4 +409,19 @@ func GrantMarketingGift(tx *gorm.DB, input MarketingGiftInput) (*MarketingGift, 
 		return nil, err
 	}
 	return &gift, nil
+}
+
+// HasMarketingAccount selects the durable wallet path. Once an account exists,
+// an unverified origin is blocked by reservation; it must never fall back to the
+// legacy writer and accidentally spend gift balances as refundable money.
+func HasMarketingAccount(userID int) (bool, error) {
+	if userID <= 0 {
+		return false, ErrMarketingInput
+	}
+	var account MarketingAccount
+	err := DB.Select("user_id").Where("user_id = ?", userID).First(&account).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return err == nil, err
 }
