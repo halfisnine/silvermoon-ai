@@ -88,16 +88,22 @@ type MarketingGift struct {
 func (MarketingGift) TableName() string { return "marketing_v2_gifts" }
 
 type MarketingFunding struct {
-	ID            int64  `gorm:"primaryKey"`
-	RequestKey    string `gorm:"size:64;not null;uniqueIndex"`
-	UserID        int    `gorm:"not null;index"`
-	TokenID       int    `gorm:"not null"`
-	QualifiedAt   int64  `gorm:"not null"`
-	ReservedQuota int64  `gorm:"not null"`
-	ActualQuota   int64  `gorm:"not null"`
-	SettledQuota  int64  `gorm:"not null"`
-	Revision      int64  `gorm:"not null"`
-	State         string `gorm:"size:24;not null"`
+	ID              int64  `gorm:"primaryKey"`
+	RequestKey      string `gorm:"size:64;not null;uniqueIndex"`
+	PayloadHash     string `gorm:"size:64;not null"`
+	PricingEvidence string `gorm:"type:text;not null"`
+	UsageEvidence   string `gorm:"type:text;not null"`
+	ReviewReason    string `gorm:"size:64;not null"`
+	CostKnown       bool   `gorm:"not null"`
+	FinalObserved   bool   `gorm:"not null"`
+	UserID          int    `gorm:"not null;index"`
+	TokenID         int    `gorm:"not null"`
+	QualifiedAt     int64  `gorm:"not null"`
+	ReservedQuota   int64  `gorm:"not null"`
+	ActualQuota     int64  `gorm:"not null"`
+	SettledQuota    int64  `gorm:"not null"`
+	Revision        int64  `gorm:"not null"`
+	State           string `gorm:"size:24;not null"`
 }
 
 func (MarketingFunding) TableName() string { return "marketing_v2_funding" }
@@ -120,6 +126,7 @@ type MarketingLedgerEntry struct {
 	PaymentID    int64  `gorm:"not null"`
 	GiftID       int64  `gorm:"not null"`
 	FundingID    int64  `gorm:"not null"`
+	DebitID      int64  `gorm:"not null"`
 	AmountQuota  int64  `gorm:"not null"`
 	RecordedAt   int64  `gorm:"not null"`
 }
@@ -127,7 +134,7 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{})
+	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{})
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion
@@ -217,6 +224,9 @@ func lockMarketingAccount(tx *gorm.DB, userID int) (*User, *MarketingAccount, er
 	if userID <= 0 {
 		return nil, nil, ErrMarketingInput
 	}
+	// Preserve transaction/Unscoped while isolating GORM statement state between
+	// the user and account queries, including chained transaction callers.
+	tx = tx.Session(&gorm.Session{})
 	var user User
 	if err := lockForUpdate(tx).First(&user, userID).Error; err != nil {
 		return nil, nil, err
