@@ -1,13 +1,16 @@
 package controller
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Calcium-Ion/go-epay/epay"
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -16,6 +19,58 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type unsupportedPaymentTransport struct{ calls atomic.Int64 }
+
+func (transport *unsupportedPaymentTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	transport.calls.Add(1)
+	return nil, errors.New("unsupported provider must not receive a payment request")
+}
+
+func TestUnsupportedSubscriptionPaymentCannotCreateCheckout(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	db := setupManageUserTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.SubscriptionOrder{}, &model.TopUp{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingActivityFact{}))
+	user := model.User{Username: "payment-scope-user", Quota: 12345, Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(&user).Error)
+	plan := model.SubscriptionPlan{Title: "Configured plan", Enabled: true, StripePriceId: "price_test", CreemProductId: "prod_test", WaffoPancakeProductId: "product_test"}
+	require.NoError(t, db.Create(&plan).Error)
+	previousStripeAPI, previousStripeHook, previousCreemAPI, previousCreemHook := setting.StripeApiSecret, setting.StripeWebhookSecret, setting.CreemApiKey, setting.CreemWebhookSecret
+	previousMerchant, previousPrivate := setting.WaffoPancakeMerchantID, setting.WaffoPancakePrivateKey
+	previousTransport := http.DefaultTransport
+	transport := &unsupportedPaymentTransport{}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		setting.StripeApiSecret, setting.StripeWebhookSecret, setting.CreemApiKey, setting.CreemWebhookSecret = previousStripeAPI, previousStripeHook, previousCreemAPI, previousCreemHook
+		setting.WaffoPancakeMerchantID, setting.WaffoPancakePrivateKey = previousMerchant, previousPrivate
+		http.DefaultTransport = previousTransport
+	})
+	setting.StripeApiSecret, setting.StripeWebhookSecret = "sk_test_isolated", "whsec_isolated"
+	setting.CreemApiKey, setting.CreemWebhookSecret = "isolated-key", "isolated-secret"
+	setting.WaffoPancakeMerchantID, setting.WaffoPancakePrivateKey = "isolated-merchant", "isolated-private"
+	body, err := common.Marshal(map[string]int{"plan_id": plan.Id})
+	require.NoError(t, err)
+	for name, handler := range map[string]gin.HandlerFunc{"stripe": SubscriptionRequestStripePay, "creem": SubscriptionRequestCreemPay, "pancake": SubscriptionRequestWaffoPancakePay} {
+		t.Run(name, func(t *testing.T) {
+			router := gin.New()
+			router.POST("/pay", func(c *gin.Context) { c.Set("id", user.Id) }, handler)
+			request := httptest.NewRequest(http.MethodPost, "/pay", strings.NewReader(string(body)))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.Contains(t, response.Body.String(), `"message_key":"Unsupported payment channel"`)
+			assert.Zero(t, transport.calls.Load())
+			for _, record := range []any{&model.SubscriptionOrder{}, &model.TopUp{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingActivityFact{}} {
+				var count int64
+				require.NoError(t, db.Model(record).Count(&count).Error)
+				assert.Zero(t, count)
+			}
+			require.NoError(t, db.First(&user, user.Id).Error)
+			assert.Equal(t, 12345, user.Quota)
+		})
+	}
+}
 
 func confirmPaymentComplianceForTest(t *testing.T) {
 	t.Helper()
@@ -28,6 +83,32 @@ func confirmPaymentComplianceForTest(t *testing.T) {
 	})
 	paymentSetting.ComplianceConfirmed = true
 	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+}
+
+func TestPaymentInfoExcludesUnsupportedConfiguredChannels(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	previousMethods := operation_setting.PayMethods
+	t.Cleanup(func() { operation_setting.PayMethods = previousMethods })
+	operation_setting.PayMethods = []map[string]string{
+		{"type": "alipay"}, {"type": "wxpay"}, {"type": "stripe"},
+		{"type": "creem"}, {"type": "waffo"}, {"type": "waffo_pancake"},
+	}
+	router := gin.New()
+	router.GET("/info", GetTopUpInfo)
+	for range 2 {
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/info", nil))
+		var result struct {
+			Success bool `json:"success"`
+			Data    struct {
+				PayMethods []map[string]string `json:"pay_methods"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		require.True(t, result.Success)
+		assert.Equal(t, []map[string]string{{"type": "alipay"}, {"type": "wxpay"}}, result.Data.PayMethods)
+		assert.Len(t, operation_setting.PayMethods, 6, "reading supported methods must not mutate administrator settings")
+	}
 }
 
 func TestStripeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
@@ -47,7 +128,8 @@ func TestStripeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isStripeWebhookEnabled())
 
 	setting.StripeWebhookSecret = "whsec_test"
-	require.True(t, isStripeWebhookEnabled())
+	require.False(t, isStripeWebhookEnabled(), "credentials must not enable an unsupported payment route")
+	assertUnsupportedPaymentHTTP(t, RequestStripePay, StripeWebhook, `{"amount":10,"payment_method":"stripe"}`)
 
 	setting.StripePriceId = ""
 	require.False(t, isStripeWebhookEnabled())
@@ -70,7 +152,8 @@ func TestCreemWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isCreemWebhookEnabled())
 
 	setting.CreemWebhookSecret = "creem_secret"
-	require.True(t, isCreemWebhookEnabled())
+	require.False(t, isCreemWebhookEnabled(), "credentials must not enable an unsupported payment route")
+	assertUnsupportedPaymentHTTP(t, RequestCreemPay, CreemWebhook, `{"product_id":"prod_123","payment_method":"creem"}`)
 
 	setting.CreemProducts = "[]"
 	require.False(t, isCreemWebhookEnabled())
@@ -105,7 +188,8 @@ func TestWaffoWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isWaffoWebhookEnabled())
 
 	setting.WaffoApiKey = "api"
-	require.True(t, isWaffoWebhookEnabled())
+	require.False(t, isWaffoWebhookEnabled(), "credentials must not enable an unsupported payment route")
+	assertUnsupportedPaymentHTTP(t, RequestWaffoPay, WaffoWebhook, `{"amount":10}`)
 
 	setting.WaffoEnabled = false
 	require.False(t, isWaffoWebhookEnabled())
@@ -118,7 +202,7 @@ func TestWaffoWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	require.False(t, isWaffoWebhookEnabled())
 
 	setting.WaffoSandboxApiKey = "sandbox_api"
-	require.True(t, isWaffoWebhookEnabled())
+	require.False(t, isWaffoWebhookEnabled(), "sandbox credentials must not bypass the supported payment routes")
 }
 
 func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
@@ -132,16 +216,15 @@ func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 		setting.WaffoPancakeProductID = originalProductID
 	})
 
-	// Presence of all three credentials enables the gateway. Webhook public
-	// keys are bundled in the SDK and there is no separate Enabled toggle —
-	// clear any of the three fields to disable.
+	// Complete credentials do not enable a channel outside this site's ledger.
 	setting.WaffoPancakeMerchantID = ""
 	setting.WaffoPancakePrivateKey = "private"
 	setting.WaffoPancakeProductID = "product"
 	require.False(t, isWaffoPancakeWebhookEnabled())
 
 	setting.WaffoPancakeMerchantID = "merchant"
-	require.True(t, isWaffoPancakeWebhookEnabled())
+	require.False(t, isWaffoPancakeWebhookEnabled(), "credentials must not enable an unsupported payment route")
+	assertUnsupportedPaymentHTTP(t, RequestWaffoPancakePay, WaffoPancakeWebhook, `{"amount":10}`)
 
 	setting.WaffoPancakeProductID = ""
 	require.False(t, isWaffoPancakeWebhookEnabled())
@@ -149,6 +232,28 @@ func TestWaffoPancakeWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {
 	setting.WaffoPancakeProductID = "product"
 	setting.WaffoPancakePrivateKey = ""
 	require.False(t, isWaffoPancakeWebhookEnabled())
+}
+
+// Unsupported routes must stop before creating a local or provider order. A
+// fully configured gateway is deliberately exercised with no database handle.
+func assertUnsupportedPaymentHTTP(t *testing.T, create, notify gin.HandlerFunc, body string) {
+	t.Helper()
+	previousDB := model.DB
+	model.DB = nil
+	defer func() { model.DB = previousDB }()
+	router := gin.New()
+	router.POST("/create", create)
+	router.POST("/notify", notify)
+	request := httptest.NewRequest(http.MethodPost, "/create", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	require.NotPanics(t, func() { router.ServeHTTP(response, request) })
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"message":"error"`)
+	response = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodPost, "/notify", strings.NewReader(`{"status":"paid"}`))
+	require.NotPanics(t, func() { router.ServeHTTP(response, request) })
+	assert.Equal(t, http.StatusForbidden, response.Code)
 }
 
 func TestEpayWebhookEnabledRequiresTopUpAndWebhookConfig(t *testing.T) {

@@ -11,6 +11,7 @@ import (
 var (
 	ErrInvalidUserQuotaAdjustment = errors.New("invalid user quota adjustment")
 	ErrUserQuotaPermission        = errors.New("cannot adjust quota for this user role")
+	ErrMarketingBalanceEdit       = common.NewMessage("This account requires a recorded gift, payment, or reconciliation instead of a direct balance edit")
 )
 
 // UserQuotaAdjustment is the immutable database snapshot of a committed manual
@@ -41,6 +42,16 @@ func AdjustUserQuota(userID, operatorRole int, mode string, value int) (*UserQuo
 		}
 		if operatorRole != common.RoleRootUser && operatorRole <= user.Role {
 			return ErrUserQuotaPermission
+		}
+		// Once the account uses the source ledger, a raw balance edit would
+		// turn an administrative gift into refundable paid money or erase
+		// reservations. Gifts and reconciliations have their own recorded paths.
+		var managed int64
+		if err := tx.Model(&MarketingAccount{}).Where("user_id = ?", userID).Count(&managed).Error; err != nil {
+			return err
+		}
+		if managed != 0 {
+			return ErrMarketingBalanceEdit
 		}
 		if user.Quota > common.MaxWalletQuota || user.Quota < -common.MaxWalletQuota {
 			return ErrWalletQuotaLimitExceeded

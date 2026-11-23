@@ -1433,7 +1433,9 @@ func TestResponsesWebSocketPreRoutingRejectionsFollowHealthClassification(t *tes
 func enableResponsesWSMarketing(t *testing.T, fixture *responsesWSBillingTest, giftQuota int64) *model.MarketingGift {
 	t.Helper()
 	db := model.DB
-	require.NoError(t, db.AutoMigrate(&model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}))
+	require.NoError(t, db.AutoMigrate(&model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{},
+		&model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingActivityFact{},
+		&model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{}))
 	require.NoError(t, db.Model(fixture.user).Update("quota", 0).Error)
 	require.NoError(t, db.Create(&model.MarketingAccount{UserID: fixture.user.Id, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "test registration"}).Error)
 	var gift *model.MarketingGift
@@ -1460,7 +1462,9 @@ func enableResponsesWSMarketing(t *testing.T, fixture *responsesWSBillingTest, g
 				require.NoError(t, db.Where("funding_id IN ?", fundingIDs).Delete(row).Error)
 			}
 		}
-		for _, row := range []any{&model.MarketingLedgerEntry{}, &model.MarketingFunding{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingAccount{}} {
+		for _, row := range []any{&model.MarketingActivityDeliveryCursor{}, &model.MarketingActivityReward{}, &model.MarketingActivityDecision{},
+			&model.MarketingActivityProgress{}, &model.MarketingActivityFact{}, &model.MarketingInvitation{},
+			&model.MarketingLedgerEntry{}, &model.MarketingFunding{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingAccount{}} {
 			require.NoError(t, db.Where("user_id = ?", fixture.user.Id).Delete(row).Error)
 		}
 		require.NoError(t, db.Where("token_id = ?", fixture.token.Id).Delete(&model.MarketingTokenHold{}).Error)

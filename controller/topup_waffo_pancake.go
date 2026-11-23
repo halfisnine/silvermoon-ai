@@ -341,7 +341,7 @@ func getWaffoPancakeBuyerIdentity(user *model.User) string {
 
 func RequestWaffoPancakePay(c *gin.Context) {
 	if !isWaffoPancakeTopUpEnabled() {
-		paymentError(c, common.NewMessage("Waffo Pancake configuration is incomplete"))
+		paymentError(c, common.NewMessage("Unsupported payment channel"))
 		return
 	}
 

@@ -70,6 +70,10 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 }
 
 func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
+	if !isStripeTopUpEnabled() {
+		paymentError(c, common.NewMessage("Unsupported payment channel"))
+		return
+	}
 	if req.PaymentMethod != model.PaymentMethodStripe {
 		paymentError(c, common.NewMessage("Unsupported payment channel"))
 		return

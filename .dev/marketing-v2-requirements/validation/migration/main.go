@@ -85,8 +85,47 @@ func main() {
 	} else {
 		previous, err := os.ReadFile(os.Args[2])
 		must(err)
-		if !bytes.Equal(previous, data) {
+		// Preserve every released JSON field, including any no longer present
+		// in today's structs. Only the explicitly added sale metadata may be
+		// absent from an old snapshot, and it must remain empty after upgrade.
+		var expected, actual map[string]any
+		must(common.Unmarshal(previous, &expected))
+		must(common.Unmarshal(data, &actual))
+		for name, keys := range map[string][]string{
+			"Code":    {"paid_cents", "sales_channel", "sales_batch", "sales_evidence", "payment_id"},
+			"Payment": {"expected_paid_cents", "merchant_id", "payment_id", "provider_reference", "completion_actor_id"},
+		} {
+			expectedRecord := expected[name].(map[string]any)
+			actualRecord := actual[name].(map[string]any)
+			for _, key := range keys {
+				if _, existed := expectedRecord[key]; existed {
+					continue
+				}
+				if value, exists := actualRecord[key]; exists {
+					if value != "" && value != float64(0) {
+						panic("historical payment received fabricated sale metadata")
+					}
+					expectedRecord[key] = value
+				}
+			}
+		}
+		expectedData, err := common.Marshal(expected)
+		must(err)
+		actualData, err := common.Marshal(actual)
+		must(err)
+		if !bytes.Equal(expectedData, actualData) {
 			panic("baseline records or indexes changed during migration")
+		}
+		if candidate {
+			// Internal fields excluded from JSON must not fabricate payment
+			// evidence for the released baseline's ordinary redemption code.
+			for _, table := range []string{"redemptions", "top_ups"} {
+				var internal struct{ CreditedConversion *string }
+				must(model.DB.Table(table).Select("credited_conversion").Where("id = ?", 70001).Scan(&internal).Error)
+				if internal.CreditedConversion != nil && *internal.CreditedConversion != "" {
+					panic("historical payment received fabricated payment evidence")
+				}
+			}
 		}
 	}
 	// Check behavior, not just index names: duplicate historical keys must fail.
