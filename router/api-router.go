@@ -307,6 +307,13 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		marketingUser := apiRouter.Group("/marketing/user", middleware.UserAuth(), middleware.DisableCache())
+		marketingUser.GET("/:resource", controller.MarketingUserRead)
+		marketingUser.GET("/:resource/:id", controller.MarketingUserRead)
+		marketingUser.GET("/rewards/:kind/:id", controller.MarketingUserRead)
+		marketingUser.GET("/draws/by-request/:operation_key", controller.MarketingUserRead)
+		marketingUser.POST("/pools/:id/draw", controller.MarketingUserDraw)
+
 		marketingAdmin := apiRouter.Group("/marketing/admin", middleware.AdminAuth(), middleware.DisableCache())
 		marketingAdmin.GET("/metadata", controller.MarketingAdminRead)
 		marketingAdmin.GET("/:resource", controller.MarketingAdminRead)

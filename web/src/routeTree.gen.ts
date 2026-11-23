@@ -34,6 +34,11 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
+import { Route as AuthenticatedActivitiesCenterRouteImport } from './routes/_authenticated/activities/center'
+import { Route as AuthenticatedActivitiesCheckinRouteImport } from './routes/_authenticated/activities/checkin'
+import { Route as AuthenticatedActivitiesInvitationRouteImport } from './routes/_authenticated/activities/invitation'
+import { Route as AuthenticatedActivitiesLotteryRouteImport } from './routes/_authenticated/activities/lottery'
+import { Route as AuthenticatedActivitiesRewardsRouteImport } from './routes/_authenticated/activities/rewards'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -200,6 +205,36 @@ const authUserResetRoute = authUserResetRouteImport.update({
   path: '/user/reset',
   getParentRoute: () => authRouteRoute,
 } as any)
+const AuthenticatedActivitiesCenterRoute =
+  AuthenticatedActivitiesCenterRouteImport.update({
+    id: '/activities/center',
+    path: '/activities/center',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesCheckinRoute =
+  AuthenticatedActivitiesCheckinRouteImport.update({
+    id: '/activities/checkin',
+    path: '/activities/checkin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesInvitationRoute =
+  AuthenticatedActivitiesInvitationRouteImport.update({
+    id: '/activities/invitation',
+    path: '/activities/invitation',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesLotteryRoute =
+  AuthenticatedActivitiesLotteryRouteImport.update({
+    id: '/activities/lottery',
+    path: '/activities/lottery',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesRewardsRoute =
+  AuthenticatedActivitiesRewardsRouteImport.update({
+    id: '/activities/rewards',
+    path: '/activities/rewards',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
@@ -467,6 +502,11 @@ export interface FileRoutesByFullPath {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -532,6 +572,11 @@ export interface FileRoutesByTo {
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -601,6 +646,11 @@ export interface FileRoutesById {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/(auth)/user/reset': typeof authUserResetRoute
+  '/_authenticated/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/_authenticated/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/_authenticated/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/_authenticated/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/_authenticated/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
@@ -669,6 +719,11 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/user/reset'
+    | '/activities/center'
+    | '/activities/checkin'
+    | '/activities/invitation'
+    | '/activities/lottery'
+    | '/activities/rewards'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
@@ -734,6 +789,11 @@ export interface FileRouteTypes {
     | '/rankings'
     | '/setup'
     | '/user/reset'
+    | '/activities/center'
+    | '/activities/checkin'
+    | '/activities/invitation'
+    | '/activities/lottery'
+    | '/activities/rewards'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
@@ -802,6 +862,11 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/(auth)/user/reset'
+    | '/_authenticated/activities/center'
+    | '/_authenticated/activities/checkin'
+    | '/_authenticated/activities/invitation'
+    | '/_authenticated/activities/lottery'
+    | '/_authenticated/activities/rewards'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
@@ -1040,6 +1105,41 @@ declare module '@tanstack/react-router' {
       fullPath: '/user/reset'
       preLoaderRoute: typeof authUserResetRouteImport
       parentRoute: typeof authRouteRoute
+    }
+    '/_authenticated/activities/center': {
+      id: '/_authenticated/activities/center'
+      path: '/activities/center'
+      fullPath: '/activities/center'
+      preLoaderRoute: typeof AuthenticatedActivitiesCenterRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/checkin': {
+      id: '/_authenticated/activities/checkin'
+      path: '/activities/checkin'
+      fullPath: '/activities/checkin'
+      preLoaderRoute: typeof AuthenticatedActivitiesCheckinRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/invitation': {
+      id: '/_authenticated/activities/invitation'
+      path: '/activities/invitation'
+      fullPath: '/activities/invitation'
+      preLoaderRoute: typeof AuthenticatedActivitiesInvitationRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/lottery': {
+      id: '/_authenticated/activities/lottery'
+      path: '/activities/lottery'
+      fullPath: '/activities/lottery'
+      preLoaderRoute: typeof AuthenticatedActivitiesLotteryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/rewards': {
+      id: '/_authenticated/activities/rewards'
+      path: '/activities/rewards'
+      fullPath: '/activities/rewards'
+      preLoaderRoute: typeof AuthenticatedActivitiesRewardsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/channels/': {
       id: '/_authenticated/channels/'
@@ -1423,6 +1523,11 @@ const AuthenticatedSystemSettingsRouteRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSystemSettingsRouteRoute: typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   AuthenticatedChat2linkRoute: typeof AuthenticatedChat2linkRoute
+  AuthenticatedActivitiesCenterRoute: typeof AuthenticatedActivitiesCenterRoute
+  AuthenticatedActivitiesCheckinRoute: typeof AuthenticatedActivitiesCheckinRoute
+  AuthenticatedActivitiesInvitationRoute: typeof AuthenticatedActivitiesInvitationRoute
+  AuthenticatedActivitiesLotteryRoute: typeof AuthenticatedActivitiesLotteryRoute
+  AuthenticatedActivitiesRewardsRoute: typeof AuthenticatedActivitiesRewardsRoute
   AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
@@ -1452,6 +1557,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSystemSettingsRouteRoute:
     AuthenticatedSystemSettingsRouteRouteWithChildren,
   AuthenticatedChat2linkRoute: AuthenticatedChat2linkRoute,
+  AuthenticatedActivitiesCenterRoute: AuthenticatedActivitiesCenterRoute,
+  AuthenticatedActivitiesCheckinRoute: AuthenticatedActivitiesCheckinRoute,
+  AuthenticatedActivitiesInvitationRoute:
+    AuthenticatedActivitiesInvitationRoute,
+  AuthenticatedActivitiesLotteryRoute: AuthenticatedActivitiesLotteryRoute,
+  AuthenticatedActivitiesRewardsRoute: AuthenticatedActivitiesRewardsRoute,
   AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,

@@ -1,5 +1,3 @@
-import timezone from 'dayjs/plugin/timezone'
-import utc from 'dayjs/plugin/utc'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -18,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
 import { ChevronDownIcon } from 'lucide-react'
 import * as React from 'react'
 import { enUS, fr, ja, ru, vi, zhCN, zhTW } from 'react-day-picker/locale'
@@ -57,6 +57,7 @@ interface DateTimePickerProps extends Omit<
   placeholder?: string
   className?: string
   timeZone?: string
+  hideTime?: boolean
   displayFormat?: string
 }
 
@@ -67,6 +68,7 @@ export function DateTimePicker({
   className,
   displayFormat,
   timeZone,
+  hideTime = false,
   disabled,
   ...triggerProps
 }: DateTimePickerProps) {
@@ -97,7 +99,9 @@ export function DateTimePicker({
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
-      const [hours, minutes, seconds = 0] = time.split(':').map(Number)
+      const [hours, minutes, seconds = 0] = (hideTime ? '00:00:00' : time)
+        .split(':')
+        .map(Number)
       const newDate = new Date(selectedDate)
       newDate.setHours(hours, minutes, seconds, 0)
       setDate(newDate)
@@ -169,15 +173,17 @@ export function DateTimePicker({
           />
         </PopoverContent>
       </Popover>
-      <Input
-        type='time'
-        step={1}
-        value={time}
-        aria-label={t('Time')}
-        onChange={handleTimeChange}
-        className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
-        disabled={disabled || !date}
-      />
+      {!hideTime && (
+        <Input
+          type='time'
+          step={1}
+          value={time}
+          aria-label={t('Time')}
+          onChange={handleTimeChange}
+          className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
+          disabled={disabled || !date}
+        />
+      )}
       {date && (
         <Button
           type='button'

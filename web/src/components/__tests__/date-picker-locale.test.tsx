@@ -39,8 +39,8 @@ async function setInterfaceLanguage(language: string) {
   await act(() => i18next.changeLanguage(language))
 }
 
-async function openCalendar() {
-  await userEvent.click(screen.getByRole('button', { name: /2026-10-11/ }))
+async function openCalendar(name: RegExp = /2026-10-11/) {
+  await userEvent.click(screen.getByRole('button', { name }))
   return screen.findByTestId('calendar-locale')
 }
 
@@ -59,7 +59,7 @@ test('uses Chinese calendar locales for zhCN and zhTW in both date pickers', asy
   const dateTimePicker = render(
     <DateTimePicker value={selected} onChange={() => undefined} />
   )
-  expect(await openCalendar()).toHaveTextContent('zh-CN')
+  expect(await openCalendar(/2026年10月11日/)).toHaveTextContent('zh-CN')
   dateTimePicker.unmount()
 
   await setInterfaceLanguage('zhTW')

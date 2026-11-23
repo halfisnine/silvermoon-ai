@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,7 @@ import (
 // Only display amounts cross the console boundary. Conversion ratios, stored
 // balances, qualification proofs and activity decision internals stay private.
 type marketingCheckinRewardView struct {
+	PoolName     string `json:"pool_name,omitempty"`
 	Kind         string `json:"kind"`
 	Amount       string `json:"amount,omitempty"`
 	Currency     string `json:"currency,omitempty"`
@@ -32,6 +34,7 @@ type marketingCheckinDayView struct {
 	Makeup bool   `json:"makeup"`
 }
 type marketingCheckinActivityView struct {
+	State              string                          `json:"state"`
 	ID                 int64                           `json:"id"`
 	Name               string                          `json:"name"`
 	StartsAt           int64                           `json:"starts_at"`
@@ -67,12 +70,28 @@ func marketingCheckinRewardsView(rewards []model.MarketingActivityRewardSpec) ([
 				return nil, err
 			}
 		}
+		if reward.Kind == "chance" {
+			var pool model.MarketingLotteryPool
+			if err := model.DB.Select("id", "name").First(&pool, reward.PoolID).Error; err != nil {
+				return nil, err
+			}
+			item.PoolName = pool.Name
+		}
 		result = append(result, item)
 	}
 	return result, nil
 }
 
 func GetCheckinStatus(c *gin.Context) {
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
+		return
+	}
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
+		return
+	}
+
 	calendar, err := model.GetMarketingCheckinCalendar(c.Request.Context(), c.GetInt("id"), c.Query("month"), time.Now().Unix())
 	if err != nil {
 		marketingAPIError(c, err)
@@ -104,19 +123,47 @@ func GetCheckinStatus(c *gin.Context) {
 		for _, record := range activity.Records {
 			item.Records = append(item.Records, marketingCheckinDayView{Date: record.Day, Makeup: record.Makeup})
 		}
+		item.State = "active"
+		if time.Now().Unix() < item.StartsAt {
+			item.State = "scheduled"
+		}
+		if item.Paused {
+			item.State = "paused"
+		}
+		if item.EndsAt > 0 && time.Now().Unix() >= item.EndsAt {
+			item.State = "ended"
+		}
 		activities = append(activities, item)
 	}
 	common.ApiSuccess(c, gin.H{
-		"month": calendar.Month, "today": calendar.Today, "activities": activities,
+		"server_now": time.Now().Unix(), "month": calendar.Month, "today": calendar.Today, "activities": activities,
 		"can_checkin": calendar.CanCheckin, "checked_in_today": calendar.CheckedInToday,
 	})
 }
 
 func DoCheckin(c *gin.Context) {
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
+		return
+	}
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
+		return
+	}
+
 	submitActivityCheckin(c, "")
 }
 
 func DoMakeupCheckin(c *gin.Context) {
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
+		return
+	}
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
+		return
+	}
+
 	var request struct {
 		Date string `json:"date"`
 	}

@@ -963,4 +963,11 @@ export const STATIC_I18N_KEYS = [
   "Too many rewards",
   "Streak milestone must be positive",
   "Too many streak milestones",
+  // User activity API errors and fallback reward source.
+  "Unable to load activity data; please try again",
+  "This activity is not available for your account",
+  "Invalid activity request; refresh the page and try again",
+  "This request has already been used for another draw",
+  "No prizes are available; your opportunity has not been used",
+  "Activity reward",
 ] as const

@@ -117,6 +117,33 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
         ],
       },
       {
+        id: 'activities',
+        title: t('Activities'),
+        items: [
+          {
+            title: t('Activity center'),
+            url: '/activities/center',
+            icon: Activity,
+          },
+          {
+            title: t('Check-in'),
+            url: '/activities/checkin',
+            icon: ClipboardList,
+          },
+          { title: t('Lottery'), url: '/activities/lottery', icon: Ticket },
+          {
+            title: t('Invite for rewards'),
+            url: '/activities/invitation',
+            icon: Users,
+          },
+          {
+            title: t('Activity rewards'),
+            url: '/activities/rewards',
+            icon: Box,
+          },
+        ],
+      },
+      {
         id: 'personal',
         title: t('Personal'),
         items: [
