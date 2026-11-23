@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -291,6 +292,7 @@ func Register(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	processRegistrationRewards(c, cleanUser.Id)
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -349,6 +351,18 @@ func GetAllUsers(c *gin.Context) {
 
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+// Registration and its reward facts have already committed. A delivery error
+// must leave those facts recoverable, not tell the user to register again.
+func processRegistrationRewards(c *gin.Context, userID int) {
+	ctx := context.Background()
+	if c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	if _, err := service.ProcessMarketingActivityFacts(ctx, userID); err != nil {
+		logger.LogError(ctx, common.LogText("Marketing registration reward processing failed for user %d", userID))
+	}
 }
 
 func SearchUsers(c *gin.Context) {
@@ -1055,6 +1069,7 @@ func CreateUser(c *gin.Context) {
 		}
 	}
 	cleanUser.FinishInsert(0)
+	processRegistrationRewards(c, cleanUser.Id)
 
 	auditParams["username"] = cleanUser.Username
 	recordManageAuditFor(c, cleanUser.Id, "user.create", auditParams)

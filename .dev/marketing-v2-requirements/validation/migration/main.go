@@ -4,6 +4,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"sort"
@@ -54,8 +55,11 @@ func main() {
 	}
 	if os.Args[1] == "seed" {
 		// Synthetic disabled credentials. No customer data or usable account secrets.
-		user := model.User{Id: 70001, Username: "mv2_baseline_fixture", Password: "disabled-test-fixture", DisplayName: "迁移保留", Status: 2, Quota: 123456, UsedQuota: 789, RequestCount: 9, AuthVersion: 1}
+		user := model.User{Id: 70001, Username: "mv2_baseline_fixture", Password: "disabled-test-fixture", DisplayName: "迁移保留", Status: 2, Quota: 123456, UsedQuota: 789, RequestCount: 9, AuthVersion: 1, GitHubId: "legacy-github-login", DiscordId: "migration-discord", OidcId: "migration-oidc", LinuxDOId: "migration-linuxdo", WeChatId: "migration-wechat"}
 		must(model.DB.Create(&user).Error)
+		deleted := model.User{Id: 70002, Username: "mv2_deleted_identity", AffCode: "mv2-deleted-identity", GitHubId: "deleted-github-subject", Status: 2}
+		must(model.DB.Create(&deleted).Error)
+		must(model.DB.Delete(&deleted).Error)
 		must(model.DB.Create(&model.Token{Id: 70001, UserId: user.Id, Key: "mv2-disabled-fixture-token", Name: "migration token", Status: 2, RemainQuota: 333, UsedQuota: 55, ModelLimits: "model-a,model-b"}).Error)
 		must(model.DB.Create(&model.Redemption{Id: 70001, UserId: user.Id, Key: "mv2-disabled-fixture-redemption", Name: "migration code", Status: 2, Quota: 456, CreatedTime: 1700000000}).Error)
 		must(model.DB.Create(&model.TopUp{Id: 70001, UserId: user.Id, Amount: 900, Money: 8.75, TradeNo: "mv2-baseline-order", PaymentMethod: "alipay", PaymentProvider: "epay", CreateTime: 1700000000, CompleteTime: 1700000001, Status: "success"}).Error)
@@ -125,6 +129,44 @@ func main() {
 				if internal.CreditedConversion != nil && *internal.CreditedConversion != "" {
 					panic("historical payment received fabricated payment evidence")
 				}
+			}
+		}
+	}
+	if candidate && os.Args[1] == "verify" {
+		// Existing authentication ownership is backfilled; no marketing account,
+		// registration fact or reward is invented for a historical account.
+		for _, identity := range []struct {
+			provider, subject string
+			userID            int
+		}{
+			{"github_id", "legacy-github-login", 70001}, {"discord_id", "migration-discord", 70001},
+			{"oidc_id", "migration-oidc", 70001}, {"linux_do_id", "migration-linuxdo", 70001},
+			{"wechat_id", "migration-wechat", 70001}, {"github_id", "deleted-github-subject", 70002},
+		} {
+			key := fmt.Sprintf("%x", sha256.Sum256([]byte(identity.subject)))
+			var claim model.ExternalIdentityClaim
+			must(model.DB.Where("provider = ? AND subject = ?", identity.provider, key).First(&claim).Error)
+			if claim.UserId != identity.userID {
+				panic("historical identity ownership changed")
+			}
+			tx := model.DB.Begin()
+			must(tx.Error)
+			err := model.ClaimExternalIdentityWithTx(tx, identity.provider, key, 79999)
+			must(tx.Rollback().Error)
+			if err == nil {
+				panic("historical identity ownership can be duplicated")
+			}
+		}
+		var deleted model.User
+		must(model.DB.Unscoped().First(&deleted, 70002).Error)
+		if !deleted.DeletedAt.Valid || deleted.GitHubId != "deleted-github-subject" {
+			panic("deleted historical identity changed")
+		}
+		for _, table := range []string{"marketing_v2_accounts", "marketing_v2_activity_facts", "marketing_v2_gifts"} {
+			var count int64
+			must(model.DB.Table(table).Count(&count).Error)
+			if count != 0 {
+				panic("identity migration fabricated marketing history")
 			}
 		}
 	}

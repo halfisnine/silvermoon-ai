@@ -3367,6 +3367,7 @@
     "Invitation code bonus {{quota}}": "Бонус за код приглашения {{quota}}",
     "Invitation Quota": "Квота приглашений",
     "Invitation quota is insufficient!": "Недостаточно квоты за приглашения!",
+    "Invitation rewards are credited as gifts and cannot be transferred to paid balance": "Награды за приглашения начисляются как бонусы и не переводятся на оплаченный баланс",
     "Invite Info": "Информация о приглашении",
     "Invited": "Приглашен",
     "Invited {{count}} users": "Приглашено: {{count}}",

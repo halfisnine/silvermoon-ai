@@ -64,6 +64,10 @@ func TestMain(m *testing.M) {
 		panic("failed to migrate: " + err.Error())
 	}
 
+	if err := migrateMarketingV2(db); err != nil {
+		panic("failed to migrate marketing: " + err.Error())
+	}
+
 	os.Exit(m.Run())
 }
 
@@ -80,6 +84,9 @@ func truncateTables(t *testing.T) {
 		DB.Exec("DELETE FROM tokens")
 		DB.Exec("DELETE FROM user_access_tokens")
 		DB.Exec("DELETE FROM user_oauth_bindings")
+		DB.Exec("DELETE FROM marketing_v2_activity_facts")
+		DB.Exec("DELETE FROM marketing_v2_invitations")
+		DB.Exec("DELETE FROM marketing_v2_accounts")
 		DB.Exec("DELETE FROM users")
 		DB.Exec("DELETE FROM logs")
 		DB.Exec("DELETE FROM channels")

@@ -50,12 +50,12 @@ func TestMarketingActivity(t *testing.T) {
 			DB = db
 			common.SetMainDatabaseType(dbType)
 			initCol()
-			require.NoError(t, db.AutoMigrate(&User{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &ExternalIdentityClaim{}))
 			require.NoError(t, migrateMarketingV2(db))
 			cleanup := func() {
 				users := db.Unscoped().Model(&User{}).Select("id").Where("username LIKE ?", "mv2act_%")
 				pools := db.Model(&MarketingLotteryPool{}).Select("id").Where("name LIKE ?", "mv2act_%")
-				for _, record := range []any{&MarketingActivityDeliveryCursor{}, &MarketingActivityReward{}, &MarketingActivityDecision{}, &MarketingActivityProgress{}, &MarketingActivityFact{}, &MarketingInvitation{}, &MarketingLotteryAward{}, &MarketingLotteryDraw{}, &MarketingLotteryChance{}, &MarketingLotteryIssue{}, &MarketingGift{}, &MarketingLedgerEntry{}, &MarketingPayment{}, &MarketingAccount{}} {
+				for _, record := range []any{&ExternalIdentityClaim{}, &MarketingActivityDeliveryCursor{}, &MarketingActivityReward{}, &MarketingActivityDecision{}, &MarketingActivityProgress{}, &MarketingActivityFact{}, &MarketingInvitation{}, &MarketingLotteryAward{}, &MarketingLotteryDraw{}, &MarketingLotteryChance{}, &MarketingLotteryIssue{}, &MarketingGift{}, &MarketingLedgerEntry{}, &MarketingPayment{}, &MarketingAccount{}} {
 					require.NoError(t, db.Where("user_id IN (?)", users).Delete(record).Error)
 				}
 				require.NoError(t, db.Where("actor_id IN (?)", users).Delete(&MarketingActivityOperation{}).Error)
@@ -71,6 +71,260 @@ func TestMarketingActivity(t *testing.T) {
 			require.NoError(t, db.Model(&User{}).Where("id = ?", admin.Id).Update("role", common.RoleAdminUser).Error)
 			money := MarketingMoneySnapshot{Amount: "2", QuotaPerUnit: "50", CurrencyPerUnit: "1", Currency: "CNY"}
 			gift := MarketingActivityRewardSpec{Kind: "gift", Calculation: "fixed", Money: money, ValidSeconds: 10}
+
+			t.Run("registration_atomic_fact_and_no_legacy_money", func(t *testing.T) {
+				oldNew, oldInvitee, oldInviter := common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter
+				common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = 900, 800, 700
+				t.Cleanup(func() {
+					common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = oldNew, oldInvitee, oldInviter
+				})
+				inviter := marketingActivityUserTest(t, db, "reg_owner", 1, 0)
+				own := MarketingActivitySpec{Name: "mv2act_reg_actual", Kind: "registration", Condition: "registration", Frequency: "once", StartsAt: 10000, EndsAt: 10100, Rewards: []MarketingActivityRewardSpec{gift}}
+				marketingActivityCreateTest(t, db, admin.Id, "reg-actual", own, 9990)
+				invited := own
+				invited.Name, invited.Kind, invited.Condition = "mv2act_reg_invite", "invitation", "friend_registration"
+				marketingActivityCreateTest(t, db, admin.Id, "reg-invite", invited, 9990)
+				user := User{Username: "mv2act_reg_new", Password: "safe-new-password", Quota: 12345, AffQuota: 555, CreatedAt: 1, Role: common.RoleCommonUser}
+				original := user
+				rollback := errors.New("OAuth binding failed")
+				var rolledID int
+				require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+					attempt := original
+					if err := attempt.insertMarketingRegistration(tx, inviter.Id, func() int64 { return 10010 }); err != nil {
+						return err
+					}
+					rolledID = attempt.Id
+					return rollback
+				}), rollback)
+				var count int64
+				for _, table := range []any{&MarketingAccount{}, &MarketingInvitation{}, &MarketingActivityFact{}} {
+					require.NoError(t, db.Model(table).Where("user_id = ?", rolledID).Count(&count).Error)
+					assert.Zero(t, count)
+				}
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+					return user.insertMarketingRegistration(tx, inviter.Id, func() int64 { return 10010 })
+				}))
+				assert.True(t, common.ValidatePasswordAndHash("safe-new-password", user.Password))
+				assert.EqualValues(t, 10010, user.CreatedAt)
+				assert.Zero(t, user.Quota)
+				assert.Zero(t, user.AffQuota)
+				var account MarketingAccount
+				require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+				assert.Equal(t, "verified", account.OriginState)
+				assert.Equal(t, MarketingPaymentHistoryNone, account.PaymentHistory)
+				assert.Equal(t, "registration:"+strconv.Itoa(user.Id), account.PaymentHistoryEvidence)
+				var relation MarketingInvitation
+				require.NoError(t, db.First(&relation, "user_id = ?", user.Id).Error)
+				assert.Equal(t, inviter.Id, relation.InviterID)
+				assert.Equal(t, user.CreatedAt, relation.EstablishedAt)
+				for range 2 {
+					require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+						_, err := CaptureMarketingRegistrationFact(tx, user.Id, "registration:"+strconv.Itoa(user.Id), user.CreatedAt)
+						return err
+					}))
+					marketingActivityProcessTest(t, db, user.Id, 10011)
+					marketingActivityDeliverTest(t, db, user.Id, 10012)
+					user.FinishInsert(inviter.Id)
+					user.FinalizeOAuthUserCreation(inviter.Id)
+				}
+				for _, id := range []int{user.Id, inviter.Id} {
+					var stored User
+					require.NoError(t, db.First(&stored, id).Error)
+					assert.Zero(t, stored.Quota)
+					assert.Zero(t, stored.AffQuota)
+					assert.Zero(t, stored.AffHistoryQuota)
+					require.NoError(t, db.Model(&MarketingGift{}).Where("user_id = ?", id).Count(&count).Error)
+					assert.EqualValues(t, 1, count)
+				}
+				require.NoError(t, db.First(&inviter, inviter.Id).Error)
+				assert.Equal(t, 1, inviter.AffCount)
+				payment := marketingActivityPaymentTest(t, db, user.Id, "reg-first-paid", 100, 10020, "25")
+				assert.Equal(t, MarketingFirstPaymentConfirmed, payment.FirstStatus)
+				user.FinishInsert(inviter.Id)
+				require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+				assert.Equal(t, MarketingPaymentHistoryPaid, account.PaymentHistory)
+				assert.Equal(t, payment.ID, account.FirstPaymentID)
+				stale := user
+				stale.InviterId = admin.Id
+				require.NoError(t, stale.Update(false))
+				assert.Equal(t, inviter.Id, stale.InviterId)
+				require.Error(t, stale.TransferAffQuotaToQuota(1))
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 25, user.Quota)
+			})
+
+			t.Run("registration_rejects_failure_and_stale_invitation", func(t *testing.T) {
+				for _, scenario := range []string{"disabled", "deleted", "missing"} {
+					t.Run(scenario, func(t *testing.T) {
+						inviter := marketingActivityUserTest(t, db, "reg_"+scenario, 1, 0)
+						switch scenario {
+						case "disabled":
+							require.NoError(t, db.Model(&User{}).Where("id = ?", inviter.Id).Update("status", common.UserStatusDisabled).Error)
+						case "deleted":
+							require.NoError(t, db.Delete(&inviter).Error)
+						case "missing":
+							require.NoError(t, db.Unscoped().Delete(&inviter).Error)
+						}
+						user := User{Username: "mv2act_r_" + scenario, InviterId: inviter.Id, Role: common.RoleCommonUser}
+						require.NoError(t, user.Insert(inviter.Id))
+						assert.Zero(t, user.InviterId)
+						var count int64
+						require.NoError(t, db.Model(&MarketingInvitation{}).Where("user_id = ?", user.Id).Count(&count).Error)
+						assert.Zero(t, count)
+					})
+				}
+				user := User{Username: "mv2act_reg_failure", Password: "original-password", Role: common.RoleCommonUser}
+				original := user
+				failure := errors.New("registration fact unavailable")
+				require.NoError(t, db.Callback().Create().Before("gorm:create").Register("reg:fail-fact", func(tx *gorm.DB) {
+					if tx.Statement.Table == (MarketingActivityFact{}).TableName() {
+						tx.AddError(failure)
+					}
+				}))
+				err := user.Insert(0)
+				require.NoError(t, db.Callback().Create().Remove("reg:fail-fact"))
+				require.ErrorIs(t, err, failure)
+				assert.Equal(t, original, user)
+				var count int64
+				require.NoError(t, db.Model(&User{}).Where("username = ?", original.Username).Count(&count).Error)
+				assert.Zero(t, count)
+				require.NoError(t, user.Insert(0))
+				assert.True(t, common.ValidatePasswordAndHash("original-password", user.Password))
+				assert.ErrorIs(t, user.InsertWithTx(db, 0), ErrMarketingTransaction)
+				require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error { return user.InsertWithTx(tx, 0) }), ErrMarketingInput)
+			})
+
+			t.Run("registration_two_connections_and_inviter_status_at_lock", func(t *testing.T) {
+				inviter := marketingActivityUserTest(t, db, "reg_parallel_owner", 1, 0)
+				marketingActivityConcurrentTest(t, inviter.Id, func(tx *gorm.DB, worker int) error {
+					// A fresh input on each complete transaction attempt is required.
+					user := User{Username: "mv2act_reg_p" + strconv.Itoa(worker), Role: common.RoleCommonUser}
+					return user.InsertWithTx(tx, inviter.Id)
+				})
+				var count int64
+				require.NoError(t, db.Model(&MarketingInvitation{}).Where("inviter_id = ?", inviter.Id).Count(&count).Error)
+				assert.EqualValues(t, 2, count)
+				require.NoError(t, db.First(&inviter, inviter.Id).Error)
+				assert.Equal(t, 2, inviter.AffCount)
+
+				for _, deleted := range []bool{false, true} {
+					name := "reg_wait_" + strconv.FormatBool(deleted)
+					owner := marketingActivityUserTest(t, db, name, 1, 0)
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					ready, resume := make(chan struct{}), make(chan struct{})
+					results := make(chan error, 1)
+					type registrationGateKey struct{}
+					first := true
+					require.NoError(t, db.Callback().Query().Before("gorm:query").Register("reg:inviter-lock", func(tx *gorm.DB) {
+						if tx.Statement.Context.Value(registrationGateKey{}) != nil && tx.Statement.Table == "users" && first {
+							first = false
+							close(ready)
+							select {
+							case <-resume:
+							case <-ctx.Done():
+								tx.AddError(ctx.Err())
+							}
+						}
+					}))
+					user := User{Username: "mv2act_rwait_" + strconv.FormatBool(deleted), Role: common.RoleCommonUser}
+					go func() {
+						results <- db.WithContext(context.WithValue(ctx, registrationGateKey{}, true)).Transaction(func(tx *gorm.DB) error { return user.InsertWithTx(tx, owner.Id) })
+					}()
+					select {
+					case <-ready:
+					case <-ctx.Done():
+						cancel()
+						t.Fatal(ctx.Err())
+					}
+					var mutationErr error
+					if deleted {
+						mutationErr = db.Delete(&owner).Error
+					} else {
+						mutationErr = db.Model(&User{}).Where("id = ?", owner.Id).Update("status", common.UserStatusDisabled).Error
+					}
+					close(resume)
+					err := <-results
+					cancel()
+					require.NoError(t, db.Callback().Query().Remove("reg:inviter-lock"))
+					require.NoError(t, mutationErr)
+					require.NoError(t, err)
+					assert.Zero(t, user.InviterId)
+					require.NoError(t, db.Model(&MarketingInvitation{}).Where("user_id = ?", user.Id).Count(&count).Error)
+					assert.Zero(t, count)
+				}
+			})
+
+			t.Run("builtin_registration_identity_has_one_owner", func(t *testing.T) {
+				for _, column := range builtinIdentityColumns {
+					t.Run(column, func(t *testing.T) {
+						var rejected [2]bool
+						marketingActivityConcurrentTest(t, admin.Id, func(tx *gorm.DB, worker int) error {
+							user := marketingRegistrationIdentityTest("mv2act_id_"+column+strconv.Itoa(worker), column, "same-subject")
+							err := user.InsertWithTx(tx, 0)
+							if errors.Is(err, ErrExternalIdentityAlreadyClaimed) {
+								rejected[worker] = true
+								// The loser must roll back the provisional user, account and fact.
+								return err
+							}
+							return err
+						}, ErrExternalIdentityAlreadyClaimed)
+						assert.NotEqual(t, rejected[0], rejected[1])
+						var users []User
+						require.NoError(t, db.Where("username LIKE ?", "mv2act_id_"+column+"%").Find(&users).Error)
+						require.Len(t, users, 1)
+						assert.Equal(t, "same-subject", builtinIdentityValues(&users[0])[column])
+						var count int64
+						require.NoError(t, db.Model(&MarketingActivityFact{}).Where("user_id = ? AND kind = ?", users[0].Id, "registration").Count(&count).Error)
+						assert.EqualValues(t, 1, count)
+					})
+				}
+			})
+
+			t.Run("builtin_identity_legacy_owner_unbind_and_replacement", func(t *testing.T) {
+				for _, column := range builtinIdentityColumns {
+					owner := marketingActivityUserTest(t, db, "legacy_"+column, 1, 0)
+					subject := " Legacy-" + column + strings.Repeat("x", 130)
+					require.NoError(t, db.Model(&User{}).Where("id = ?", owner.Id).Update(column, subject).Error)
+					candidate := marketingRegistrationIdentityTest("mv2act_claim_"+column, column, subject)
+					require.ErrorIs(t, candidate.Insert(0), ErrExternalIdentityAlreadyClaimed)
+					assert.Zero(t, candidate.Id)
+					var count int64
+					require.NoError(t, db.Model(&User{}).Where("username = ?", candidate.Username).Count(&count).Error)
+					assert.Zero(t, count)
+					// Baseline backfill is repeatable and does not rewrite raw subject.
+					require.NoError(t, InitializeExternalIdentityClaims())
+					require.NoError(t, InitializeExternalIdentityClaims())
+					require.NoError(t, db.First(&owner, owner.Id).Error)
+					assert.Equal(t, subject, builtinIdentityValues(&owner)[column])
+					require.NoError(t, db.Model(&MarketingActivityFact{}).Where("user_id = ?", owner.Id).Count(&count).Error)
+					assert.Zero(t, count)
+					require.NoError(t, UpdateUserBindColumn(owner.Id, column, ""))
+					require.NoError(t, candidate.Insert(0))
+					require.ErrorIs(t, UpdateUserBindColumn(owner.Id, column, subject), ErrExternalIdentityAlreadyClaimed)
+					require.NoError(t, UpdateUserBindColumn(owner.Id, column, "replacement"+column))
+					require.ErrorIs(t, UpdateUserBindColumn(owner.Id, column, subject), ErrExternalIdentityAlreadyClaimed)
+					require.NoError(t, db.First(&owner, owner.Id).Error)
+					assert.Equal(t, "replacement"+column, builtinIdentityValues(&owner)[column])
+					// Ordinary profile snapshots cannot bypass claims.
+					stale := marketingRegistrationIdentityTest(owner.Username, column, subject)
+					stale.Id = owner.Id
+					require.NoError(t, stale.Update(false))
+					assert.Equal(t, "replacement"+column, builtinIdentityValues(&stale)[column])
+				}
+				github := marketingActivityUserTest(t, db, "legacy_github_migrate", 1, 0)
+				require.NoError(t, UpdateUserBindColumn(github.Id, "github_id", "old-github-name"))
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+					changed, err := MigrateLegacyGitHubBindingWithTx(tx, github.Id, "old-github-name", "123456")
+					assert.True(t, changed)
+					return err
+				}))
+				oldName := marketingRegistrationIdentityTest("mv2act_old_gh", "github_id", "old-github-name")
+				require.NoError(t, oldName.Insert(0))
+				duplicate := marketingRegistrationIdentityTest("mv2act_dup_gh", "github_id", "123456")
+				require.ErrorIs(t, duplicate.Insert(0), ErrExternalIdentityAlreadyClaimed)
+				require.NoError(t, github.ClearBinding("github"))
+				require.NoError(t, duplicate.Insert(0))
+			})
 
 			t.Run("draft_activation_and_visibility_are_distinct", func(t *testing.T) {
 				user := marketingActivityUserTest(t, db, "draft", 1, 0)
@@ -814,7 +1068,7 @@ func TestMarketingActivity(t *testing.T) {
 // physical connections and overlap even on a single-core test machine. Only
 // the production whole-transaction retry handles SQLite contention and MySQL
 // deadlock victims; failed operations are never retried statement by statement.
-func marketingActivityConcurrentTest(t *testing.T, userID int, apply func(*gorm.DB, int) error) {
+func marketingActivityConcurrentTest(t *testing.T, userID int, apply func(*gorm.DB, int) error, permitted ...error) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	var workers sync.WaitGroup
@@ -859,11 +1113,31 @@ func marketingActivityConcurrentTest(t *testing.T, userID int, apply func(*gorm.
 	for range 2 {
 		select {
 		case err := <-results:
+			if len(permitted) > 0 && errors.Is(err, permitted[0]) {
+				continue
+			}
 			require.NoError(t, err)
 		case <-ctx.Done():
 			t.Fatal(ctx.Err())
 		}
 	}
+}
+
+func marketingRegistrationIdentityTest(name, column, subject string) User {
+	user := User{Username: name, Role: common.RoleCommonUser}
+	switch column {
+	case "github_id":
+		user.GitHubId = subject
+	case "discord_id":
+		user.DiscordId = subject
+	case "oidc_id":
+		user.OidcId = subject
+	case "linux_do_id":
+		user.LinuxDOId = subject
+	case "wechat_id":
+		user.WeChatId = subject
+	}
+	return user
 }
 
 func marketingActivityUserTest(t *testing.T, db *gorm.DB, name string, at int64, inviter int) User {

@@ -3367,6 +3367,7 @@
     "Invitation code bonus {{quota}}": "招待コードボーナス {{quota}}",
     "Invitation Quota": "招待クォータ",
     "Invitation quota is insufficient!": "招待クォータが不足しています！",
+    "Invitation rewards are credited as gifts and cannot be transferred to paid balance": "招待報酬はボーナス残高に加算され、有料残高には移せません",
     "Invite Info": "招待情報",
     "Invited": "招待済み",
     "Invited {{count}} users": "招待 {{count}} 人",

@@ -3367,6 +3367,7 @@
     "Invitation code bonus {{quota}}": "使用邀请码赠送 {{quota}}",
     "Invitation Quota": "邀请额度",
     "Invitation quota is insufficient!": "邀请额度不足！",
+    "Invitation rewards are credited as gifts and cannot be transferred to paid balance": "邀请奖励以赠金到账，不能转为付费金额",
     "Invite Info": "邀请信息",
     "Invited": "已邀请",
     "Invited {{count}} users": "邀请 {{count}} 人",

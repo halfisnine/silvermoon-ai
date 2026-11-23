@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	"github.com/QuantumNous/new-api/service"
@@ -928,6 +929,7 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			setupSecurityEnrollmentTest(t)
+			require.NoError(t, model.DB.AutoMigrate(marketingRegistrationFixtureModels()...))
 			previousRegister := common.RegisterEnabled
 			common.RegisterEnabled = test.registerEnabled
 			t.Cleanup(func() { common.RegisterEnabled = previousRegister })
@@ -1125,7 +1127,7 @@ func TestOAuthBindIgnoresLegacyGitHubUsernames(t *testing.T) {
 }
 
 func TestOAuthRegistrationPersistsInviter(t *testing.T) {
-	db, dialect := openTaskDialectDatabase(t, &model.User{}, &model.Log{})
+	db, dialect := openTaskDialectDatabase(t, append([]any{&model.User{}, &model.Log{}}, marketingRegistrationFixtureModels()...)...)
 	oldDB, oldLogDB := model.DB, model.LOG_DB
 	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
 	oldRedis, oldRegister := common.RedisEnabled, common.RegisterEnabled
@@ -1165,4 +1167,238 @@ func TestOAuthRegistrationPersistsInviter(t *testing.T) {
 			assert.Equal(t, tc.want, stored.InviterId, "login must not reassign the inviter")
 		})
 	}
+}
+
+// These are the real activity and accounting tables used by committed account
+// creation and immediate rewards. Shared auth fixtures can opt into them.
+func marketingRegistrationFixtureModels() []any {
+	return []any{
+		&model.ExternalIdentityClaim{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingLedgerEntry{},
+		&model.MarketingInvitation{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{},
+		&model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{},
+		&model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{},
+		&model.MarketingLotteryPool{}, &model.MarketingLotteryPrize{}, &model.MarketingLotteryIssue{},
+		&model.MarketingLotteryChance{}, &model.MarketingLotteryDraw{}, &model.MarketingLotteryAward{}, &model.MarketingLotteryOperation{},
+	}
+}
+
+func TestMarketingRegistrationEntrypoints(t *testing.T) {
+	models := append([]any{&model.User{}, &model.Log{}, &model.UserOAuthBinding{}}, marketingRegistrationFixtureModels()...)
+	db, dialect := openTaskDialectDatabase(t, models...)
+	oldDB, oldLogDB := model.DB, model.LOG_DB
+	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
+	oldRedis, oldRegister, oldPassword, oldEmail := common.RedisEnabled, common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled
+	oldToken := constant.GenerateDefaultToken
+	oldNew, oldInvitee, oldInviter := common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter
+	model.DB, model.LOG_DB = db, db
+	common.SetDatabaseTypes(dialect, dialect)
+	common.RedisEnabled, common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = false, true, true, false
+	constant.GenerateDefaultToken = false
+	common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = 9000, 8000, 7000
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = oldDB, oldLogDB
+		common.SetDatabaseTypes(oldMain, oldLog)
+		common.RedisEnabled, common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = oldRedis, oldRegister, oldPassword, oldEmail
+		common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = oldNew, oldInvitee, oldInviter
+		constant.GenerateDefaultToken = oldToken
+	})
+	admin := model.User{Username: "registration-admin", AffCode: "registration-admin", Role: common.RoleRootUser, Status: common.UserStatusEnabled}
+	inviter := model.User{Username: "registration-friend", AffCode: "registration-friend", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(&admin).Error)
+	require.NoError(t, db.Create(&inviter).Error)
+	now := time.Now().Unix()
+	money := model.MarketingMoneySnapshot{Amount: "2", Currency: "CNY", QuotaPerUnit: "70000", CurrencyPerUnit: "1"}
+	for _, kind := range []string{"registration", "invitation"} {
+		condition := "registration"
+		if kind == "invitation" {
+			condition = "friend_registration"
+		}
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			a, err := model.CreateMarketingActivity(tx, admin.Id, "register-http:"+kind, model.MarketingActivitySpec{
+				Name: kind, Kind: kind, Condition: condition, Frequency: "once", StartsAt: now - 10, EndsAt: now + 3600,
+				Rewards: []model.MarketingActivityRewardSpec{{Kind: "gift", Calculation: "fixed", Money: money, ValidSeconds: 3600}},
+			}, now-10)
+			if err != nil {
+				return err
+			}
+			_, err = model.ActivateMarketingActivity(tx, admin.Id, a.ID, "register-enable:"+kind, now-10)
+			return err
+		}))
+	}
+	t.Run("password_success_and_failed_attempts", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(`{"username":"http-registered","password":"registration-password","aff_code":"registration-friend","role":100,"quota":999999,"inviter_id":999999}`))
+		Register(c)
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success, recorder.Body.String())
+		var user model.User
+		require.NoError(t, db.First(&user, "username = ?", "http-registered").Error)
+		assert.Zero(t, user.Quota)
+		assert.Equal(t, common.RoleCommonUser, user.Role)
+		assert.Equal(t, inviter.Id, user.InviterId)
+		var account model.MarketingAccount
+		require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+		assert.Equal(t, model.MarketingPaymentHistoryNone, account.PaymentHistory)
+		assert.Equal(t, "verified", account.OriginState)
+		var gifts []model.MarketingGift
+		require.NoError(t, db.Order("id").Find(&gifts).Error)
+		require.Len(t, gifts, 2)
+		assert.ElementsMatch(t, []int{user.Id, inviter.Id}, []int{gifts[0].UserID, gifts[1].UserID})
+		for _, gift := range gifts {
+			assert.EqualValues(t, 140000, gift.GrantedQuota)
+			assert.EqualValues(t, 3600, gift.ExpiresAt-gift.GrantedAt)
+		}
+		for _, attempt := range []struct {
+			name, body     string
+			closed, verify bool
+		}{
+			{"duplicate", `{"username":"http-registered","password":"registration-password","aff_code":"registration-friend"}`, false, false},
+			{"registration_disabled", `{"username":"closed-signup","password":"registration-password"}`, true, false},
+			{"email_unverified", `{"username":"unverified-signup","password":"registration-password","email":"unverified@example.com","verification_code":"bad-code"}`, false, true},
+		} {
+			common.RegisterEnabled, common.EmailVerificationEnabled = !attempt.closed, attempt.verify
+			recorder = httptest.NewRecorder()
+			c, _ = gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(attempt.body))
+			Register(c)
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+			assert.False(t, response.Success, attempt.name)
+		}
+		common.RegisterEnabled, common.EmailVerificationEnabled = true, false
+		for _, item := range []struct {
+			table any
+			count int64
+		}{{&model.MarketingActivityFact{}, 1}, {&model.MarketingInvitation{}, 1}, {&model.MarketingGift{}, 2}, {&model.MarketingPayment{}, 0}} {
+			var count int64
+			require.NoError(t, db.Model(item.table).Count(&count).Error)
+			assert.Equal(t, item.count, count)
+		}
+	})
+	t.Run("oauth_success_replay_and_binding_rollback", func(t *testing.T) {
+		for _, custom := range []bool{false, true} {
+			name := "oauth-builtin"
+			var provider oauth.Provider = &oauth.GitHubProvider{}
+			if custom {
+				name = "oauth-custom"
+				provider = oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{Id: 42, Name: "Test", Slug: "registration-test", Enabled: true})
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			identity := &oauth.OAuthUser{ProviderUserID: name, Username: name}
+			user, _, err := findOrCreateOAuthUser(c, provider, identity, &oauth.OAuthToken{}, inviter.AffCode)
+			require.NoError(t, err)
+			var gifts int64
+			require.NoError(t, db.Model(&model.MarketingGift{}).Where("user_id = ?", user.Id).Count(&gifts).Error)
+			assert.EqualValues(t, 1, gifts)
+			require.Zero(t, user.Quota)
+			again, _, err := findOrCreateOAuthUser(c, provider, identity, &oauth.OAuthToken{}, admin.AffCode)
+			require.NoError(t, err)
+			assert.Equal(t, user.Id, again.Id)
+			assert.Equal(t, inviter.Id, again.InviterId)
+			var facts int64
+			require.NoError(t, db.Model(&model.MarketingActivityFact{}).Where("user_id = ?", user.Id).Count(&facts).Error)
+			assert.EqualValues(t, 1, facts)
+		}
+		failure := errors.New("binding failure")
+		require.NoError(t, db.Callback().Create().Before("gorm:create").Register("registration_binding_failure", func(tx *gorm.DB) {
+			if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "user_oauth_bindings" {
+				tx.AddError(failure)
+			}
+		}))
+		provider := oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{Id: 42, Name: "Test", Slug: "registration-test", Enabled: true})
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		_, _, err := findOrCreateOAuthUser(c, provider, &oauth.OAuthUser{ProviderUserID: "rollback", Username: "oauth-rollback"}, &oauth.OAuthToken{}, inviter.AffCode)
+		require.ErrorIs(t, err, failure)
+		require.NoError(t, db.Callback().Create().Remove("registration_binding_failure"))
+		var count int64
+		require.NoError(t, db.Model(&model.User{}).Where("username = ?", "oauth-rollback").Count(&count).Error)
+		assert.Zero(t, count)
+		require.NoError(t, db.Model(&model.MarketingActivityFact{}).Count(&count).Error)
+		assert.EqualValues(t, 3, count)
+		require.NoError(t, db.Model(&model.MarketingInvitation{}).Count(&count).Error)
+		assert.EqualValues(t, 3, count)
+	})
+	t.Run("delivery_failure_preserves_success_and_recovers_once", func(t *testing.T) {
+		require.NoError(t, db.Callback().Create().Before("gorm:create").Register("registration_delivery_failure", func(tx *gorm.DB) {
+			if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "marketing_v2_gifts" {
+				tx.AddError(errors.New("gift delivery failed"))
+			}
+		}))
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader(`{"username":"delivery-recovery","password":"registration-password"}`))
+		Register(c)
+		require.NoError(t, db.Callback().Create().Remove("registration_delivery_failure"))
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success, recorder.Body.String())
+		var user model.User
+		require.NoError(t, db.First(&user, "username = ?", "delivery-recovery").Error)
+		var count int64
+		require.NoError(t, db.Model(&model.MarketingGift{}).Where("user_id = ?", user.Id).Count(&count).Error)
+		assert.Zero(t, count)
+		for range 2 {
+			_, err := service.ProcessMarketingActivityFacts(context.Background(), user.Id)
+			require.NoError(t, err)
+		}
+		require.NoError(t, db.Model(&model.MarketingGift{}).Where("user_id = ?", user.Id).Count(&count).Error)
+		assert.EqualValues(t, 1, count)
+		require.NoError(t, db.Model(&model.MarketingLedgerEntry{}).Where("user_id = ? AND kind = ?", user.Id, "gift_credit").Count(&count).Error)
+		assert.EqualValues(t, 1, count)
+	})
+
+	t.Run("stale_builtin_identity_precheck_cannot_register_twice", func(t *testing.T) {
+		checked, resume := make(chan struct{}), make(chan struct{})
+		provider := &staleRegistrationOAuthProvider{GitHubProvider: &oauth.GitHubProvider{}, checked: checked, resume: resume}
+		identity := &oauth.OAuthUser{ProviderUserID: "same-identity-race", Username: "oauth-race"}
+		done := make(chan error, 1)
+		go func() {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			_, _, err := findOrCreateOAuthUser(c, provider, identity, &oauth.OAuthToken{}, inviter.AffCode)
+			done <- err
+		}()
+		select {
+		case <-checked:
+		case <-time.After(15 * time.Second):
+			t.Fatal("first registration did not reach identity precheck")
+		}
+		// The second request commits after the first has observed an unused identity,
+		// before it chooses a fallback username. No database state is fabricated.
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		winner, _, err := findOrCreateOAuthUser(c, &oauth.GitHubProvider{}, identity, &oauth.OAuthToken{}, inviter.AffCode)
+		close(resume)
+		require.NoError(t, err)
+		select {
+		case err = <-done:
+			require.ErrorIs(t, err, model.ErrExternalIdentityAlreadyClaimed)
+		case <-time.After(15 * time.Second):
+			t.Fatal("stale registration did not finish")
+		}
+		var count int64
+		require.NoError(t, db.Model(&model.User{}).Where("github_id = ?", identity.ProviderUserID).Count(&count).Error)
+		assert.EqualValues(t, 1, count)
+		require.NoError(t, db.Model(&model.MarketingActivityFact{}).Where("user_id = ?", winner.Id).Count(&count).Error)
+		assert.EqualValues(t, 1, count)
+		require.NoError(t, db.Model(&model.MarketingGift{}).Where("user_id = ?", winner.Id).Count(&count).Error)
+		assert.EqualValues(t, 1, count)
+	})
+}
+
+// Only the external identity precheck is paused; persistence and rewards remain
+// the real production path. This reproduces a distinct valid OAuth flow.
+type staleRegistrationOAuthProvider struct {
+	*oauth.GitHubProvider
+	checked, resume chan struct{}
+	once            sync.Once
+}
+
+func (p *staleRegistrationOAuthProvider) IsUserIDTaken(subject string) bool {
+	taken := p.GitHubProvider.IsUserIDTaken(subject)
+	p.once.Do(func() { close(p.checked); <-p.resume })
+	return taken
 }

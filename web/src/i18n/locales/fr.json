@@ -3367,6 +3367,7 @@
     "Invitation code bonus {{quota}}": "Bonus de code d'invitation {{quota}}",
     "Invitation Quota": "Quota d'invitation",
     "Invitation quota is insufficient!": "Quota d’invitation insuffisant !",
+    "Invitation rewards are credited as gifts and cannot be transferred to paid balance": "Les récompenses de parrainage sont des crédits offerts et ne peuvent pas devenir du solde payé",
     "Invite Info": "Informations sur l'invitation",
     "Invited": "Invité",
     "Invited {{count}} users": "{{count}} invitations",
