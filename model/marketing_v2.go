@@ -139,7 +139,7 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{})
+	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{})
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion
