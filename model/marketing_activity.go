@@ -686,7 +686,7 @@ func CaptureMarketingCheckinFact(tx *gorm.DB, userID int, reference, day string,
 	}
 	seen := map[string]bool{}
 	for _, claim := range claims {
-		key := fmt.Sprintf("%d:%d", claim.ActivityID, claim.MilestoneDays)
+		key := fmt.Sprintf("%d:%d:%d", claim.ActivityID, claim.MilestoneDays, claim.Ordinal)
 		if claim.ActivityID <= 0 || claim.MilestoneDays < 0 || claim.Ordinal <= 0 || seen[key] {
 			return nil, ErrMarketingInput
 		}

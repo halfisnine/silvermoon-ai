@@ -24,6 +24,7 @@ type snapshot struct {
 	Token       model.Token
 	Code        model.Redemption
 	Payment     model.TopUp
+	Checkin     model.Checkin
 	Indexes     map[string][]indexSnapshot
 }
 
@@ -48,7 +49,7 @@ func main() {
 	must(err)
 	defer sqlDB.Close()
 	candidate := os.Args[3] == "candidate"
-	for _, table := range []string{"marketing_v2_accounts", "marketing_v2_payments", "marketing_v2_gifts", "marketing_v2_funding", "marketing_v2_allocations", "marketing_v2_ledger", "marketing_v2_token_holds", "marketing_v2_funding_operations", "marketing_v2_debits", "marketing_v2_dispatches", "marketing_v2_usage_projections", "marketing_v2_realtime_rounds", "marketing_v2_realtime_events", "marketing_v2_lottery_pools", "marketing_v2_lottery_prizes", "marketing_v2_lottery_issues", "marketing_v2_lottery_chances", "marketing_v2_lottery_draws", "marketing_v2_lottery_awards", "marketing_v2_lottery_operations", "marketing_v2_activities", "marketing_v2_activity_operations", "marketing_v2_invitations", "marketing_v2_activity_facts", "marketing_v2_activity_progress", "marketing_v2_activity_decisions", "marketing_v2_activity_rewards", "marketing_v2_activity_delivery_cursors"} {
+	for _, table := range []string{"marketing_v2_accounts", "marketing_v2_payments", "marketing_v2_gifts", "marketing_v2_funding", "marketing_v2_allocations", "marketing_v2_ledger", "marketing_v2_token_holds", "marketing_v2_funding_operations", "marketing_v2_debits", "marketing_v2_dispatches", "marketing_v2_usage_projections", "marketing_v2_realtime_rounds", "marketing_v2_realtime_events", "marketing_v2_lottery_pools", "marketing_v2_lottery_prizes", "marketing_v2_lottery_issues", "marketing_v2_lottery_chances", "marketing_v2_lottery_draws", "marketing_v2_lottery_awards", "marketing_v2_lottery_operations", "marketing_v2_activities", "marketing_v2_activity_operations", "marketing_v2_invitations", "marketing_v2_activity_facts", "marketing_v2_activity_progress", "marketing_v2_activity_decisions", "marketing_v2_activity_rewards", "marketing_v2_activity_delivery_cursors", "marketing_v2_checkin_days", "marketing_v2_checkin_claims"} {
 		if model.DB.Migrator().HasTable(table) != candidate {
 			panic("unexpected migration state for " + table)
 		}
@@ -62,6 +63,7 @@ func main() {
 		must(model.DB.Delete(&deleted).Error)
 		must(model.DB.Create(&model.Token{Id: 70001, UserId: user.Id, Key: "mv2-disabled-fixture-token", Name: "migration token", Status: 2, RemainQuota: 333, UsedQuota: 55, ModelLimits: "model-a,model-b"}).Error)
 		must(model.DB.Create(&model.Redemption{Id: 70001, UserId: user.Id, Key: "mv2-disabled-fixture-redemption", Name: "migration code", Status: 2, Quota: 456, CreatedTime: 1700000000}).Error)
+		must(model.DB.Create(&model.Checkin{UserId: user.Id, CheckinDate: "2025-01-01", QuotaAwarded: 321, CreatedAt: 1735689600}).Error)
 		must(model.DB.Create(&model.TopUp{Id: 70001, UserId: user.Id, Amount: 900, Money: 8.75, TradeNo: "mv2-baseline-order", PaymentMethod: "alipay", PaymentProvider: "epay", CreateTime: 1700000000, CompleteTime: 1700000001, Status: "success"}).Error)
 	} else if os.Args[1] != "verify" {
 		panic("unknown operation")
@@ -71,6 +73,7 @@ func main() {
 	must(model.DB.First(&got.Token, 70001).Error)
 	must(model.DB.First(&got.Code, 70001).Error)
 	must(model.DB.First(&got.Payment, 70001).Error)
+	must(model.DB.Where("user_id = ? AND checkin_date = ?", 70001, "2025-01-01").First(&got.Checkin).Error)
 	got.AuthVersion = got.User.AuthVersion
 	got.Indexes = make(map[string][]indexSnapshot)
 	for _, table := range []string{"users", "tokens", "redemptions", "top_ups"} {
@@ -162,11 +165,37 @@ func main() {
 		if !deleted.DeletedAt.Valid || deleted.GitHubId != "deleted-github-subject" {
 			panic("deleted historical identity changed")
 		}
-		for _, table := range []string{"marketing_v2_accounts", "marketing_v2_activity_facts", "marketing_v2_gifts"} {
+		for _, table := range []string{"marketing_v2_accounts", "marketing_v2_activity_facts", "marketing_v2_gifts", "marketing_v2_checkin_days", "marketing_v2_checkin_claims"} {
 			var count int64
 			must(model.DB.Table(table).Count(&count).Error)
 			if count != 0 {
 				panic("identity migration fabricated marketing history")
+			}
+		}
+	}
+	if candidate {
+		// A calendar day and a continuous-reward ordinal must each remain
+		// globally unique after every fresh/upgrade startup. Map rows keep the
+		// same probe compilable against the released baseline without new types.
+		for table, row := range map[string]map[string]any{
+			"marketing_v2_checkin_days":   {"user_id": 79999, "activity_id": 79999, "day": "2025-01-02", "makeup": false, "recorded_at": 1735776000, "fact_id": 79999, "qualification_day": "", "qualified_paid_cents": 0},
+			"marketing_v2_checkin_claims": {"user_id": 79999, "activity_id": 79999, "milestone_days": 7, "ordinal": 1, "anchor_day": "2025-01-02", "fact_id": 79999, "recorded_at": 1735776000},
+		} {
+			tx := model.DB.Begin()
+			must(tx.Error)
+			must(tx.Table(table).Create(row).Error)
+			// GORM may append an auto-generated ID to the map. A second fresh
+			// map ensures we test the business key rather than primary-key reuse.
+			duplicate := make(map[string]any, len(row))
+			for key, value := range row {
+				if key != "id" {
+					duplicate[key] = value
+				}
+			}
+			err := tx.Table(table).Create(duplicate).Error
+			must(tx.Rollback().Error)
+			if err == nil {
+				panic("check-in business uniqueness missing: " + table)
 			}
 		}
 	}

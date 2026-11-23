@@ -183,3 +183,29 @@ func TestInvalidActivityPeriods(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, eligible)
 }
+
+func TestCheckinCalendarSegments(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		days             []string
+		target           string
+		milestone, cycle int
+		want             int64
+	}{
+		{"bridge creates milestone", []string{"2027-01-01", "2027-01-02", "2027-01-03", "2027-01-04", "2027-01-05"}, "2027-01-03", 3, 7, 1},
+		{"separate segment", []string{"2027-01-01", "2027-01-02", "2027-01-03", "2027-01-05"}, "2027-01-05", 1, 7, 1},
+		{"once despite long run", []string{"2027-01-01", "2027-01-02", "2027-01-03"}, "2027-01-02", 1, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			segment, err := CheckinSegment(tc.days, tc.target)
+			require.NoError(t, err)
+			count, err := CheckinMilestoneCount(segment, tc.milestone, tc.cycle)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, count)
+		})
+	}
+	_, err := ParseCheckinDay("2027-02-30")
+	require.Error(t, err)
+	_, err = ParseCheckinDay("2027-2-3")
+	require.Error(t, err)
+}

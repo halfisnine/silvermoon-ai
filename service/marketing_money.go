@@ -54,3 +54,24 @@ func MarketingDisplayMoney(amount string) (model.MarketingMoneySnapshot, error) 
 	}
 	return money, nil
 }
+
+// MarketingWalletDisplayAmount projects stored funds through current site
+// currency settings. HTTP responses must not expose the storage-unit ratio.
+func MarketingWalletDisplayAmount(quota int64) (amount, currency string, err error) {
+	if quota < 0 || quota > common.MaxWalletQuota {
+		return "", "", model.ErrMarketingInput
+	}
+	money, err := MarketingDisplayMoney("1")
+	if err != nil {
+		return "", "", err
+	}
+	units, err := decimal.NewFromString(money.QuotaPerUnit)
+	if err != nil {
+		return "", "", err
+	}
+	rate, err := decimal.NewFromString(money.CurrencyPerUnit)
+	if err != nil {
+		return "", "", err
+	}
+	return decimal.NewFromInt(quota).Mul(rate).DivRound(units, 12).String(), money.Currency, nil
+}
