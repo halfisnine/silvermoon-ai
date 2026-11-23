@@ -48,6 +48,7 @@ const (
 const TaskRefundLegacyCutoff int64 = 1771718400 // 2026-02-22 00:00:00 UTC
 
 type Task struct {
+	MarketingLegacyReviewed bool                  `json:"-" gorm:"not null;default:false"`
 	MarketingFundingID      int64                 `json:"-" gorm:"not null;default:0;index"`
 	MarketingBillingPending bool                  `json:"-" gorm:"not null;default:false;index"`
 	ID                      int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`

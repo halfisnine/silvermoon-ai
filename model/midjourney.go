@@ -1,6 +1,7 @@
 package model
 
 type Midjourney struct {
+	MarketingLegacyReviewed bool            `json:"-" gorm:"not null;default:false"`
 	MarketingFundingID      int64           `json:"-" gorm:"not null;default:0;index"`
 	MarketingBillingPending bool            `json:"-" gorm:"not null;default:false;index"`
 	MarketingBillingData    TaskPrivateData `json:"-" gorm:"type:text"`

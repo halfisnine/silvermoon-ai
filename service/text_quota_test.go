@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -99,6 +101,32 @@ func TestFixedPriceBillingDatabaseMatrix(t *testing.T) {
 	}
 }
 
+// The fixture establishes a real paid posting rather than relabeling an old
+// unclassified balance. Its conversion is explicit and deliberately independent
+// of the model pricing unit, just as a historical posting snapshot is.
+func seedPricingTestMarketingWallet(t *testing.T, db *gorm.DB, userID, quota int) {
+	t.Helper()
+	require.NoError(t, db.AutoMigrate(&model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.MarketingActivity{}, &model.MarketingInvitation{}, &model.MarketingFactSequence{}, &model.MarketingActivityFact{}, &model.MarketingActivityDeliveryCursor{}))
+	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
+	require.NoError(t, db.Model(&model.User{}).Where("id = ?", userID).Update("quota", 0).Error)
+	require.NoError(t, db.Create(&model.MarketingAccount{UserID: userID, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "pricing fixture registration"}).Error)
+	require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+		_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: userID, Kind: "online", Reference: fmt.Sprintf("pricing-fixture-%d", userID), PaidCents: int64(quota), PostedAt: common.GetTimestamp(), Money: model.MarketingMoneySnapshot{Amount: decimal.NewFromInt(int64(quota)).Shift(-2).String(), QuotaPerUnit: "100", CurrencyPerUnit: "1", Currency: "CNY"}})
+		return err
+	}))
+	t.Cleanup(func() {
+		funds := db.Model(&model.MarketingFunding{}).Select("id").Where("user_id = ?", userID)
+		for _, record := range []any{&model.MarketingAllocation{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}} {
+			require.NoError(t, db.Where("funding_id IN (?)", funds).Delete(record).Error)
+		}
+		tokens := db.Model(&model.MarketingFunding{}).Select("token_id").Where("user_id = ?", userID)
+		require.NoError(t, db.Where("token_id IN (?)", tokens).Delete(&model.MarketingTokenHold{}).Error)
+		for _, record := range []any{&model.MarketingLedgerEntry{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingActivityFact{}, &model.MarketingFunding{}, &model.MarketingAccount{}, &model.QuotaData{}} {
+			require.NoError(t, db.Where("user_id = ?", userID).Delete(record).Error)
+		}
+	})
+}
+
 func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 	t.Helper()
 	const mixed = `len <= 32000 ? tier("short", fixed(0.01)) : tier("long", p * 2)`
@@ -114,7 +142,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		estimate                                  int
 		usage                                     *dto.Usage
 		audio, stream, refund, insufficient, tool bool
-		realtime, reserveInsufficient             bool
+		review, realtime, reserveInsufficient     bool
 		wallet, outboundImages, retryReservation  int
 		groupRatio                                float64
 		want                                      int
@@ -128,8 +156,8 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		{name: "audio missing usage charges once", expression: flat, audio: true, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "token reservation refunds to fixed price", expression: mixed, estimate: 50000, usage: &dto.Usage{PromptTokens: 100, TotalTokens: 100}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "fixed reservation settles token fallback", expression: mixed, estimate: 100, usage: &dto.Usage{PromptTokens: 50000, TotalTokens: 50000}, want: 50000, unit: billingexpr.BillingUnitToken},
-		{name: "missing usage uses estimated token fallback", expression: mixed, estimate: 50000, want: 50000, unit: billingexpr.BillingUnitToken},
-		{name: "evaluation error retains fixed reservation metadata", expression: `p == 50 ? tier("error", param("missing") * p + img_cr * 2) : tier("request", fixed(0.01))`, estimate: 100, usage: &dto.Usage{PromptTokens: 50, TotalTokens: 50}, want: 5000, unit: billingexpr.BillingUnitRequest},
+		{name: "missing token usage retains reservation for review", expression: mixed, estimate: 50000, review: true, unit: billingexpr.BillingUnitToken},
+		{name: "evaluation error retains fixed reservation metadata", expression: `p == 50 ? tier("error", param("missing") * p + img_cr * 2) : tier("request", fixed(0.01))`, estimate: 100, usage: &dto.Usage{PromptTokens: 50, TotalTokens: 50}, review: true, unit: billingexpr.BillingUnitRequest},
 		{name: "explicit zero remains free", expression: `tier("free", fixed(0))`, usage: &dto.Usage{PromptTokens: 100, TotalTokens: 100}, unit: billingexpr.BillingUnitRequest},
 		{name: "multipliers and separate tool surcharge", expression: flat + ` * (param("fast") == true ? 2 : 1)`, groupRatio: 1.5, tool: true, want: 18000, unit: billingexpr.BillingUnitRequest},
 		{name: "failed request refunds exactly once", expression: flat, refund: true},
@@ -158,7 +186,8 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 			}
 			user := model.User{Username: fmt.Sprintf("fixed_billing_%d", index), Quota: quota, Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
-			token := model.Token{UserId: user.Id, Key: fmt.Sprintf("fixed-billing-test-%d", index), Name: "fixed-billing", RemainQuota: startingQuota, Status: common.TokenStatusEnabled}
+			seedPricingTestMarketingWallet(t, db, user.Id, quota)
+			token := model.Token{UserId: user.Id, Key: fmt.Sprintf("fixed-billing-test-%d", index), Name: "fixed-billing", RemainQuota: startingQuota, Status: common.TokenStatusEnabled, ExpiredTime: -1}
 			require.NoError(t, db.Create(&token).Error)
 			channel := model.Channel{Name: "fixed-billing", Key: "unused", Status: common.ChannelStatusEnabled}
 			require.NoError(t, db.Create(&channel).Error)
@@ -182,8 +211,12 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 			require.NoError(t, err)
 			snapshot := &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: tc.expression, ExprHash: billingexpr.ExprHashString(tc.expression), QuotaPerUnit: common.QuotaPerUnit, GroupRatio: group, EstimatedTier: trace.MatchedTier, EstimatedBillingUnit: trace.BillingUnit, EstimatedFixedPrice: trace.FixedPrice, EstimatedQuotaAfterGroup: reservation}
 			snapshot.EstimatedImageCount = trace.ImageCount
-			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channel.Id}, OriginModelName: "fixed-test", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), IsStream: tc.stream, RelayFormat: types.RelayFormatOpenAI, PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: group}}, TieredBillingSnapshot: snapshot, BillingRequestInput: request}
+			info := &relaycommon.RelayInfo{RequestId: fmt.Sprintf("fixed-price-request-%d", user.Id), UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channel.Id}, OriginModelName: "fixed-test", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), IsStream: tc.stream, RelayFormat: types.RelayFormatOpenAI, PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: group}}, TieredBillingSnapshot: snapshot, BillingRequestInput: request}
 			info.SetEstimatePromptTokens(tc.estimate)
+			if tc.stream {
+				info.StreamStatus = &relaycommon.StreamStatus{}
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+			}
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 			if tc.expression == imageExpression {
@@ -198,7 +231,10 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 				require.Nil(t, apiErr)
 				held, err := model.GetUserQuota(user.Id, true)
 				require.NoError(t, err)
-				assert.Equal(t, quota-reservation, held)
+				assert.Equal(t, quota, held, "reservation is not settled consumption")
+				var account model.MarketingAccount
+				require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+				assert.EqualValues(t, max(reservation, 1), account.PaidReserved, "admission hold is released when the actual fixed price is zero")
 				if tc.outboundImages > 0 {
 					reserveErr := PrepareImageBillingForRequest(ctx, info, tc.outboundImages)
 					if tc.reserveInsufficient {
@@ -222,24 +258,11 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					}
 				}
 				if tc.refund {
-					refunded := make(chan struct{}, 1)
-					const callback = "fixed_billing_refund_observed"
-					require.NoError(t, db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register(callback, func(tx *gorm.DB) {
-						if tx.Statement.Table == "tokens" && tx.Error == nil {
-							select {
-							case refunded <- struct{}{}:
-							default:
-							}
-						}
-					}))
-					t.Cleanup(func() { require.NoError(t, db.Callback().Update().Remove(callback)) })
 					info.Billing.Refund(ctx)
 					info.Billing.Refund(ctx)
-					select {
-					case <-refunded:
-					case <-time.After(5 * time.Second):
-						t.Fatal("refund did not finish")
-					}
+					session := info.Billing.(*MarketingBillingSession)
+					assert.Equal(t, "settled", session.funding.State)
+					assert.Zero(t, session.funding.ReservedQuota)
 				} else {
 					info.UpdateImageCount(int64(tc.actualImages))
 					if tc.tool {
@@ -254,7 +277,22 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					} else {
 						PostTextConsumeQuota(ctx, info, tc.usage, nil)
 					}
-					require.NoError(t, info.Billing.Settle(tc.want), "a repeated settlement must not charge again")
+					session := info.Billing.(*MarketingBillingSession)
+					kind, evidence, ok := strings.Cut(session.funding.UsageEvidence, ":")
+					require.True(t, ok)
+					var actual *int64
+					if session.funding.CostKnown {
+						actual = common.GetPointer(session.funding.ActualQuota)
+					}
+					replayErr := session.SettleEvidence(actual, true, kind, evidence, 1)
+					if tc.review {
+						require.ErrorIs(t, replayErr, model.ErrMarketingReview)
+						assert.False(t, session.funding.CostKnown)
+						assert.EqualValues(t, reservation, session.funding.ReservedQuota)
+					} else {
+						require.NoError(t, replayErr, "the same settlement fact must not charge twice")
+						assert.Equal(t, "settled", session.funding.State)
+					}
 					var log model.Log
 					require.NoError(t, logDB.Where("user_id = ?", user.Id).Take(&log).Error)
 					assert.Equal(t, tc.want, log.Quota)
@@ -1753,18 +1791,25 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 	previous, previousLog := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = previous, previousLog })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.MarketingRealtimeRound{}, &model.MarketingRealtimeEvent{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.MarketingRealtimeRound{}, &model.MarketingRealtimeEvent{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingFactSequence{}, &model.MarketingMaintenanceOperation{}, &model.TopUp{}, &model.Redemption{}, &model.UserSubscription{}, &model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}))
+	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 
 	runTag := fmt.Sprint(time.Now().UnixNano())
-	for index, scenario := range []string{"estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
+	for index, scenario := range []string{"zero_estimate_wallet", "zero_estimate_token", "zero_estimate_free", "zero_estimate_released", "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "crash_without_projection", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
 		t.Run(scenario, func(t *testing.T) {
 			user := model.User{Username: "mv2-" + fmt.Sprint(index) + runTag, AffCode: fmt.Sprintf("m%d%s", index, runTag[len(runTag)-6:]), Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
 			require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "test registration"}).Error)
 			token := model.Token{UserId: user.Id, Key: fmt.Sprintf("marketing-test-%d-%s", index, runTag), Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 100}
+			if scenario == "zero_estimate_token" {
+				token.RemainQuota = 0
+			}
 			require.NoError(t, db.Create(&token).Error)
 			now := common.GetTimestamp()
 			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				if scenario == "zero_estimate_wallet" || scenario == "zero_estimate_free" {
+					return nil
+				}
 				_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: scenario + runTag, PaidCents: 100, PostedAt: now, Money: model.MarketingMoneySnapshot{Amount: "100", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 				if err != nil {
 					return err
@@ -1790,6 +1835,36 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 			ctx.Set(common.RequestIdKey, info.RequestId)
 			ctx.Set("username", user.Username)
+			if strings.HasPrefix(scenario, "zero_estimate_") {
+				info.PriceData.FreeModel = scenario == "zero_estimate_free"
+				apiErr := PreConsumeBilling(ctx, 0, info)
+				if scenario == "zero_estimate_wallet" || scenario == "zero_estimate_token" {
+					require.NotNil(t, apiErr, "zero estimation cannot authorize unfunded work")
+					var count int64
+					require.NoError(t, db.Model(&model.MarketingFunding{}).Where("user_id = ?", user.Id).Count(&count).Error)
+					assert.Zero(t, count)
+					return
+				}
+				require.Nil(t, apiErr)
+				session := info.Billing.(*MarketingBillingSession)
+				require.ErrorIs(t, session.ReserveBeforeSubmit(-1), model.ErrMarketingInput)
+				require.NoError(t, session.ReserveBeforeSubmit(0))
+				wantHold := 1
+				if info.PriceData.FreeModel {
+					wantHold = 0
+				}
+				assert.Equal(t, wantHold, session.GetPreConsumedQuota())
+				assert.EqualValues(t, wantHold, session.funding.ReservedQuota)
+				require.NoError(t, session.BeginDispatch())
+				require.NoError(t, session.Settle(0))
+				require.NoError(t, db.First(&user, user.Id).Error)
+				require.NoError(t, db.First(&token, token.Id).Error)
+				assert.Zero(t, user.UsedQuota, "minimum admission hold is not a minimum charge")
+				assert.Zero(t, token.UsedQuota)
+				assert.Zero(t, session.funding.ReservedQuota)
+				assert.Equal(t, "settled", session.funding.State)
+				return
+			}
 			initialEstimate, submitEstimate := 10, 30
 			if scenario == "realtime_stopped_start_late" || scenario == "realtime_stopped_text_zero" || scenario == "realtime_stopped_audio_zero" {
 				initialEstimate, submitEstimate = 0, 0 // Real websocket admission may have no input tokens yet.
@@ -1798,7 +1873,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 			session, ok := info.Billing.(*MarketingBillingSession)
 			require.True(t, ok)
 			require.NoError(t, session.ReserveBeforeSubmit(submitEstimate))
-			assert.Equal(t, submitEstimate, session.GetPreConsumedQuota())
+			assert.Equal(t, max(submitEstimate, 1), session.GetPreConsumedQuota())
 			switch scenario {
 			case "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero":
 				coordinator, err := NewMarketingRealtimeCoordinator(ctx, info)
@@ -1806,7 +1881,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				assert.Zero(t, session.funding.ReservedQuota, "connection setup cannot retain old gift eligibility")
 				at := time.Unix(now, 0)
 				if scenario == "realtime_stopped_start_late" || scenario == "realtime_stopped_text_zero" || scenario == "realtime_stopped_audio_zero" {
-					require.Zero(t, session.GetPreConsumedQuota(), "the actual gateway may start with a zero estimate")
+					require.Equal(t, 1, session.GetPreConsumedQuota(), "a zero input estimate still reserves one unit for admission, not consumption")
 					create, err := coordinator.ProcessClientEvent([]byte(`{"type":"response.create"}`), at)
 					require.NoError(t, err)
 					require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"consume-token-budget"}}`), create), at))
@@ -2148,6 +2223,39 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 					require.Error(t, err)
 					_, err = ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, []byte(`{"type":"response.done","response":{"id":"unknown-new-response","status":"completed","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}}}`), at)
 					require.Error(t, err)
+					admin := model.User{Username: "maintenance-" + runTag, AffCode: "ma" + runTag[len(runTag)-8:], Status: common.UserStatusEnabled, Role: common.RoleRootUser}
+					require.NoError(t, db.Create(&admin).Error)
+					currency, err := MarketingDisplayMoney("1")
+					require.NoError(t, err)
+					command := MarketingMaintenanceRequest{Action: "reconcile", ActorID: admin.Id, UserID: user.Id, Reference: "rt-" + runTag, Evidence: "provider billing export", AuthorizationReference: "operator approval", WriterIsolationEvidence: "socket closed and writer isolated", Currency: currency.Currency, TerminalEvidence: "provider terminal", SourceEvidence: "original request projection", FundingID: session.funding.ID, RealtimeTerminal: terminal, ObservedAt: at.Unix()}
+					// A failed audit insertion must roll back both recovered usage
+					// and original-source accounting, even across coordinator calls.
+					auditFailure := fmt.Errorf("audit storage unavailable")
+					callback := "test_maintenance_audit_failure"
+					require.NoError(t, db.Callback().Create().Before("gorm:create").Register(callback, func(tx *gorm.DB) {
+						if tx.Statement.Schema != nil && tx.Statement.Schema.Table == "marketing_v2_maintenance_operations" {
+							tx.AddError(auditFailure)
+						}
+					}))
+					_, err = RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.ErrorIs(t, err, auditFailure)
+					require.NoError(t, db.Callback().Create().Remove(callback))
+					var unchanged model.MarketingFunding
+					require.NoError(t, db.First(&unchanged, session.funding.ID).Error)
+					assert.Equal(t, "review", unchanged.State)
+					assert.Equal(t, session.funding.Revision, unchanged.Revision)
+					result, err := RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.NoError(t, err)
+					replay, err := RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.NoError(t, err)
+					assert.Equal(t, result, replay)
+					changed := command
+					changed.SourceEvidence = "different evidence"
+					_, err = RunMarketingMaintenance(context.Background(), changed, "local-maintenance:test", true)
+					require.ErrorIs(t, err, model.ErrMarketingConflict)
+					require.NoError(t, db.Model(&admin).Update("status", common.UserStatusDisabled).Error)
+					_, err = RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.Error(t, err, "replay must recheck current authorization")
 					recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, terminal, at)
 					require.NoError(t, err)
 					assert.Equal(t, "settled", recovered.State)
@@ -2242,9 +2350,53 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				assert.Equal(t, "settled", session.funding.State)
 				assert.Zero(t, session.funding.SettledQuota)
 				assert.Zero(t, session.funding.ReservedQuota)
-			case "ambiguous_dispatch":
+			case "ambiguous_dispatch", "crash_without_projection":
 				require.NoError(t, session.BeginDispatch())
 				require.ErrorIs(t, session.BeginDispatch(), model.ErrMarketingConflict)
+				if scenario == "crash_without_projection" {
+					admin := model.User{Username: "crash-admin-" + runTag, AffCode: "ca" + runTag[len(runTag)-8:], Role: common.RoleRootUser, Status: common.UserStatusEnabled}
+					require.NoError(t, db.Create(&admin).Error)
+					amount, currency, err := MarketingWalletDisplayAmount(40)
+					require.NoError(t, err)
+					command := MarketingMaintenanceRequest{Action: "reconcile", ActorID: admin.Id, UserID: user.Id, Reference: "crash-" + runTag, Evidence: "provider final invoice", AuthorizationReference: "operator approval", WriterIsolationEvidence: "crashed process cannot resume", Currency: currency, TerminalEvidence: "provider terminal export", SourceEvidence: "original request identity from gateway audit", FundingID: session.funding.ID, Version: 1, FinalAmount: &amount, OriginalRequestID: "wrong-request"}
+					_, err = RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.ErrorIs(t, err, model.ErrMarketingConflict)
+					command.OriginalRequestID = info.RequestId
+					wire, err := common.Marshal(command)
+					require.NoError(t, err)
+					require.NoError(t, common.Unmarshal(wire, &command))
+					require.Equal(t, "null", string(command.RealtimeTerminal), "the CLI decodes absent optional raw JSON as null")
+					// The cache client can fail after CLI admission. A post-commit cache
+					// failure must report committed funds, not invite a fresh debit.
+					previousRedis, previousClient := common.RedisEnabled, common.RDB
+					failedCache := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1", MaxRetries: -1})
+					require.NoError(t, failedCache.Close())
+					common.RedisEnabled, common.RDB = true, failedCache
+					t.Cleanup(func() { common.RedisEnabled, common.RDB = previousRedis, previousClient })
+					result, err := RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.NoError(t, err)
+					assert.Equal(t, "settled", result["state"])
+					assert.Equal(t, true, result["executed"])
+					assert.Equal(t, true, result["cache_refresh_pending"])
+					common.RedisEnabled, common.RDB = previousRedis, previousClient
+					replay, err := RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
+					require.NoError(t, err)
+					assert.NotContains(t, replay, "cache_refresh_pending")
+					delete(result, "cache_refresh_pending")
+					assert.Equal(t, result, replay, "replay returns the original financial operation after cache recovery")
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 80, user.Quota)
+					assert.Equal(t, 1, user.RequestCount)
+					var projections []model.MarketingUsageProjection
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).Find(&projections).Error)
+					require.Len(t, projections, 1)
+					var record model.Log
+					require.NoError(t, common.UnmarshalJsonStr(projections[0].Payload, &record))
+					assert.Equal(t, info.RequestId, record.RequestId)
+					assert.Equal(t, 40, record.Quota)
+					assert.Contains(t, record.Other, "usage_quantity_unknown")
+					return
+				}
 				session.Refund(ctx)
 				assert.Equal(t, "review", session.funding.State)
 				assert.EqualValues(t, 30, session.funding.ReservedQuota)

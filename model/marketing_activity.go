@@ -62,6 +62,7 @@ type MarketingInvitation struct {
 func (MarketingInvitation) TableName() string { return "marketing_v2_invitations" }
 
 type MarketingActivityFact struct {
+	Sequence        int64  `gorm:"not null;default:0;index"`
 	ID              int64  `gorm:"primaryKey"`
 	SourceKey       string `gorm:"size:64;not null;uniqueIndex"`
 	SourceReference string `gorm:"size:128;not null"`
@@ -747,6 +748,10 @@ func captureMarketingActivityFact(tx *gorm.DB, userID int, kind, reference strin
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
+	sequence, err := nextMarketingFactSequence(tx)
+	if err != nil {
+		return nil, err
+	}
 	var activities []MarketingActivity
 	if err := lockForUpdate(tx).Where("enabled_at > 0 AND enabled_at <= ? AND created_at <= ? AND starts_at <= ? AND (ends_at = 0 OR ends_at > ?)", at, at, at, at).Order("id").Find(&activities).Error; err != nil {
 		return nil, err
@@ -812,7 +817,7 @@ func captureMarketingActivityFact(tx *gorm.DB, userID int, kind, reference strin
 	if err != nil {
 		return nil, err
 	}
-	fact := MarketingActivityFact{SourceKey: key, SourceReference: reference, UserID: userID, Kind: kind, OccurredAt: at, PayloadHash: digest, Payload: string(data), Rules: string(rules), State: "captured", DeliveryState: "pending"}
+	fact := MarketingActivityFact{Sequence: sequence, SourceKey: key, SourceReference: reference, UserID: userID, Kind: kind, OccurredAt: at, PayloadHash: digest, Payload: string(data), Rules: string(rules), State: "captured", DeliveryState: "pending"}
 	if payload.Payment != nil {
 		fact.PaymentID = payload.Payment.ID
 		fact.PaymentSequence = payload.Payment.Sequence
@@ -885,7 +890,17 @@ func ProcessNextMarketingActivityFact(tx *gorm.DB, sourceUserID int, now int64) 
 	allDecided := true
 	for i := range decisions {
 		decision := &decisions[i]
-		if decision.State == "suppressed" {
+		if decision.State == "suppressed" || decision.State == "cleared" {
+			continue
+		}
+		cleared, err := marketingFactWasCleared(tx, decision.UserID, fact.Sequence)
+		if err != nil {
+			return nil, err
+		}
+		if cleared {
+			if err := tx.Model(decision).Updates(map[string]any{"state": "cleared", "next_ordinal": decision.Count}).Error; err != nil {
+				return nil, err
+			}
 			continue
 		}
 		var snapshot marketingActivityRuleSnapshot
@@ -982,6 +997,13 @@ func planMarketingActivityFact(tx *gorm.DB, fact *MarketingActivityFact, payload
 	}
 	candidates := []candidate{}
 	for _, snapshot := range snapshots {
+		cleared, err := marketingFactWasCleared(tx, snapshot.UserID, fact.Sequence)
+		if err != nil {
+			return err
+		}
+		if cleared {
+			continue
+		}
 		spec := snapshot.Spec
 		if spec.Kind == "checkin" {
 			for _, claim := range snapshot.Claims {
@@ -1191,6 +1213,14 @@ func FulfillMarketingActivityReward(tx *gorm.DB, beneficiaryID int, itemID, now 
 	}
 	if reward.State != "pending" {
 		return &reward, nil
+	}
+	cleared, err := marketingFactWasCleared(tx, beneficiaryID, fact.Sequence)
+	if err != nil {
+		return nil, err
+	}
+	if cleared {
+		reward.State = "cleared"
+		return &reward, tx.Model(&reward).Update("state", "cleared").Error
 	}
 	if reward.Kind != "gift" {
 		return nil, ErrMarketingConflict

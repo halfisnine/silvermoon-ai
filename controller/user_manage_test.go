@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -238,80 +237,35 @@ func createQuotaTestOperator(t *testing.T, db *gorm.DB, role int) model.User {
 	return operator
 }
 
-func TestManageUserQuotaRecordsTopupAndAudit(t *testing.T) {
-	for _, tc := range []struct {
-		name, mode, action, content string
-		value, wantQuota            int
-	}{
-		{"add", "add", "user.quota_add", "Increased user quota by 500", 500, 1500},
-		{"subtract", "subtract", "user.quota_subtract", "Decreased user quota by 500", 500, 500},
-		{"override_up", "override", "user.quota_override", "Overrode user quota from 1000 to 1500", 1500, 1500},
-		{"override_down", "override", "user.quota_override", "Overrode user quota from 1000 to 500", 500, 500},
-		{"override_unchanged", "override", "user.quota_override", "Overrode user quota from 1000 to 1000", 1000, 1000},
-		{"override_zero", "override", "user.quota_override", "Overrode user quota from 1000 to 0", 0, 0},
-		{"override_negative", "override", "user.quota_override", "Overrode user quota from 1000 to -1", -1, -1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := setupManageUserTestDB(t)
-			user := model.User{Username: "quota-owner", Role: common.RoleCommonUser, Quota: 1000, AffCode: "quota-owner-aff"}
-			require.NoError(t, db.Create(&user).Error)
-			createQuotaTestOperator(t, db, common.RoleRootUser)
-
-			recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":%q,"value":%d}`, user.Id, tc.mode, tc.value))
-			assert.Equal(t, http.StatusOK, recorder.Code)
-			require.Contains(t, recorder.Body.String(), `"success":true`)
-			require.NoError(t, db.First(&user, user.Id).Error)
-			assert.Equal(t, tc.wantQuota, user.Quota)
-
-			logs, total, err := model.GetAllLogs(model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
-			require.NoError(t, err)
-			assert.EqualValues(t, 1, total)
-			require.Len(t, logs, 1)
-			assert.Equal(t, user.Id, logs[0].UserId)
-			assert.Equal(t, user.Username, logs[0].Username)
-			assert.Equal(t, tc.content, logs[0].Content)
-			model.FormatAdminLogs(logs)
-			var other model.AuditOther
-			require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-			assert.Equal(t, &model.AuditAdminInfo{AdminID: 9999, AdminUsername: "root-operator", AdminRole: common.RoleRootUser, AuthMethod: "session"}, other.AdminInfo)
-
-			logs, total, err = model.GetUserLogs(user.Id, model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
-			require.NoError(t, err)
-			assert.EqualValues(t, 1, total)
-			require.Len(t, logs, 1)
-			other = model.AuditOther{}
-			require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
-			assert.Nil(t, other.AdminInfo)
-			require.NotNil(t, other.Op)
-			assert.Equal(t, tc.action, other.Op.Action)
-			params, err := common.Marshal(other.Op.Params)
-			require.NoError(t, err)
-			expectedParams := model.AuditFields{"target_user_id": user.Id, "target_username": user.Username, "mode": tc.mode, "requested_quota": tc.value, "from": 1000, "to": tc.wantQuota}
-			if tc.mode != "override" {
-				expectedParams["quota"] = tc.value
-			}
-			expected, err := common.Marshal(expectedParams)
-			require.NoError(t, err)
-			assert.JSONEq(t, string(expected), string(params))
-			assert.Equal(t, "quota-test-request", logs[0].RequestId)
-			assert.Empty(t, logs[0].Ip, "recipient logs must not disclose the administrator IP")
-
-			logs, total, err = model.GetUserLogs(9999, model.LogFilter{Type: model.LogTypeTopup}, 0, 20)
-			require.NoError(t, err)
-			assert.Zero(t, total)
-			assert.Empty(t, logs)
-			var audits []model.AuditLog
-			require.NoError(t, model.LOG_DB.Find(&audits).Error)
-			require.Len(t, audits, 1)
-			assert.Equal(t, 9999, audits[0].UserId)
-			assert.Equal(t, "root-operator", audits[0].Username)
-			assert.Equal(t, tc.action, audits[0].Action)
-			assert.True(t, audits[0].Success)
-			params, err = common.Marshal(audits[0].Other.Op.Params)
-			require.NoError(t, err)
-			assert.JSONEq(t, string(expected), string(params))
-			assert.Equal(t, "quota-test-request", audits[0].RequestId)
-		})
+func TestManageUserQuotaRequiresRecordedFundingForEveryAccount(t *testing.T) {
+	for _, managed := range []bool{false, true} {
+		for _, mode := range []string{"add", "subtract", "override"} {
+			t.Run(fmt.Sprintf("managed_%t_%s", managed, mode), func(t *testing.T) {
+				db := setupManageUserTestDB(t)
+				user := model.User{Username: "quota-owner", Role: common.RoleCommonUser, Quota: 1000, AffCode: "quota-owner-aff"}
+				require.NoError(t, db.Create(&user).Error)
+				createQuotaTestOperator(t, db, common.RoleRootUser)
+				if managed {
+					require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified"}).Error)
+				}
+				recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":%q,"value":500}`, user.Id, mode))
+				require.Contains(t, recorder.Body.String(), `"success":false`)
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 1000, user.Quota)
+				var logs int64
+				require.NoError(t, model.LOG_DB.Model(&model.Log{}).Count(&logs).Error)
+				assert.Zero(t, logs, "a rejected administrative edit is not a payment")
+				var audits []model.AuditLog
+				require.NoError(t, model.LOG_DB.Find(&audits).Error)
+				require.Len(t, audits, 1)
+				assert.False(t, audits[0].Success)
+				var reason string
+				encoded, err := common.Marshal(audits[0].Other.Op.Params["failure_reason"])
+				require.NoError(t, err)
+				require.NoError(t, common.Unmarshal(encoded, &reason))
+				assert.Equal(t, "recorded_funding_required", reason)
+			})
+		}
 	}
 }
 
@@ -319,27 +273,17 @@ func TestManageUserQuotaFailuresDoNotRecordTopup(t *testing.T) {
 	for _, tc := range []struct {
 		name, mode string
 		value      int
-		failUpdate bool
 	}{
-		{"zero_add", "add", 0, false},
-		{"negative_subtract", "subtract", -1, false},
-		{"invalid_mode", "invalid", 500, false},
-		{"add_update_error", "add", 500, true},
-		{"subtract_update_error", "subtract", 500, true},
-		{"override_update_error", "override", 500, true},
+		{"zero_add", "add", 0},
+		{"negative_subtract", "subtract", -1},
+		{"invalid_mode", "invalid", 500},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupManageUserTestDB(t)
 			createQuotaTestOperator(t, db, common.RoleRootUser)
 			user := model.User{Username: "quota-owner", Role: common.RoleCommonUser, Quota: 1000}
 			require.NoError(t, db.Create(&user).Error)
-			if tc.failUpdate {
-				require.NoError(t, db.Callback().Update().Before("gorm:update").Register("test:fail_quota_update", func(tx *gorm.DB) {
-					if tx.Statement.Table == "users" {
-						tx.AddError(errors.New("quota update unavailable"))
-					}
-				}))
-			}
+
 			recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":%q,"value":%d}`, user.Id, tc.mode, tc.value))
 			assert.Contains(t, recorder.Body.String(), `"success":false`)
 			require.NoError(t, db.First(&user, user.Id).Error)
@@ -359,43 +303,29 @@ func TestManageUserQuotaFailuresDoNotRecordTopup(t *testing.T) {
 			assert.NotContains(t, string(params), `"target_username"`)
 			assert.NotContains(t, string(params), "quota update unavailable")
 			reason := "invalid_parameters"
-			if tc.failUpdate {
-				reason = "database_error"
-			}
 			assert.Contains(t, string(params), `"failure_reason":"`+reason+`"`)
 			assert.Contains(t, string(params), fmt.Sprintf(`"requested_quota":%d`, tc.value))
 		})
 	}
 }
 
-func TestManageUserQuotaLogFailureKeepsSuccessfulAdjustment(t *testing.T) {
-	for _, failedTable := range []string{"logs", "audit_logs"} {
-		t.Run(failedTable, func(t *testing.T) {
-			db := setupManageUserTestDB(t)
-			createQuotaTestOperator(t, db, common.RoleRootUser)
-			user := model.User{Username: "quota-owner", Role: common.RoleCommonUser, Quota: 1000}
-			require.NoError(t, db.Create(&user).Error)
-			require.NoError(t, model.LOG_DB.Callback().Create().Before("gorm:create").Register("test:fail_quota_log", func(tx *gorm.DB) {
-				if tx.Statement.Table == failedTable {
-					tx.AddError(errors.New("quota log unavailable"))
-				}
-			}))
-			recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500}`, user.Id))
-			assert.Contains(t, recorder.Body.String(), `"success":true`)
-			require.NoError(t, db.First(&user, user.Id).Error)
-			assert.Equal(t, 1500, user.Quota)
-			var logCount, auditCount int64
-			require.NoError(t, model.LOG_DB.Model(&model.Log{}).Count(&logCount).Error)
-			require.NoError(t, model.LOG_DB.Model(&model.AuditLog{}).Count(&auditCount).Error)
-			if failedTable == "logs" {
-				assert.Zero(t, logCount)
-				assert.EqualValues(t, 1, auditCount)
-			} else {
-				assert.EqualValues(t, 1, logCount)
-				assert.Zero(t, auditCount)
-			}
-		})
-	}
+func TestManageUserQuotaAuditFailureDoesNotPermitBalanceEdit(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	createQuotaTestOperator(t, db, common.RoleRootUser)
+	user := model.User{Username: "quota-owner", Role: common.RoleCommonUser, Quota: 1000}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, model.LOG_DB.Callback().Create().Before("gorm:create").Register("test:fail_quota_log", func(tx *gorm.DB) {
+		if tx.Statement.Table == "audit_logs" {
+			tx.AddError(errors.New("audit unavailable"))
+		}
+	}))
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":500}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+	require.NoError(t, db.First(&user, user.Id).Error)
+	assert.Equal(t, 1000, user.Quota)
+	var count int64
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Count(&count).Error)
+	assert.Zero(t, count)
 }
 
 func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
@@ -411,8 +341,8 @@ func TestManageUserQuotaTargetsAndWalletBounds(t *testing.T) {
 		{name: "peer_admin", mode: "add", value: 1, targetID: 1, targetRole: common.RoleAdminUser, operatorRole: common.RoleAdminUser, reason: "permission_denied"},
 		{name: "higher_role", mode: "override", value: 1, targetID: 1, targetRole: common.RoleRootUser, operatorRole: common.RoleAdminUser, reason: "permission_denied"},
 		{name: "read_error", mode: "add", value: 1, targetID: 1, failRead: true, reason: "database_error"},
-		{name: "add_overflow", mode: "add", before: common.MaxWalletQuota, value: 1, targetID: 1, reason: "quota_limit_exceeded"},
-		{name: "subtract_underflow", mode: "subtract", before: -common.MaxWalletQuota, value: 1, targetID: 1, reason: "quota_limit_exceeded"},
+		{name: "add_overflow", mode: "add", before: common.MaxWalletQuota, value: 1, targetID: 1, reason: "recorded_funding_required"},
+		{name: "subtract_underflow", mode: "subtract", before: -common.MaxWalletQuota, value: 1, targetID: 1, reason: "recorded_funding_required"},
 		{name: "oversized_add", mode: "add", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_subtract", mode: "subtract", value: common.MaxWalletQuota + 1, targetID: 1, reason: "quota_limit_exceeded"},
 		{name: "oversized_override", mode: "override", value: -common.MaxWalletQuota - 1, targetID: 1, reason: "quota_limit_exceeded"},
@@ -480,7 +410,7 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 		body, action string
 		success      bool
 	}{
-		{`{"id":9999,"action":"add_quota","mode":"add","value":100}`, "user.quota_add", true},
+		{`{"id":9999,"action":"add_quota","mode":"add","value":100}`, "user.quota_add", false},
 		{`{"id":9999,"action":"add_quota","mode":"subtract","value":0}`, "user.quota_subtract", false},
 		{`{"id":9999,"action":"add_quota","mode":"invalid","value":1}`, "generic", false},
 		{`{"id":`, "generic", false},
@@ -521,10 +451,10 @@ func TestManageUserQuotaMiddlewareKeepsOneOperationPerRequest(t *testing.T) {
 		}
 	}
 	require.NoError(t, db.First(&operator, operator.Id).Error)
-	assert.Equal(t, 1100, operator.Quota)
+	assert.Equal(t, 1000, operator.Quota)
 }
 
-func TestManageUserQuotaConcurrentSnapshots(t *testing.T) {
+func TestManageUserQuotaConcurrentEditsRemainRejected(t *testing.T) {
 	db := setupManageUserTestDB(t)
 	user := model.User{Username: "concurrent-quota", Quota: 1000}
 	require.NoError(t, db.Create(&user).Error)
@@ -551,44 +481,29 @@ func TestManageUserQuotaConcurrentSnapshots(t *testing.T) {
 	}
 	ready.Wait()
 	close(release)
-	var committed []model.UserQuotaAdjustment
 	for range 2 {
 		result := <-results
-		if result.err != nil {
-			require.True(t, common.UsingMainDatabase(common.DatabaseTypeSQLite), "row-locking databases must serialize both adjustments: %v", result.err)
-			assert.Contains(t, strings.ToLower(result.err.Error()), "locked")
-			assert.Nil(t, result.adjustment)
-			continue
-		}
-		require.NotNil(t, result.adjustment)
-		assert.Equal(t, result.value, result.adjustment.After-result.adjustment.Before)
-		committed = append(committed, *result.adjustment)
+		require.ErrorIs(t, result.err, model.ErrMarketingBalanceEdit)
+		assert.Nil(t, result.adjustment)
 	}
 	require.NoError(t, db.Callback().Query().Remove("test:concurrent_quota_start"))
-	require.NotEmpty(t, committed)
-	sort.Slice(committed, func(i, j int) bool { return committed[i].Before < committed[j].Before })
-	balance := 1000
-	for _, adjustment := range committed {
-		assert.Equal(t, balance, adjustment.Before)
-		balance = adjustment.After
-	}
 	require.NoError(t, db.First(&user, user.Id).Error)
-	assert.Equal(t, balance, user.Quota)
+	assert.Equal(t, 1000, user.Quota)
 }
 
-func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
+func TestManageUserQuotaRejectionPreservesCachedBalance(t *testing.T) {
 	for _, tc := range []struct {
-		name, mode                               string
-		before, cached, value, after, wantCached int
-		failUpdate, failCache, missingCache      bool
+		name, mode                          string
+		before, cached, value               int
+		failUpdate, failCache, missingCache bool
 	}{
-		{name: "add_preserves_reservations", mode: "add", before: 1000, cached: 900, value: 500, after: 1500, wantCached: 1400},
-		{name: "subtract_preserves_reservations", mode: "subtract", before: 1000, cached: 900, value: 500, after: 500, wantCached: 400},
-		{name: "override_preserves_reservations", mode: "override", before: 1000, cached: 900, value: 2000, after: 2000, wantCached: 1900},
-		{name: "large_odd_difference", mode: "override", before: common.MaxWalletQuota - 1, cached: common.MaxWalletQuota - 1, value: -common.MaxWalletQuota, after: -common.MaxWalletQuota, wantCached: -common.MaxWalletQuota},
-		{name: "rollback_does_not_change_cache", mode: "subtract", before: 1000, cached: 900, value: 500, after: 1000, wantCached: 900, failUpdate: true},
-		{name: "cache_error_keeps_committed_change", mode: "add", before: 1000, value: 500, after: 1500, failCache: true},
-		{name: "missing_cache_is_not_partially_created", mode: "add", before: 1000, value: 500, after: 1500, missingCache: true},
+		{name: "add_preserves_reservations", mode: "add", before: 1000, cached: 900, value: 500},
+		{name: "subtract_preserves_reservations", mode: "subtract", before: 1000, cached: 900, value: 500},
+		{name: "override_preserves_reservations", mode: "override", before: 1000, cached: 900, value: 2000},
+		{name: "large_override_rejected", mode: "override", before: common.MaxWalletQuota - 1, cached: common.MaxWalletQuota - 1, value: -common.MaxWalletQuota},
+		{name: "rejection_does_not_reach_update", mode: "subtract", before: 1000, cached: 900, value: 500, failUpdate: true},
+		{name: "cache_error_does_not_enable_edit", mode: "add", before: 1000, value: 500, failCache: true},
+		{name: "missing_cache_is_not_partially_created", mode: "add", before: 1000, value: 500, missingCache: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupManageUserTestDB(t)
@@ -629,18 +544,18 @@ func TestManageUserQuotaCacheUsesCommittedIntegerDifference(t *testing.T) {
 				}))
 			}
 			recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":%q,"value":%d}`, user.Id, tc.mode, tc.value))
-			assert.Contains(t, recorder.Body.String(), fmt.Sprintf(`"success":%t`, !tc.failUpdate))
+			assert.Contains(t, recorder.Body.String(), `"success":false`)
 			require.NoError(t, db.First(&user, user.Id).Error)
-			assert.Equal(t, tc.after, user.Quota)
+			assert.Equal(t, tc.before, user.Quota)
 			if tc.missingCache {
 				// Log username lookup may hydrate the whole user after commit.
 				if server.Exists(quotaKey) {
 					assert.Equal(t, strconv.Itoa(user.Id), server.HGet(quotaKey, "Id"))
 					assert.NotEmpty(t, server.HGet(quotaKey, "CacheSchema"))
-					assert.Equal(t, strconv.Itoa(tc.after), server.HGet(quotaKey, "Quota"))
+					assert.Equal(t, strconv.Itoa(tc.before), server.HGet(quotaKey, "Quota"))
 				}
 			} else if !tc.failCache {
-				assert.Equal(t, strconv.Itoa(tc.wantCached), server.HGet(quotaKey, "Quota"))
+				assert.Equal(t, strconv.Itoa(tc.cached), server.HGet(quotaKey, "Quota"))
 			}
 		})
 	}

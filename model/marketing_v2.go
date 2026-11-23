@@ -31,8 +31,9 @@ var (
 // These records are not yet connected to payment or relay routes. Their migration
 // does not reclassify existing users.quota, enable awards or import old marketing.
 type MarketingAccount struct {
-	UserID       int   `gorm:"primaryKey;autoIncrement:false"`
-	OpeningQuota int64 `gorm:"not null"`
+	UserID                 int   `gorm:"primaryKey;autoIncrement:false"`
+	OpeningQuota           int64 `gorm:"not null"`
+	OpeningAdjustmentQuota int64 `gorm:"not null;default:0"`
 	// Existing balances can contain old gifts. Empty/unknown is never proof of cash.
 	OriginState       string `gorm:"size:24;not null"`
 	PaidReserved      int64  `gorm:"not null"`
@@ -45,8 +46,9 @@ type MarketingAccount struct {
 	PaymentHistoryEvidence string `gorm:"size:160;not null"`
 	// Only a confirmed global first payment gets this reference. Zero with
 	// history=paid means earlier history could not identify the true first.
-	FirstPaymentID int64 `gorm:"not null"`
-	Revision       int64 `gorm:"not null"`
+	FirstPaymentID    int64 `gorm:"not null"`
+	Revision          int64 `gorm:"not null"`
+	ClearFactSequence int64 `gorm:"not null;default:0"`
 }
 
 func (MarketingAccount) TableName() string { return "marketing_v2_accounts" }
@@ -139,7 +141,10 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{}, &MarketingActivity{}, &MarketingActivityOperation{}, &MarketingInvitation{}, &MarketingActivityFact{}, &MarketingActivityProgress{}, &MarketingActivityDecision{}, &MarketingActivityReward{}, &MarketingActivityDeliveryCursor{}, &MarketingCheckinDay{}, &MarketingCheckinClaim{})
+	if err := db.AutoMigrate(&MarketingFactSequence{}, &MarketingMaintenanceOperation{}, &MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{}, &MarketingActivity{}, &MarketingActivityOperation{}, &MarketingInvitation{}, &MarketingActivityFact{}, &MarketingActivityProgress{}, &MarketingActivityDecision{}, &MarketingActivityReward{}, &MarketingActivityDeliveryCursor{}, &MarketingCheckinDay{}, &MarketingCheckinClaim{}); err != nil {
+		return err
+	}
+	return initializeMarketingFactSequence(db)
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion

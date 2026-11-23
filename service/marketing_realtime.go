@@ -24,6 +24,7 @@ import (
 // MarketingRealtimeCoordinator is used by a single event loop. Socket readers
 // never mutate it. The database owns funds, round identities and actual usage.
 type MarketingRealtimeCoordinator struct {
+	maintenanceTx           *gorm.DB // Only controlled reconciliation may join an existing transaction.
 	replayLog               *model.Log
 	vadMode                 string
 	vadAuto                 bool
@@ -103,13 +104,25 @@ type marketingRealtimeEvent struct {
 }
 
 func NewMarketingRealtimeCoordinator(c *gin.Context, info *relaycommon.RelayInfo) (*MarketingRealtimeCoordinator, error) {
+	return newMarketingRealtimeCoordinator(c, info, nil)
+}
+
+func (r *MarketingRealtimeCoordinator) transaction(fn func(*gorm.DB) error) error {
+	if r.maintenanceTx != nil {
+		return fn(r.maintenanceTx)
+	}
+	return model.DB.Transaction(fn)
+}
+
+func newMarketingRealtimeCoordinator(c *gin.Context, info *relaycommon.RelayInfo, maintenanceTx *gorm.DB) (*MarketingRealtimeCoordinator, error) {
 	session, ok := info.Billing.(*MarketingBillingSession)
 	if !ok {
 		return nil, model.ErrMarketingInput
 	}
 	session.mu.Lock()
 	defer session.mu.Unlock()
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	runner := &MarketingRealtimeCoordinator{maintenanceTx: maintenanceTx}
+	err := runner.transaction(func(tx *gorm.DB) error {
 		funding, err := model.InitMarketingRealtimeFunding(tx, info.UserId, session.funding.ID)
 		if err == nil {
 			session.funding = *funding
@@ -119,7 +132,7 @@ func NewMarketingRealtimeCoordinator(c *gin.Context, info *relaycommon.RelayInfo
 	if err != nil {
 		return nil, err
 	}
-	return &MarketingRealtimeCoordinator{ctx: c, session: session, info: info, responses: map[string]int64{}, estimates: map[int64]dto.RealtimeUsage{}, outputAudioBytes: map[int64]int64{}, outputSeen: map[int64]bool{}, audioOutputSeen: map[int64]bool{}, manual: map[string]*marketingRealtimeManual{}, vadSegments: map[string]*marketingRealtimeInputSegment{}}, nil
+	return &MarketingRealtimeCoordinator{maintenanceTx: maintenanceTx, ctx: c, session: session, info: info, responses: map[string]int64{}, estimates: map[int64]dto.RealtimeUsage{}, outputAudioBytes: map[int64]int64{}, outputSeen: map[int64]bool{}, audioOutputSeen: map[int64]bool{}, manual: map[string]*marketingRealtimeManual{}, vadSegments: map[string]*marketingRealtimeInputSegment{}}, nil
 }
 
 func (r *MarketingRealtimeCoordinator) Usage() *dto.RealtimeUsage {
@@ -187,7 +200,7 @@ func (r *MarketingRealtimeCoordinator) begin(reference string, at time.Time, obs
 		return 0, err
 	}
 	var result *model.MarketingRealtimeResult
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = model.BeginMarketingRealtimeRound(tx, model.MarketingRealtimeRoundInput{UserID: r.info.UserId, FundingID: r.session.funding.ID, Reference: reference, QualifiedAt: at.Unix(), ReserveQuota: max(int64(r.session.estimate), inputQuota), Observed: observed, PendingCommitAdmission: !observed && len(r.awaitingCommits) > 0, ResponseReference: responseReference, MetadataFingerprint: r.nextMetadataFingerprint, InputRemainingQuota: remainingQuota, InputRemainingPending: pendingRemaining, Evidence: common.GetStringIfEmpty(r.nextEvidence, "locally received response start")})
 		return err
@@ -327,7 +340,7 @@ func (r *MarketingRealtimeCoordinator) reserveInput(at time.Time, pending ...boo
 		return err
 	}
 	var result *model.MarketingRealtimeResult
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = model.ReserveMarketingRealtimeInput(tx, r.info.UserId, r.session.funding.ID, quota, at.Unix(), pending...)
 		return err
@@ -597,7 +610,7 @@ func (r *MarketingRealtimeCoordinator) reserveRound(id int64, at time.Time) erro
 	}
 	target := max(int64(0), quota-r.session.funding.ActualQuota)
 	var result *model.MarketingRealtimeResult
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = model.ReserveMarketingRealtimeRound(tx, r.info.UserId, r.session.funding.ID, id, target)
 		return err
@@ -618,7 +631,7 @@ func (r *MarketingRealtimeCoordinator) fact(id int64, responseID string, usage *
 	record := r.logRecord(r.total)
 	var result *model.MarketingRealtimeResult
 	var total dto.RealtimeUsage
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err := r.transaction(func(tx *gorm.DB) error {
 		snapshot, err := model.GetMarketingRealtimeSnapshot(tx, r.info.UserId, r.session.funding.ID)
 		if err != nil {
 			return err
@@ -642,7 +655,7 @@ func (r *MarketingRealtimeCoordinator) fact(id int64, responseID string, usage *
 	r.session.funding = *result.Funding
 	// Supplier facts commit before pricing or log projection. A pricing failure
 	// must leave replayable actual usage, rather than roll it back with money.
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		snapshot, err := model.GetMarketingRealtimeSnapshot(tx, r.info.UserId, r.session.funding.ID)
 		if err != nil {
 			return err
@@ -744,7 +757,7 @@ func (r *MarketingRealtimeCoordinator) Close(reason string) error {
 	}
 	record := r.logRecord(r.total)
 	var result *model.MarketingRealtimeResult
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err := r.transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = model.CloseMarketingRealtimeFunding(tx, r.info.UserId, r.session.funding.ID, reason)
 		if err != nil {
@@ -793,7 +806,7 @@ func (r *MarketingRealtimeCoordinator) attachCommittedInput(at time.Time) error 
 	}
 	pending := r.inputPending || len(r.awaitingCommits) > 0 || len(r.awaitingClears) > 0 || len(r.vadSegments) > 0
 	var result *model.MarketingRealtimeResult
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = model.AttachMarketingRealtimeInput(tx, r.info.UserId, r.session.funding.ID, id, max(target, int64(r.session.estimate)), remainingQuota, pending)
 		return err
@@ -947,7 +960,7 @@ func (r *MarketingRealtimeCoordinator) echoedManual(metadata map[string]string, 
 		candidate := r.manual[reference]
 		if candidate == nil {
 			var round *model.MarketingRealtimeRound
-			err := model.DB.Transaction(func(tx *gorm.DB) error {
+			err := r.transaction(func(tx *gorm.DB) error {
 				var err error
 				round, err = model.FindMarketingRealtimeRoundByReference(tx, r.info.UserId, r.session.funding.ID, reference)
 				return err
@@ -991,7 +1004,7 @@ func (r *MarketingRealtimeCoordinator) echoedManual(metadata map[string]string, 
 		return nil, err
 	}
 	var round *model.MarketingRealtimeRound
-	err = model.DB.Transaction(func(tx *gorm.DB) error {
+	err = r.transaction(func(tx *gorm.DB) error {
 		var err error
 		round, err = model.FindMarketingRealtimeRoundByMetadata(tx, r.info.UserId, r.session.funding.ID, fingerprint, responseID)
 		return err
@@ -1020,7 +1033,7 @@ func (r *MarketingRealtimeCoordinator) ProcessServerEvent(raw []byte, at time.Ti
 	key := marketingRealtimeResponseKey(event.Response.ID)
 	if _, exists := r.responses[key]; !exists {
 		var persisted *model.MarketingRealtimeRound
-		err := model.DB.Transaction(func(tx *gorm.DB) error {
+		err := r.transaction(func(tx *gorm.DB) error {
 			var err error
 			persisted, err = model.FindMarketingRealtimeRoundByResponse(tx, r.info.UserId, r.session.funding.ID, event.Response.ID)
 			return err
@@ -1057,7 +1070,7 @@ func (r *MarketingRealtimeCoordinator) ProcessServerEvent(raw []byte, at time.Ti
 			}
 			proof := marketingRealtimeResponseKey(manual.MarkerValue + key)
 			var result *model.MarketingRealtimeResult
-			err = model.DB.Transaction(func(tx *gorm.DB) error {
+			err = r.transaction(func(tx *gorm.DB) error {
 				var err error
 				result, err = model.CorrelateMarketingRealtimeResponse(tx, r.info.UserId, r.session.funding.ID, manual.RoundID, id, quota, proof)
 				return err

@@ -23,6 +23,7 @@ func TestMarketingCheckinHTTP(t *testing.T) {
 	user, _ := setupSecurityEnrollmentTest(t)
 	models := append(marketingRegistrationFixtureModels(), &model.MarketingCheckinDay{}, &model.MarketingCheckinClaim{}, &model.Checkin{})
 	require.NoError(t, model.DB.AutoMigrate(models...))
+	require.NoError(t, model.DB.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 	oldUnits, oldExchange := common.QuotaPerUnit, operation_setting.USDExchangeRate
 	oldGeneral, oldCheckin := *operation_setting.GetGeneralSetting(), *operation_setting.GetCheckinSetting()
 	common.QuotaPerUnit, operation_setting.USDExchangeRate = 50000, 2

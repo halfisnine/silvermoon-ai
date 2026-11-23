@@ -212,6 +212,11 @@ func BeginMarketingDispatch(tx *gorm.DB, input MarketingDispatchInput) (*Marketi
 	if len(unresolved) > 0 {
 		return nil, false, ErrMarketingReview
 	}
+	// Include this request's own hold; funds already reserved for it remain
+	// usable, but an earlier zero reservation is not permission after exhaustion.
+	if book.hasToken && !book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota <= 0 {
+		return nil, false, ErrMarketingInsufficient
+	}
 	if err = marketingRequestCanDispatch(tx, funding); err != nil {
 		return nil, false, err
 	}

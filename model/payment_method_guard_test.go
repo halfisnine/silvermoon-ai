@@ -64,7 +64,7 @@ func insertSubscriptionOrderForPaymentGuardTest(t *testing.T, tradeNo string, us
 		Status:          common.TopUpStatusPending,
 		CreateTime:      time.Now().Unix(),
 	}
-	require.NoError(t, order.Insert())
+	require.NoError(t, DB.Create(order).Error)
 }
 
 func insertTopUpForPaymentGuardTest(t *testing.T, tradeNo string, userID int, paymentProvider string) {
@@ -155,7 +155,7 @@ func TestUpdatePendingTopUpStatus_RejectsMismatchedPaymentProvider(t *testing.T)
 	}
 }
 
-func TestCompleteSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) {
+func TestCompleteSubscriptionOrder_RejectsAllProvidersWithoutMutation(t *testing.T) {
 	truncateTables(t)
 
 	insertUserForPaymentGuardTest(t, 202, 0)
@@ -163,8 +163,9 @@ func TestCompleteSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T
 	insertSubscriptionOrderForPaymentGuardTest(t, "sub-guard-order", 202, plan.Id, PaymentProviderStripe)
 
 	err := CompleteSubscriptionOrder("sub-guard-order", `{"provider":"epay"}`, PaymentProviderEpay, "alipay")
-	require.ErrorIs(t, err, ErrPaymentMethodMismatch)
+	require.ErrorIs(t, err, ErrSubscriptionsUnavailable)
 
+	require.ErrorIs(t, CompleteSubscriptionOrder("sub-guard-order", `{"provider":"stripe"}`, PaymentProviderStripe, "stripe"), ErrSubscriptionsUnavailable)
 	order := GetSubscriptionOrderByTradeNo("sub-guard-order")
 	require.NotNil(t, order)
 	assert.Equal(t, common.TopUpStatusPending, order.Status)

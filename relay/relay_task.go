@@ -380,13 +380,16 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (*TaskSubmitRe
 	if parsed.Immediate != nil && parsed.Immediate.Status == model.TaskStatusFailure {
 		finalQuota = 0
 	} else if snap := info.TieredBillingSnapshot; snap != nil {
-		if parsed.Immediate != nil && parsed.Immediate.Status == model.TaskStatusSuccess && len(parsed.Immediate.UsageFacts) > 0 {
+		_, managed := info.Billing.(*service.MarketingBillingSession)
+		if parsed.Immediate != nil && parsed.Immediate.Status == model.TaskStatusSuccess && (managed || len(parsed.Immediate.UsageFacts) > 0) {
 			var evaluationTime *time.Time
-			if _, managed := info.Billing.(*service.MarketingBillingSession); managed {
+			evaluate := service.EvaluateTaskCompletionUsageAt
+			if managed {
 				now := time.Now()
 				evaluationTime = &now
+				evaluate = service.EvaluateMarketingTaskCompletionUsage
 			}
-			settlement, facts, err := service.EvaluateTaskCompletionUsageAt(snap, parsed.Immediate.UsageFacts, evaluationTime)
+			settlement, facts, err := evaluate(snap, parsed.Immediate.UsageFacts, evaluationTime)
 			if err != nil {
 				parsed.Immediate.BillingUnknown = true
 				logger.LogWarn(c, common.LogText("task immediate usage settlement failed; retaining reserved quota: %v", err))

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"time"
@@ -177,6 +178,24 @@ func PriceMarketingRealtimeUsage(pricing string, usage dto.RealtimeUsage, at tim
 // caller-selected price, or creates a new funding request. The original log and
 // frozen pricing come from the business database, not current site settings.
 func ReconcileMarketingRealtimeResponse(userID int, fundingID int64, raw []byte, at time.Time) (*model.MarketingFunding, error) {
+	var result *model.MarketingFunding
+	var outcomeErr error
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		var err error
+		result, err = reconcileMarketingRealtimeResponse(tx, userID, fundingID, raw, at, "")
+		if errors.Is(err, model.ErrMarketingReview) && result != nil {
+			outcomeErr = err
+			return nil
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, outcomeErr
+}
+
+func reconcileMarketingRealtimeResponse(tx *gorm.DB, userID int, fundingID int64, raw []byte, at time.Time, originalRequestID string) (*model.MarketingFunding, error) {
 	if userID <= 0 || fundingID <= 0 || at.Unix() <= 0 || at.Unix() > common.GetTimestamp() {
 		return nil, model.ErrMarketingInput
 	}
@@ -189,7 +208,7 @@ func ReconcileMarketingRealtimeResponse(userID int, fundingID int64, raw []byte,
 	}
 	var funding model.MarketingFunding
 	var record model.Log
-	err := model.DB.Transaction(func(tx *gorm.DB) error {
+	err := func() error {
 		snapshot, err := model.GetMarketingRealtimeSnapshot(tx, userID, fundingID)
 		if err != nil {
 			return err
@@ -198,18 +217,12 @@ func ReconcileMarketingRealtimeResponse(userID int, fundingID int64, raw []byte,
 			return model.ErrMarketingConflict
 		}
 		funding = *snapshot.Funding
-		var projection model.MarketingUsageProjection
-		if err = tx.Where("funding_id = ?", fundingID).Order("version DESC").First(&projection).Error; err != nil {
+		record, err = model.MarketingMaintenanceUsageRecord(tx, userID, fundingID, originalRequestID)
+		if err != nil {
 			return err
-		}
-		if err = common.UnmarshalJsonStr(projection.Payload, &record); err != nil {
-			return err
-		}
-		if record.UserId != userID || record.RequestId == "" || record.UsageEventID != funding.RequestKey {
-			return model.ErrMarketingConflict
 		}
 		return nil
-	})
+	}()
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +232,7 @@ func ReconcileMarketingRealtimeResponse(userID int, fundingID int64, raw []byte,
 	}
 	session := &MarketingBillingSession{info: info, funding: funding}
 	info.Billing = session
-	coordinator, err := NewMarketingRealtimeCoordinator(nil, info)
+	coordinator, err := newMarketingRealtimeCoordinator(nil, info, tx)
 	if err != nil {
 		return nil, err
 	}

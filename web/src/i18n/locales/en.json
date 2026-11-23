@@ -6110,6 +6110,7 @@
     "Subscription purchased with balance, plan: {{plan}}, payment amount: {{amount}}, quota deducted: {{quota}}": "Subscription purchased with balance, plan: {{plan}}, payment amount: {{amount}}, quota deducted: {{quota}}",
     "Subscription purchased, plan: {{plan}}, payment amount: {{amount}}, payment method: {{method}}": "Subscription purchased, plan: {{plan}}, payment amount: {{amount}}, payment method: {{method}}",
     "Subscriptions": "Subscriptions",
+    "Subscriptions are not available on this site": "Subscriptions are not available on this site",
     "Subtract": "Subtract",
     "succeeded": "succeeded",
     "Success": "Success",

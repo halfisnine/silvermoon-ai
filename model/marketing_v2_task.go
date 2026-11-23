@@ -21,6 +21,25 @@ func SettleMarketingTask(tx *gorm.DB, taskID int64) (*MarketingFunding, error) {
 	if task.MarketingFundingID <= 0 || (task.Status != TaskStatusSuccess && task.Status != TaskStatusFailure) {
 		return nil, ErrMarketingConflict
 	}
+	if _, _, err := lockMarketingAccount(tx, task.UserId); err != nil {
+		return nil, err
+	}
+	if err := lockForUpdate(tx).First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	var current MarketingFunding
+	if err := lockForUpdate(tx).First(&current, task.MarketingFundingID).Error; err != nil {
+		return nil, err
+	}
+	if current.UserID != task.UserId {
+		return nil, ErrMarketingConflict
+	}
+	// A maintenance reconciliation may have advanced beyond the frozen version-1
+	// worker outcome. Return current accounting; never replay old task amounts.
+	if current.Revision > 0 {
+		err := tx.Model(&task).Updates(map[string]any{"marketing_billing_pending": false, "quota": current.SettledQuota}).Error
+		return &current, err
+	}
 	outcome := task.PrivateData.MarketingOutcome
 	if outcome == nil {
 		return nil, ErrMarketingReview
@@ -60,6 +79,23 @@ func SettleMarketingMidjourney(tx *gorm.DB, taskID int) (*MarketingFunding, erro
 	}
 	if task.MarketingFundingID <= 0 || (task.Status != "SUCCESS" && task.Status != "FAILURE") {
 		return nil, ErrMarketingConflict
+	}
+	if _, _, err := lockMarketingAccount(tx, task.UserId); err != nil {
+		return nil, err
+	}
+	if err := lockForUpdate(tx).First(&task, taskID).Error; err != nil {
+		return nil, err
+	}
+	var current MarketingFunding
+	if err := lockForUpdate(tx).First(&current, task.MarketingFundingID).Error; err != nil {
+		return nil, err
+	}
+	if current.UserID != task.UserId {
+		return nil, ErrMarketingConflict
+	}
+	if current.Revision > 0 {
+		err := tx.Model(&task).Updates(map[string]any{"marketing_billing_pending": false, "quota": current.SettledQuota}).Error
+		return &current, err
 	}
 	outcome := task.MarketingBillingData.MarketingOutcome
 	if outcome == nil {

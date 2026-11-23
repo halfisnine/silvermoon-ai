@@ -87,6 +87,10 @@ func commitMarketingCheckinWithClock(tx *gorm.DB, userID int, targetDay string, 
 	if err := tx.First(&user, userID).Error; err != nil {
 		return nil, err
 	}
+	sequence, err := nextMarketingFactSequence(tx)
+	if err != nil {
+		return nil, err
+	}
 	var activities []MarketingActivity
 	if err := lockForUpdate(tx).Where("kind = ? AND enabled_at > 0", "checkin").Order("id").Find(&activities).Error; err != nil {
 		return nil, err
@@ -282,7 +286,7 @@ func commitMarketingCheckinWithClock(tx *gorm.DB, userID int, targetDay string, 
 	if err != nil {
 		return nil, err
 	}
-	fact := MarketingActivityFact{SourceKey: key, SourceReference: "checkin:" + targetDay, UserID: userID, Kind: "checkin", OccurredAt: now, PayloadHash: hash, Payload: string(data), Rules: string(rules), State: "captured", DeliveryState: "pending"}
+	fact := MarketingActivityFact{Sequence: sequence, SourceKey: key, SourceReference: "checkin:" + targetDay, UserID: userID, Kind: "checkin", OccurredAt: now, PayloadHash: hash, Payload: string(data), Rules: string(rules), State: "captured", DeliveryState: "pending"}
 	if err := tx.Create(&fact).Error; err != nil {
 		return nil, err
 	}

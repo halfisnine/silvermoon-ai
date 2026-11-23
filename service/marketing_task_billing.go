@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/gin-gonic/gin"
 	"github.com/shopspring/decimal"
@@ -36,6 +37,16 @@ func AttachMarketingTask(c *gin.Context, info *relaycommon.RelayInfo, task *mode
 	return true
 }
 
+// EvaluateMarketingTaskCompletionUsage requires completion evidence for a
+// usage-dependent managed debit. The legacy task evaluator intentionally permits
+// submission-only facts; that contract is not proof of a marketing actual cost.
+func EvaluateMarketingTaskCompletionUsage(snap *billingexpr.BillingSnapshot, facts map[string]any, evaluationTime *time.Time) (billingexpr.TieredResult, map[string]any, error) {
+	if snap != nil && len(facts) == 0 && billingexpr.UsedVarsByHash(snap.ExprString, snap.ExprHash)["u"] {
+		return billingexpr.TieredResult{}, nil, fmt.Errorf("task completion usage is missing")
+	}
+	return EvaluateTaskCompletionUsageAt(snap, facts, evaluationTime)
+}
+
 // PrepareMarketingTaskOutcome has no financial side effects. Its result must
 // be persisted with the terminal task CAS, before attempting settlement.
 // submittedQuota is used only for a trusted immediate result, whose original
@@ -61,7 +72,7 @@ func PrepareMarketingTaskOutcome(task *model.Task, result *relaycommon.TaskInfo,
 			known = true
 		case bc != nil && bc.TieredSnapshot != nil:
 			evaluationTime := time.Now()
-			settlement, facts, err := EvaluateTaskCompletionUsageAt(bc.TieredSnapshot, result.UsageFacts, &evaluationTime)
+			settlement, facts, err := EvaluateMarketingTaskCompletionUsage(bc.TieredSnapshot, result.UsageFacts, &evaluationTime)
 			if err == nil {
 				quota, known, clamp = settlement.ActualQuotaAfterGroup, true, settlement.Clamp
 				bc.TieredSnapshot.SettlementTime = &evaluationTime

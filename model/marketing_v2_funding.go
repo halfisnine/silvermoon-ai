@@ -277,6 +277,11 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 	if len(unresolved) > 0 {
 		return nil, ErrMarketingReview
 	}
+	// Exhausted limited tokens cannot start another request, even when input
+	// estimation is zero or a stale shared cache still shows funds.
+	if book.hasToken && !book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota <= 0 {
+		return nil, ErrMarketingInsufficient
+	}
 	if book.hasToken && (book.tokenHold.ReservedQuota > common.MaxWalletQuota-input.Quota || (!book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota < input.Quota)) {
 		return nil, ErrMarketingInsufficient
 	}

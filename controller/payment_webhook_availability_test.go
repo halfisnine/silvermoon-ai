@@ -30,7 +30,8 @@ func (transport *unsupportedPaymentTransport) RoundTrip(*http.Request) (*http.Re
 func TestUnsupportedSubscriptionPaymentCannotCreateCheckout(t *testing.T) {
 	confirmPaymentComplianceForTest(t)
 	db := setupManageUserTestDB(t)
-	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.SubscriptionOrder{}, &model.TopUp{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingActivityFact{}))
+	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.SubscriptionOrder{}, &model.TopUp{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFactSequence{}, &model.MarketingActivityFact{}))
+	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 	user := model.User{Username: "payment-scope-user", Quota: 12345, Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
 	require.NoError(t, db.Create(&user).Error)
 	plan := model.SubscriptionPlan{Title: "Configured plan", Enabled: true, StripePriceId: "price_test", CreemProductId: "prod_test", WaffoPancakeProductId: "product_test"}

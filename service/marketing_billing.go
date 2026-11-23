@@ -34,6 +34,11 @@ func NewMarketingBillingSession(info *relaycommon.RelayInfo, estimate int) (*Mar
 	if info == nil || estimate < 0 || info.UserId <= 0 || info.RequestId == "" {
 		return nil, model.ErrMarketingInput
 	}
+	// A zero estimate is not proof of a free request. Keep a minimal source
+	// reservation so an exhausted wallet or token cannot dispatch paid work.
+	if !info.PriceData.FreeModel {
+		estimate = max(estimate, 1)
+	}
 	pricing, err := marketingPricingEvidence(info)
 	if err != nil {
 		return nil, err
@@ -77,6 +82,12 @@ func (s *MarketingBillingSession) ReserveBeforeSubmit(target int) error {
 func (s *MarketingBillingSession) reserve(target int, beforeDispatch bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if target < 0 {
+		return model.ErrMarketingInput
+	}
+	if !s.info.PriceData.FreeModel {
+		target = max(target, 1)
+	}
 	var funding *model.MarketingFunding
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		var reserveErr error

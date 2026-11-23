@@ -5,6 +5,8 @@ Usage: migration_matrix.py prepare|build-baseline|seed|build-candidate|verify|al
 The prepare phase resets only the three fixed marketing_v2_* fixture databases.
 Build phases use the repository-pinned .dev/run toolchain and its resource caps.
 """
+from datetime import datetime, timezone
+import hashlib
 import json
 import pathlib
 import shutil
@@ -21,6 +23,7 @@ COMPOSE = ['docker', 'compose', '-f', str(VALIDATION / 'compose.yml')]
 IMAGE = json.loads((ROOT / '.dev/toolchains.lock.json').read_text())['go']['domestic']
 NETWORK = 'silvermoon-marketing-v2_default'
 DATABASES = ('marketing_v2_fresh', 'marketing_v2_upgrade', 'marketing_v2_behavior')
+RUN_STAMP = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
 
 
 def run(args, **kwargs):
@@ -68,8 +71,11 @@ def probe(engine, mode, target, fixture):
     else:
         args += ['--env', f'SQLITE_PATH=/fixtures/{fixture}.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)']
     args += ['--entrypoint', f'/fixtures/{target}-probe', IMAGE, mode, f'/fixtures/{engine}-{fixture}.json', target]
-    log = ARTIFACTS / f'{engine}-{fixture}-{target}-{mode}.log'
+    log = ARTIFACTS / f'{engine}-{fixture}-{target}-{mode}-{RUN_STAMP}.log'
+    digest = hashlib.sha256((ARTIFACTS / f'{target}-probe').read_bytes()).hexdigest()
     with log.open('a') as output:
+        output.write(f'MIGRATION_BINARY_SHA256 target={target} sha256={digest} baseline={BASELINE}\n')
+        output.flush()
         run(args, stdout=output, stderr=subprocess.STDOUT)
     print(log.relative_to(ROOT), flush=True)
 

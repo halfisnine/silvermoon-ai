@@ -52,9 +52,11 @@ func TestSubscriptionGroupTransitionsPreserveAuthVersionAndSessions(t *testing.T
 	}
 	require.NoError(t, DB.Create(plan).Error)
 
-	subscription, err := CreateUserSubscriptionFromPlanTx(DB, user.Id, plan, "test")
-	require.NoError(t, err)
-	require.Equal(t, "default", subscription.PrevUserGroup)
+	// A representative subscription existed before the feature was disabled.
+	// Expiry still restores the original group without revoking authentication.
+	subscription := &UserSubscription{UserId: user.Id, PlanId: plan.Id, Status: "active", UpgradeGroup: "pro", PrevUserGroup: "default", EndTime: now + 3600}
+	require.NoError(t, DB.Create(subscription).Error)
+	require.NoError(t, DB.Model(&user).Update("group", "pro").Error)
 	require.NoError(t, RefreshUserGroupCache(user.Id))
 
 	var updated User
@@ -85,7 +87,7 @@ func TestSubscriptionGroupTransitionsPreserveAuthVersionAndSessions(t *testing.T
 	assert.Equal(t, "default", cached.Group)
 }
 
-func TestSubscriptionGroupCacheRefreshFailureDoesNotChangeCommittedResult(t *testing.T) {
+func TestSubscriptionCreationIsRejectedWithoutChangingBalanceGroupOrSessions(t *testing.T) {
 	previousDB, previousLogDB := DB, LOG_DB
 	previousMainDatabaseType, previousLogDatabaseType := common.MainDatabaseType(), common.LogDatabaseType()
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
@@ -137,15 +139,20 @@ func TestSubscriptionGroupCacheRefreshFailureDoesNotChangeCommittedResult(t *tes
 	})
 
 	message, err := AdminBindSubscription(user.Id, plan.Id, "test")
-	require.NoError(t, err)
-	require.NotNil(t, message)
-	assert.Equal(t, "pro", message.Params["group"])
-
+	require.ErrorIs(t, err, ErrSubscriptionsUnavailable)
+	assert.Nil(t, message)
+	subscription, err := CreateUserSubscriptionFromPlanTx(DB, user.Id, plan, "test")
+	require.ErrorIs(t, err, ErrSubscriptionsUnavailable)
+	assert.Nil(t, subscription)
+	require.ErrorIs(t, PurchaseSubscriptionWithBalance(user.Id, plan.Id), ErrSubscriptionsUnavailable)
+	require.ErrorIs(t, CompleteSubscriptionOrder("legacy-pending", "evidence", "epay", "alipay"), ErrSubscriptionsUnavailable)
+	require.ErrorIs(t, (&SubscriptionOrder{UserId: user.Id, PlanId: plan.Id}).Insert(), ErrSubscriptionsUnavailable)
 	var updated User
 	require.NoError(t, DB.First(&updated, user.Id).Error)
-	assert.Equal(t, "pro", updated.Group)
+	assert.Equal(t, "default", updated.Group)
+	assert.Equal(t, user.Quota, updated.Quota)
 	assert.EqualValues(t, 1, updated.AuthVersion)
-	var subscription UserSubscription
-	require.NoError(t, DB.Where("user_id = ?", user.Id).First(&subscription).Error)
-	assert.Equal(t, "active", subscription.Status)
+	var count int64
+	require.NoError(t, DB.Model(&UserSubscription{}).Count(&count).Error)
+	assert.Zero(t, count)
 }

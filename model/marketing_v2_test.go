@@ -825,6 +825,33 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		})
 	}
 
+	t.Run("zero_estimate_cannot_bypass_exhausted_token", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "zero-admission", 100, 10, nil)
+		waiting := reserveMarketingTest(t, db, user, token, "zero-before-exhaustion", 100, 0)
+		paid := reserveMarketingTest(t, other, user, token, "last-token-funds", 100, 10)
+		repeated := reserveMarketingTest(t, db, user, token, "last-token-funds", 100, 10)
+		assert.Equal(t, paid.ID, repeated.ID, "a reservation replay must recognize its own full hold")
+		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+			_, created, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: paid.ID, Reference: "last-token-dispatch", PricingEvidence: "fixed-price:test-v1"})
+			assert.True(t, created, "all remaining token funds belong to this request")
+			return err
+		}))
+		actual := int64(10)
+		settleMarketingTest(t, db, paid, &actual, true, "upstream_terminal")
+		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+			_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: "zero-after-exhaustion", QualifiedAt: 100, Quota: 0, PricingEvidence: "fixed-price:test-v1"})
+			return err
+		}), ErrMarketingInsufficient)
+		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: waiting.ID, Reference: "stale-zero-dispatch", PricingEvidence: "fixed-price:test-v1"})
+			return err
+		}), ErrMarketingInsufficient)
+		var count int64
+		require.NoError(t, db.Model(&MarketingDispatch{}).Where("funding_id = ?", waiting.ID).Count(&count).Error)
+		assert.Zero(t, count, "the stale zero reservation cannot authorize upstream work")
+		assertMarketingSources(t, db, user.Id)
+	})
+
 	t.Run("access_checks_and_immutable_versions", func(t *testing.T) {
 		user, token, _ := marketingFundingFixture(t, db, "access", 100, 100, nil)
 		funding := reserveMarketingTest(t, db, user, token, "access", 100, 10)
@@ -1169,7 +1196,7 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				name := "rt-zero-admit-" + strconv.Itoa(index)
-				user, token, gifts := marketingFundingFixture(t, db, name, tc.paid, tc.tokenQuota, tc.gifts)
+				user, token, gifts := marketingFundingFixture(t, db, name, tc.paid, max(tc.tokenQuota, 1), tc.gifts)
 				if tc.unlimited {
 					require.NoError(t, db.Model(&token).Update("unlimited_quota", true).Error)
 					token.UnlimitedQuota = true
@@ -1194,6 +1221,11 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 					funding, err = InitMarketingRealtimeFunding(tx, user.Id, funding.ID)
 					return err
 				}))
+				if tc.tokenQuota == 0 && !tc.unlimited {
+					// The connection was admitted with a valid token, then an admin
+					// reduced its limit before the next round began.
+					require.NoError(t, db.Model(&token).Update("remain_quota", 0).Error)
+				}
 				manual := realtimeMarketingTestRound(t, db, funding, "manual-zero", 300, 0, false)
 				assert.Equal(t, !tc.allowed, manual.Stop)
 				if !tc.allowed {

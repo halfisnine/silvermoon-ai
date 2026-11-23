@@ -930,6 +930,7 @@ func TestOAuthLoginLegacyGitHubBindingRequiresAccountEvidence(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			setupSecurityEnrollmentTest(t)
 			require.NoError(t, model.DB.AutoMigrate(marketingRegistrationFixtureModels()...))
+			require.NoError(t, model.DB.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 			previousRegister := common.RegisterEnabled
 			common.RegisterEnabled = test.registerEnabled
 			t.Cleanup(func() { common.RegisterEnabled = previousRegister })
@@ -1173,7 +1174,7 @@ func TestOAuthRegistrationPersistsInviter(t *testing.T) {
 // creation and immediate rewards. Shared auth fixtures can opt into them.
 func marketingRegistrationFixtureModels() []any {
 	return []any{
-		&model.ExternalIdentityClaim{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingLedgerEntry{},
+		&model.MarketingFactSequence{}, &model.ExternalIdentityClaim{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingLedgerEntry{},
 		&model.MarketingInvitation{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{},
 		&model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{},
 		&model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{},

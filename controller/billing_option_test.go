@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"gorm.io/gorm"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -204,7 +206,8 @@ func TestPreConsumePolicyDatabaseMatrix(t *testing.T) {
 				t.Skip("set " + dialect.env + " to run this database")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			require.NoError(t, db.AutoMigrate(&model.Token{}, &model.MarketingAccount{}))
+			require.NoError(t, db.AutoMigrate(&model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingActivity{}, &model.MarketingInvitation{}, &model.MarketingFactSequence{}, &model.MarketingActivityFact{}))
+			require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 			for key, value := range map[string]string{
 				"quota_setting.trust_quota_usd":        "10.5",
 				"quota_setting.pre_consume_multiplier": "1.5",
@@ -255,13 +258,13 @@ func TestPreConsumePolicyDatabaseMatrix(t *testing.T) {
 				force, unlimited      bool
 				wantHeld              int
 			}{
-				{"above threshold", 10, 1, 5500000, 5500000, false, false, 0},
+				{"above threshold", 10, 1, 5500000, 5500000, false, false, 1500},
 				{"custom threshold", 20, 1, 5500000, 5500000, false, false, 1500},
 				{"zero disables bypass", 0, 1, 5500000, 5500000, false, false, 1500},
 				{"wallet equals threshold", 10, 1, 5000000, 5500000, false, false, 1500},
 				{"token equals threshold", 10, 1, 5500000, 5000000, false, false, 1500},
-				{"fractional threshold", 10.5, 1, 5250001, 5250001, false, false, 0},
-				{"unlimited token", 10, 1, 5500000, 0, false, true, 0},
+				{"fractional threshold", 10.5, 1, 5250001, 5250001, false, false, 1500},
+				{"unlimited token", 10, 1, 5500000, 0, false, true, 1500},
 				{"forced reservation", 10, 1, 5500000, 5500000, true, false, 1500},
 				{"half input cost", 0, 0.5, 100000, 100000, false, false, 750},
 				{"fractional multiple refunds excess", 0, 2.5, 100000, 100000, false, false, 3750},
@@ -270,24 +273,35 @@ func TestPreConsumePolicyDatabaseMatrix(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					require.NoError(t, model.UpdateOption("quota_setting.trust_quota_usd", strconv.FormatFloat(tc.threshold, 'f', -1, 64)))
 					require.NoError(t, model.UpdateOption("quota_setting.pre_consume_multiplier", strconv.FormatFloat(tc.multiplier, 'f', -1, 64)))
-					user := model.User{Username: fmt.Sprintf("policy-user-%d", i), Quota: tc.wallet, Group: "default", AffCode: fmt.Sprintf("policy-aff-%d", i)}
+					user := model.User{Username: fmt.Sprintf("policy-user-%d", i), Status: common.UserStatusEnabled, Group: "default", AffCode: fmt.Sprintf("policy-aff-%d", i)}
 					require.NoError(t, db.Create(&user).Error)
-					token := model.Token{UserId: user.Id, Key: fmt.Sprintf("policy-token-%d", i), RemainQuota: tc.token, UnlimitedQuota: tc.unlimited}
+					require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "policy fixture registration"}).Error)
+					require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+						_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: fmt.Sprintf("policy-paid-%d", user.Id), PaidCents: int64(tc.wallet), PostedAt: common.GetTimestamp(), Money: model.MarketingMoneySnapshot{Amount: fmt.Sprintf("%d.%02d", tc.wallet/100, tc.wallet%100), QuotaPerUnit: "100", CurrencyPerUnit: "1", Currency: "CNY"}})
+						return err
+					}))
+					token := model.Token{UserId: user.Id, Key: fmt.Sprintf("policy-token-%d", i), RemainQuota: tc.token, UnlimitedQuota: tc.unlimited, Status: common.TokenStatusEnabled, ExpiredTime: -1}
 					require.NoError(t, db.Create(&token).Error)
 					ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 					ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 					ctx.Set("token_quota", tc.token)
-					info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, TokenUnlimited: tc.unlimited, ForcePreConsume: tc.force, OriginModelName: "policy-model", UserGroup: "default", UsingGroup: "default", BillingRequestInput: &billingexpr.RequestInput{}}
+					info := &relaycommon.RelayInfo{RequestId: fmt.Sprintf("policy-request-%d", user.Id), StartTime: time.Now(), UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, TokenUnlimited: tc.unlimited, ForcePreConsume: tc.force, OriginModelName: "policy-model", UserGroup: "default", UsingGroup: "default", BillingRequestInput: &billingexpr.RequestInput{}}
 					info.UserSetting.BillingPreference = "wallet_only"
 					price, err := helper.ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{MaxTokens: 10000})
 					require.NoError(t, err)
 					require.Nil(t, service.PreConsumeBilling(ctx, price.QuotaToPreConsume, info))
 					assert.Equal(t, tc.wantHeld, info.FinalPreConsumedQuota)
 					require.NoError(t, db.First(&user, user.Id).Error)
-					assert.Equal(t, tc.wallet-tc.wantHeld, user.Quota)
+					assert.Equal(t, tc.wallet, user.Quota, "reservation is kept separate from settled consumption")
+					var account model.MarketingAccount
+					require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+					assert.EqualValues(t, tc.wantHeld, account.PaidReserved, "trust thresholds do not bypass the shared source ledger")
 					if !tc.unlimited {
 						require.NoError(t, db.First(&token, token.Id).Error)
-						assert.Equal(t, tc.token-tc.wantHeld, token.RemainQuota)
+						assert.Equal(t, tc.token, token.RemainQuota)
+						var hold model.MarketingTokenHold
+						require.NoError(t, db.First(&hold, "token_id = ?", token.Id).Error)
+						assert.EqualValues(t, tc.wantHeld, hold.ReservedQuota)
 					}
 					_, actual, _ := service.TryTieredSettle(info, billingexpr.TokenParams{P: 1000, C: 100, Len: 1000})
 					assert.Equal(t, 2250, actual)

@@ -517,7 +517,7 @@ func taskSubmissionRelayInfo(billing relaycommon.BillingSettler) *relaycommon.Re
 // runs leave a record.
 func openTaskDialectDatabase(t *testing.T, models ...any) (*gorm.DB, common.DatabaseType) {
 	t.Helper()
-	models = append(models, &model.MarketingAccount{})
+	models = append(models, &model.MarketingAccount{}, &model.MarketingFactSequence{})
 	dialect := common.DatabaseType(os.Getenv("TEST_TASK_DB_DIALECT"))
 	var driver gorm.Dialector
 	switch dialect {
@@ -540,6 +540,7 @@ func openTaskDialectDatabase(t *testing.T, models ...any) (*gorm.DB, common.Data
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	require.NoError(t, db.AutoMigrate(models...))
+	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 	t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(models...)) })
 	var version string
 	if dialect == common.DatabaseTypeSQLite {
@@ -552,7 +553,11 @@ func openTaskDialectDatabase(t *testing.T, models ...any) (*gorm.DB, common.Data
 }
 
 func TestImmediateTaskSettlementDatabase(t *testing.T) {
-	db, dialect := openTaskDialectDatabase(t, &model.User{}, &model.Channel{}, &model.Task{}, &model.Log{})
+	db, dialect := openTaskDialectDatabase(t, &model.User{}, &model.Token{}, &model.Channel{}, &model.Task{}, &model.Log{}, &model.QuotaData{},
+		&model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{},
+		&model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{},
+		&model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingActivityFact{},
+		&model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{})
 	oldDB, oldLogDB := model.DB, model.LOG_DB
 	oldMain, oldLog := common.MainDatabaseType(), common.LogDatabaseType()
 	oldRedis, oldMemory, oldBatch, oldConsume, oldExport := common.RedisEnabled, common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled, common.DataExportEnabled
@@ -582,11 +587,16 @@ export function buildQueryRequest(){throw new Error("completed submissions must 
 		name, status string
 		actual       any
 		count        float64
+		review       bool
 	}{
-		{"partial", "SUCCESS", 2, 2}, {"zero", "SUCCESS", 0, 0}, {"larger", "SUCCESS", 6, 6},
-		{"invalid usage", "SUCCESS", -1, 4}, {"expression failure", "SUCCESS", 7, 4}, {"negative result", "SUCCESS", 8, 4}, {"missing usage", "SUCCESS", nil, 4}, {"failed", "FAILURE", 9, 0},
+		{"fixed price without usage", "SUCCESS", nil, 3, false}, {"partial", "SUCCESS", 2, 2, false}, {"zero", "SUCCESS", 0, 0, false}, {"larger", "SUCCESS", 6, 6, false},
+		{"invalid usage", "SUCCESS", -1, 4, true}, {"expression failure", "SUCCESS", 7, 4, true}, {"negative result", "SUCCESS", 8, 4, true}, {"missing usage", "SUCCESS", nil, 4, true}, {"failed", "FAILURE", 9, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			fixed := tc.name == "fixed price without usage"
+			if fixed {
+				withTieredBillingConfig(t, map[string]string{"document-model": "tiered_expr"}, map[string]string{"document-model": `tier("request", 0.03)`})
+			}
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				body := map[string]any{"status": tc.status}
@@ -601,8 +611,15 @@ export function buildQueryRequest(){throw new Error("completed submissions must 
 			}))
 			defer server.Close()
 			initial := int(20 * common.QuotaPerUnit)
-			user := model.User{Username: fmt.Sprintf("task_user_%d", index), AffCode: fmt.Sprintf("task_aff_%d", index), Quota: initial}
+			user := model.User{Username: fmt.Sprintf("task_user_%d", index), AffCode: fmt.Sprintf("task_aff_%d", index), Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
+			require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified", PaymentHistory: model.MarketingPaymentHistoryNone, PaymentHistoryEvidence: "test registration"}).Error)
+			now := time.Now().Unix()
+			require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+				_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: "immediate-" + tc.name, PaidCents: 2000, PostedAt: now,
+					Money: model.MarketingMoneySnapshot{Amount: "20", QuotaPerUnit: fmt.Sprint(common.QuotaPerUnit), CurrencyPerUnit: "1", Currency: "CNY"}})
+				return err
+			}))
 			ch := model.Channel{Name: "test provider", Type: constant.ChannelTypeTaskPlugin}
 			require.NoError(t, db.Create(&ch).Error)
 			c := taskSubmissionTestContext()
@@ -616,6 +633,7 @@ export function buildQueryRequest(){throw new Error("completed submissions must 
 			common.SetContextKey(c, constant.ContextKeyChannelType, ch.Type)
 			info := taskSubmissionRelayInfo(nil)
 			info.UserId = user.Id
+			info.StartTime, info.RequestId = time.Unix(now, 0), "immediate-http-"+tc.name
 			info.OriginModelName = "document-model"
 			info.UserGroup = "default"
 			info.UsingGroup = "default"
@@ -631,31 +649,75 @@ export function buildQueryRequest(){throw new Error("completed submissions must 
 			assert.Equal(t, want, info.PriceData.Quota)
 			var stored model.Task
 			require.NoError(t, db.Where("task_id = ?", info.PublicTaskID).First(&stored).Error)
-			assert.Equal(t, want, stored.Quota)
+			// The adapter may retain an estimate for diagnostics. Unknown usage
+			// must never become an actual wallet debit or a settled task cost.
+			charged := want
+			if tc.review {
+				charged = 0
+			}
+			assert.Equal(t, charged, stored.Quota)
+			assert.False(t, stored.MarketingBillingPending)
+			require.NotNil(t, stored.PrivateData.MarketingOutcome)
+			var funding model.MarketingFunding
+			require.NoError(t, db.First(&funding, stored.MarketingFundingID).Error)
+			assert.Equal(t, int64(charged), funding.SettledQuota)
+			assert.Equal(t, !tc.review, funding.CostKnown)
+			if tc.review {
+				assert.Equal(t, "review", funding.State)
+				assert.Equal(t, int64(common.QuotaRound(0.04*common.QuotaPerUnit)), funding.ReservedQuota)
+				assert.Nil(t, stored.PrivateData.MarketingOutcome.ActualQuota)
+			} else {
+				assert.Equal(t, "settled", funding.State)
+				assert.Zero(t, funding.ReservedQuota)
+				require.NotNil(t, stored.PrivateData.MarketingOutcome.ActualQuota)
+				assert.Equal(t, int64(charged), *stored.PrivateData.MarketingOutcome.ActualQuota)
+			}
+			var rawResult map[string]any
+			require.NoError(t, common.Unmarshal(stored.Data, &rawResult))
+			if tc.actual != nil {
+				assert.Equal(t, float64(tc.actual.(int)), rawResult["usage"].(map[string]any)["units"], "preserve actual provider facts even if billing requires review")
+			} else {
+				assert.NotContains(t, rawResult, "usage")
+			}
 			assert.Equal(t, model.TaskStatus(tc.status), stored.Status)
 			assert.Positive(t, stored.FinishTime)
-			assert.Equal(t, float64(4), info.TieredBillingSnapshot.EstimatedQuotaBeforeGroup/(0.01*common.QuotaPerUnit))
+			estimatedUnits, usageUnits := float64(4), tc.count
+			if fixed {
+				estimatedUnits, usageUnits = 3, 4
+			}
+			assert.Equal(t, estimatedUnits, info.TieredBillingSnapshot.EstimatedQuotaBeforeGroup/(0.01*common.QuotaPerUnit))
 			if tc.status == "SUCCESS" {
-				assert.Equal(t, tc.count, stored.PrivateData.BillingContext.TieredSnapshot.UsageFacts["units"])
+				assert.Equal(t, usageUnits, stored.PrivateData.BillingContext.TieredSnapshot.UsageFacts["units"])
 			}
 			var updated model.User
 			require.NoError(t, db.First(&updated, user.Id).Error)
-			assert.Equal(t, initial-want, updated.Quota)
-			assert.Equal(t, want, updated.UsedQuota)
+			assert.Equal(t, initial-charged, updated.Quota)
+			assert.Equal(t, charged, updated.UsedQuota)
 			var logs []model.Log
 			require.NoError(t, db.Where("user_id = ?", user.Id).Find(&logs).Error)
 			require.Len(t, logs, 1)
-			assert.Equal(t, want, logs[0].Quota)
+			assert.Equal(t, charged, logs[0].Quota)
 			var other map[string]any
 			require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &other))
 			if tc.status == "SUCCESS" {
-				assert.Equal(t, tc.count, other["usage_facts"].(map[string]any)["units"])
+				assert.Equal(t, usageUnits, other["usage_facts"].(map[string]any)["units"])
 			}
 			assert.False(t, c.Writer.Written(), "presentation must follow persistence and settlement")
-			require.NoError(t, info.Billing.Settle(want))
+			// Recovery replays the frozen outcome, not a fresh interpretation of
+			// the adapter's estimate. Even a later refund cannot release review holds.
+			require.NoError(t, service.FinalizeMarketingTask(&stored))
 			info.Billing.Refund(c)
 			require.NoError(t, db.First(&updated, user.Id).Error)
-			assert.Equal(t, initial-want, updated.Quota, "terminal settlement is idempotent")
+			assert.Equal(t, initial-charged, updated.Quota, "terminal settlement is idempotent")
+			assert.Equal(t, charged, updated.UsedQuota)
+			var replayed model.MarketingFunding
+			require.NoError(t, db.First(&replayed, funding.ID).Error)
+			assert.Equal(t, funding.State, replayed.State)
+			assert.Equal(t, funding.ReservedQuota, replayed.ReservedQuota)
+			assert.Equal(t, funding.SettledQuota, replayed.SettledQuota)
+			var logCount int64
+			require.NoError(t, db.Model(&model.Log{}).Where("user_id = ?", user.Id).Count(&logCount).Error)
+			assert.Equal(t, int64(1), logCount, "recovery must not duplicate the request log")
 		})
 	}
 }
