@@ -199,7 +199,7 @@ func (s *MarketingBillingSession) PreserveUnknown(evidence string) error {
 func (s *MarketingBillingSession) NeedsRefund() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.funding.State != "settled" && !s.funding.FinalObserved
+	return !s.funding.Realtime && s.funding.State != "settled" && !s.funding.FinalObserved
 }
 
 // Refund means finalize a failed request, not necessarily credit its reservation.

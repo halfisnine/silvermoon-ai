@@ -35,8 +35,22 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 	if err != nil {
 		return nil, err
 	}
+	return RecordMarketingFundingUsage(tx, funding, record)
+}
+
+// RecordMarketingFundingUsage projects already committed-in-this-transaction
+// financial facts without applying settlement again. Realtime uses one logical
+// connection log even though its internal allocations belong to multiple rounds.
+func RecordMarketingFundingUsage(tx *gorm.DB, funding *MarketingFunding, record Log) (*MarketingFunding, error) {
+	if tx == nil || funding == nil || record.UserId != funding.UserID || record.RequestId == "" || record.PromptTokens < 0 || record.CompletionTokens < 0 {
+		return nil, ErrMarketingInput
+	}
+	if _, _, err := lockMarketingAccount(tx.Unscoped(), funding.UserID); err != nil {
+		return nil, err
+	}
+	var err error
 	var existing MarketingUsageProjection
-	err = lockForUpdate(tx).Where("funding_id = ? AND version = ?", funding.ID, input.Version).First(&existing).Error
+	err = lockForUpdate(tx).Where("funding_id = ? AND version = ?", funding.ID, funding.Revision).First(&existing).Error
 	if err == nil {
 		return funding, nil
 	}
@@ -47,15 +61,20 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 	if err = lockForUpdate(tx).First(&current, funding.ID).Error; err != nil {
 		return nil, err
 	}
-	if current.Revision != input.Version {
+	if current.UserID != funding.UserID {
+		return nil, ErrMarketingAccess
+	}
+	if current.Revision != funding.Revision {
 		return nil, ErrMarketingConflict
 	}
+	funding = &current
 	var allocations []MarketingAllocation
 	if err = lockForUpdate(tx).Where("funding_id = ?", funding.ID).Find(&allocations).Error; err != nil {
 		return nil, err
 	}
 	var paid, gift int64
 	sources := make([]map[string]int64, 0, len(allocations))
+	sourceIndexes := map[int64]int{}
 	for _, allocation := range allocations {
 		if allocation.ConsumedQuota < 0 || allocation.ConsumedQuota > common.MaxWalletQuota-paid-gift {
 			return nil, ErrMarketingReview
@@ -65,7 +84,12 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 		} else {
 			gift += allocation.ConsumedQuota
 			if allocation.ConsumedQuota > 0 {
-				sources = append(sources, map[string]int64{"gift_id": allocation.GiftID, "quota": allocation.ConsumedQuota})
+				if index, exists := sourceIndexes[allocation.GiftID]; exists {
+					sources[index]["quota"] += allocation.ConsumedQuota
+				} else {
+					sourceIndexes[allocation.GiftID] = len(sources)
+					sources = append(sources, map[string]int64{"gift_id": allocation.GiftID, "quota": allocation.ConsumedQuota})
+				}
 			}
 		}
 	}
@@ -94,7 +118,7 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 	record.Type = LogTypeConsume
 	record.CreatedAt = funding.QualifiedAt
 	record.UsageEventID = funding.RequestKey
-	record.UsageRevision = input.Version
+	record.UsageRevision = funding.Revision
 	record.Other = string(other)
 	record.Quota, err = common.WalletQuotaFromDecimalStrict(decimal.NewFromInt(funding.SettledQuota))
 	if err != nil {
@@ -105,7 +129,7 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 		return nil, err
 	}
 	var prior MarketingUsageProjection
-	err = lockForUpdate(tx).Where("funding_id = ? AND version < ?", funding.ID, input.Version).Order("version DESC").First(&prior).Error
+	err = lockForUpdate(tx).Where("funding_id = ? AND version < ?", funding.ID, funding.Revision).Order("version DESC").First(&prior).Error
 	first := errors.Is(err, gorm.ErrRecordNotFound)
 	if err != nil && !first {
 		return nil, err
@@ -179,7 +203,7 @@ func SettleMarketingConsumption(tx *gorm.DB, input MarketingSettlementInput, rec
 			return nil, err
 		}
 	}
-	projection := MarketingUsageProjection{ExportEnabled: exportEnabled, FundingID: funding.ID, Version: input.Version, Payload: string(payload), CreatedAt: record.CreatedAt}
+	projection := MarketingUsageProjection{ExportEnabled: exportEnabled, FundingID: funding.ID, Version: funding.Revision, Payload: string(payload), CreatedAt: record.CreatedAt}
 	if !common.LogConsumeEnabled {
 		// Disabled at the time of consumption stays disabled on recovery too.
 		// Financial facts and counters remain durable in the business database.

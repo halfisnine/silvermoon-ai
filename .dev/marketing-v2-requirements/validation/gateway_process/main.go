@@ -95,9 +95,12 @@ func main() {
 	must(common.RDB.FlushDB(context.Background()).Err())
 	var submitted, textCalls, imageCalls atomic.Int32
 	var complete atomic.Bool
+	realtimeProvider := &realtimeGatewayFixture{}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/v1/realtime":
+			realtimeProvider.ServeHTTP(w, r)
 		case "/v1/chat/completions":
 			data, _ := io.ReadAll(r.Body)
 			if strings.Contains(string(data), `"usage-audit`) {
@@ -168,17 +171,18 @@ func main() {
 		_, err := model.GrantMarketingGift(tx, model.MarketingGiftInput{UserID: user.Id, Kind: "recharge", Reference: "gateway-gift", GrantedAt: now, Money: model.MarketingMoneySnapshot{Amount: "600", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 		return err
 	}))
-	for _, option := range []model.Option{{Key: "ModelRatio", Value: `{"usage-audit-token":1,"tts-1":1,"gpt-4o-mini-tts":1}`}, {Key: "ModelPrice", Value: `{"gpt-4o":0.001,"dall-e-3":0.002,"mj_imagine":0.003,"usage-audit-fixed":0.001}`}} {
+	for _, option := range []model.Option{{Key: "CompletionRatio", Value: `{"realtime-fixture":1}`}, {Key: "ModelRatio", Value: `{"usage-audit-token":1,"tts-1":1,"gpt-4o-mini-tts":1,"realtime-fixture":1}`}, {Key: "ModelPrice", Value: `{"gpt-4o":0.001,"dall-e-3":0.002,"mj_imagine":0.003,"usage-audit-fixed":0.001}`}} {
 		must(model.DB.Create(&option).Error)
 	}
 	base := upstream.URL
-	for _, ch := range []model.Channel{{Name: "fixture-openai", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture-upstream-key", BaseURL: &base, Models: "gpt-4o,dall-e-3,usage-audit-token,usage-audit-fixed,tts-1,gpt-4o-mini-tts", Group: "default"}, {Name: "fixture-mj", Type: constant.ChannelTypeMidjourney, Status: common.ChannelStatusEnabled, Key: "fixture-mj-key", BaseURL: &base, Models: "mj_imagine", Group: "default"}} {
+	for _, ch := range []model.Channel{{Name: "fixture-openai", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture-upstream-key", BaseURL: &base, Models: "gpt-4o,dall-e-3,usage-audit-token,usage-audit-fixed,tts-1,gpt-4o-mini-tts,realtime-fixture", Group: "default"}, {Name: "fixture-mj", Type: constant.ChannelTypeMidjourney, Status: common.ChannelStatusEnabled, Key: "fixture-mj-key", BaseURL: &base, Models: "mj_imagine", Group: "default"}} {
 		must(ch.Insert())
 	}
 	a := launch("18371", false)
 	defer func() { _ = a.Process.Kill(); _ = a.Wait() }()
 	b := launch("18372", true)
 	defer func() { _ = b.Process.Kill(); _ = b.Wait() }()
+	runRealtimeGatewayScenarios(realtimeProvider)
 	for index, scenario := range []struct {
 		name                 string
 		stream, fixed, audio bool

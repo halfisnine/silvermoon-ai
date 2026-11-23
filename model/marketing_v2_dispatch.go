@@ -203,6 +203,15 @@ func BeginMarketingDispatch(tx *gorm.DB, input MarketingDispatchInput) (*Marketi
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
+	// A reservation may predate another connection's unknown outcome. Recheck
+	// the account-wide stop at the last durable boundary before sending.
+	var unresolved []MarketingFunding
+	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", input.UserID, "review").Limit(1).Find(&unresolved).Error; err != nil {
+		return nil, false, err
+	}
+	if len(unresolved) > 0 {
+		return nil, false, ErrMarketingReview
+	}
 	if err = marketingRequestCanDispatch(tx, funding); err != nil {
 		return nil, false, err
 	}

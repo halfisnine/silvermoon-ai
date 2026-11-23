@@ -40,6 +40,7 @@ func (MarketingFundingOperation) TableName() string { return "marketing_v2_fundi
 // Debit lots retain actual consumption order. Repricing reverses the newest
 // outstanding debit first, even if an earlier gift became available again.
 type MarketingDebit struct {
+	RoundID           int64 `gorm:"not null;index"`
 	ID                int64 `gorm:"primaryKey"`
 	FundingID         int64 `gorm:"not null;index"`
 	GiftID            int64 `gorm:"not null"`
@@ -80,6 +81,8 @@ type MarketingSettlementInput struct {
 // fundingBook is a transaction-local snapshot, not a process-wide balance cache.
 // Every mutation holds the authoritative user then token row in that order.
 type fundingBook struct {
+	roundID       int64
+	qualifiedAt   int64
 	user          *User
 	account       *MarketingAccount
 	token         Token
@@ -161,12 +164,16 @@ func loadMarketingFundingBook(tx *gorm.DB, userID, tokenID int) (*fundingBook, e
 }
 
 func (book *fundingBook) allocation(fundingID, giftID int64) *MarketingAllocation {
+	return book.allocationForRound(fundingID, giftID, book.roundID)
+}
+
+func (book *fundingBook) allocationForRound(fundingID, giftID, roundID int64) *MarketingAllocation {
 	for i := range book.allocations {
-		if book.allocations[i].GiftID == giftID {
+		if book.allocations[i].GiftID == giftID && book.allocations[i].RoundID == roundID {
 			return &book.allocations[i]
 		}
 	}
-	book.allocations = append(book.allocations, MarketingAllocation{FundingID: fundingID, GiftID: giftID})
+	book.allocations = append(book.allocations, MarketingAllocation{FundingID: fundingID, GiftID: giftID, RoundID: roundID})
 	return &book.allocations[len(book.allocations)-1]
 }
 
@@ -360,6 +367,9 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 		return nil, err
 	}
 	funding := discovered
+	if funding.Realtime {
+		return nil, ErrMarketingConflict
+	}
 	hash, err := marketingDigest(input)
 	if err != nil {
 		return nil, err
@@ -473,6 +483,9 @@ func (book *fundingBook) releaseHolds(funding *MarketingFunding, amount, preferr
 	for pass := range 2 {
 		for i := len(book.allocations) - 1; i >= 0 && amount > 0; i-- {
 			allocation := &book.allocations[i]
+			if allocation.RoundID != book.roundID {
+				continue
+			}
 			if (pass == 0) != (allocation.GiftID == preferredGiftID) {
 				continue
 			}
@@ -507,11 +520,21 @@ func (book *fundingBook) releaseHolds(funding *MarketingFunding, amount, preferr
 }
 
 func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount int64) error {
+	qualifiedAt := funding.QualifiedAt
+	if book.roundID != 0 {
+		qualifiedAt = book.qualifiedAt
+	}
+	var reserved int64
+	for _, a := range book.allocations {
+		if a.RoundID == book.roundID {
+			reserved += a.ReservedQuota
+		}
+	}
 	tokenAvailable := int64(common.MaxWalletQuota)
 	if book.hasToken {
 		tokenAvailable -= int64(book.token.UsedQuota)
 		if !book.token.UnlimitedQuota {
-			tokenAvailable = min(tokenAvailable, int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota)
+			tokenAvailable = min(tokenAvailable, int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+reserved)
 		}
 	}
 	amount = min(amount, max(int64(0), tokenAvailable))
@@ -521,7 +544,7 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 		var sourceID int64
 		if i < len(book.gifts) {
 			gift = &book.gifts[i]
-			if gift.GrantedAt > funding.QualifiedAt || (gift.ExpiresAt != 0 && gift.ExpiresAt <= funding.QualifiedAt) {
+			if gift.GrantedAt > qualifiedAt || (gift.ExpiresAt != 0 && gift.ExpiresAt <= qualifiedAt) {
 				continue
 			}
 			sourceID = gift.ID
@@ -539,9 +562,10 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 		if err != nil {
 			return err
 		}
-		if err = book.releaseHolds(funding, min(take, funding.ReservedQuota), sourceID); err != nil {
+		if err = book.releaseHolds(funding, min(take, reserved), sourceID); err != nil {
 			return err
 		}
+		reserved -= min(take, reserved)
 		if gift != nil {
 			gift.RemainingQuota -= take
 			gift.ConsumedQuota += take
@@ -556,7 +580,7 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 				book.token.RemainQuota -= debitAmount
 			}
 		}
-		debit := MarketingDebit{FundingID: funding.ID, GiftID: sourceID, Quota: take, Version: funding.Revision, TokenQuotaCharged: book.hasToken && !book.token.UnlimitedQuota}
+		debit := MarketingDebit{FundingID: funding.ID, RoundID: book.roundID, GiftID: sourceID, Quota: take, Version: funding.Revision, TokenQuotaCharged: book.hasToken && !book.token.UnlimitedQuota}
 		if err := tx.Create(&debit).Error; err != nil {
 			return err
 		}
@@ -594,7 +618,7 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 		if err != nil {
 			return err
 		}
-		allocation := book.allocation(funding.ID, debit.GiftID)
+		allocation := book.allocationForRound(funding.ID, debit.GiftID, debit.RoundID)
 		if allocation.ConsumedQuota < take || (book.hasToken && int64(book.token.UsedQuota) < take) {
 			return ErrMarketingReview
 		}

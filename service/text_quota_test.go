@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"net/http"
@@ -1752,10 +1753,10 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 	previous, previousLog := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = previous, previousLog })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.MarketingRealtimeRound{}, &model.MarketingRealtimeEvent{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}))
 
 	runTag := fmt.Sprint(time.Now().UnixNano())
-	for index, scenario := range []string{"estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee"} {
+	for index, scenario := range []string{"estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
 		t.Run(scenario, func(t *testing.T) {
 			user := model.User{Username: "mv2-" + fmt.Sprint(index) + runTag, AffCode: fmt.Sprintf("m%d%s", index, runTag[len(runTag)-6:]), Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
@@ -1768,20 +1769,413 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				if err != nil {
 					return err
 				}
-				_, err = model.GrantMarketingGift(tx, model.MarketingGiftInput{UserID: user.Id, Kind: "recharge", Reference: scenario + runTag, GrantedAt: now, ExpiresAt: now + 100, Money: model.MarketingMoneySnapshot{Amount: "20", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
+				grantedAt, expiresAt := now, now+100
+				if scenario == "realtime_automatic_expiry" || scenario == "realtime_terminal_metadata" {
+					grantedAt, expiresAt = now-100, now-1
+				}
+				_, err = model.GrantMarketingGift(tx, model.MarketingGiftInput{UserID: user.Id, Kind: "recharge", Reference: scenario + runTag, GrantedAt: grantedAt, ExpiresAt: expiresAt, Money: model.MarketingMoneySnapshot{Amount: "20", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 				return err
 			}))
 			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, RequestId: "marketing-" + scenario + runTag, StartTime: time.Unix(now, 0), ChannelMeta: &relaycommon.ChannelMeta{}, OriginModelName: "marketing-model", PriceData: hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+			vadNormal := scenario == "realtime_vad_normal" || scenario == "realtime_vad_default" || scenario == "realtime_vad_partial" || scenario == "realtime_vad_ga_default"
+			vadScenario := vadNormal || scenario == "realtime_vad_two_inputs" || scenario == "realtime_vad_uncertain_config" || scenario == "realtime_vad_partial_disabled"
+			if vadScenario {
+				info.PriceData.AudioRatio = 1
+			}
+			if scenario == "realtime_pricing_failure" {
+				expression := `p == 0 ? tier("empty", p) : tier("invalid", c / (p-p))`
+				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: 1_000_000, GroupRatio: 1}
+			}
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
 			ctx.Set(common.RequestIdKey, info.RequestId)
 			ctx.Set("username", user.Username)
-			require.Nil(t, PreConsumeBilling(ctx, 10, info))
+			initialEstimate, submitEstimate := 10, 30
+			if scenario == "realtime_stopped_start_late" || scenario == "realtime_stopped_text_zero" || scenario == "realtime_stopped_audio_zero" {
+				initialEstimate, submitEstimate = 0, 0 // Real websocket admission may have no input tokens yet.
+			}
+			require.Nil(t, PreConsumeBilling(ctx, initialEstimate, info))
 			session, ok := info.Billing.(*MarketingBillingSession)
 			require.True(t, ok)
-			require.NoError(t, session.ReserveBeforeSubmit(30))
-			assert.Equal(t, 30, session.GetPreConsumedQuota())
+			require.NoError(t, session.ReserveBeforeSubmit(submitEstimate))
+			assert.Equal(t, submitEstimate, session.GetPreConsumedQuota())
 			switch scenario {
+			case "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero":
+				coordinator, err := NewMarketingRealtimeCoordinator(ctx, info)
+				require.NoError(t, err)
+				assert.Zero(t, session.funding.ReservedQuota, "connection setup cannot retain old gift eligibility")
+				at := time.Unix(now, 0)
+				if scenario == "realtime_stopped_start_late" || scenario == "realtime_stopped_text_zero" || scenario == "realtime_stopped_audio_zero" {
+					require.Zero(t, session.GetPreConsumedQuota(), "the actual gateway may start with a zero estimate")
+					create, err := coordinator.ProcessClientEvent([]byte(`{"type":"response.create"}`), at)
+					require.NoError(t, err)
+					require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"consume-token-budget"}}`), create), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"consume-token-budget","status":"completed","usage":{"total_tokens":100,"input_tokens":80,"output_tokens":20,"input_token_details":{"text_tokens":80},"output_token_details":{"text_tokens":20}}}}`), at))
+					require.NoError(t, db.First(&token, token.Id).Error)
+					require.Zero(t, token.RemainQuota, "the first real generation naturally exhausts the token budget")
+					require.Equal(t, 100, token.UsedQuota)
+					require.Error(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"automatic-unfunded"}}`), at), "automatic generation must immediately signal upstream stop")
+					var rounds []model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).Order("id").Find(&rounds).Error)
+					require.Len(t, rounds, 2)
+					stoppedID := rounds[1].ID
+					assert.NotEmpty(t, rounds[1].ResponseKey, "an admission stop cannot discard an already observed provider identity")
+					assert.EqualValues(t, 2, rounds[1].ResponseOrder)
+					assert.Equal(t, now, rounds[1].QualifiedAt)
+					if scenario == "realtime_stopped_start_late" {
+						require.NoError(t, coordinator.Close("upstream stopped before trusted terminal arrived"))
+						late := []byte(`{"type":"response.done","response":{"id":"automatic-unfunded","status":"completed","usage":{"total_tokens":5,"input_tokens":2,"output_tokens":3,"input_token_details":{"text_tokens":2},"output_token_details":{"text_tokens":3}}}}`)
+						recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
+						require.ErrorIs(t, err, model.ErrMarketingReview, "real cost survives recovery even though the token cannot pay it")
+						require.NotNil(t, recovered)
+						assert.EqualValues(t, 105, recovered.ActualQuota)
+						assert.EqualValues(t, 100, recovered.SettledQuota)
+						assert.Equal(t, "review", recovered.State)
+						repeated, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
+						require.ErrorIs(t, err, model.ErrMarketingReview)
+						assert.Equal(t, recovered.Revision, repeated.Revision)
+						var stopped model.MarketingRealtimeRound
+						require.NoError(t, db.First(&stopped, stoppedID).Error)
+						assert.Equal(t, now, stopped.QualifiedAt)
+						assert.Contains(t, stopped.UsageJSON, `"total_tokens":5`)
+						assert.EqualValues(t, 5, stopped.TargetQuota)
+						assert.False(t, stopped.Unknown)
+					} else {
+						delta := []byte(`{"type":"response.output_text.delta","response_id":"automatic-unfunded","delta":"actually generated"}`)
+						if scenario == "realtime_stopped_audio_zero" {
+							delta = []byte(`{"type":"response.output_audio.delta","response_id":"automatic-unfunded","delta":"AAAA"}`)
+						}
+						require.Error(t, coordinator.ServerEvent(delta, at), "drained output keeps the stop condition while preserving facts")
+						require.ErrorIs(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"automatic-unfunded","status":"completed","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}}}`), at), model.ErrMarketingReview)
+						require.NoError(t, coordinator.Close("drained output contradicts explicit zero terminal"))
+						var stopped model.MarketingRealtimeRound
+						require.NoError(t, db.First(&stopped, stoppedID).Error)
+						assert.True(t, stopped.OutputObserved)
+						assert.Equal(t, scenario == "realtime_stopped_audio_zero", stopped.AudioOutputObserved)
+						assert.True(t, stopped.Unknown)
+						assert.Empty(t, stopped.UsageJSON, "zero is not accepted as actual usage after observed output")
+						assert.Equal(t, "review", session.funding.State)
+						assert.False(t, session.funding.CostKnown)
+						assert.EqualValues(t, 100, session.funding.SettledQuota)
+					}
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 20, user.Quota)
+					require.NoError(t, db.First(&token, token.Id).Error)
+					assert.Zero(t, token.RemainQuota)
+					assert.Equal(t, 100, token.UsedQuota)
+					return
+				}
+
+				if vadScenario {
+					serverConfig := []byte(`{"type":"session.created","session":{"input_audio_format":"pcm16","output_audio_format":"pcm16","input_audio_transcription":null,"turn_detection":{"type":"server_vad","create_response":true,"idle_timeout_ms":null}}}`)
+					if scenario == "realtime_vad_uncertain_config" {
+						serverConfig = []byte(`{"type":"session.created","session":{"input_audio_format":"pcm16","output_audio_format":"pcm16","turn_detection":{"type":"server_vad","create_response":true}}}`)
+					}
+					if scenario == "realtime_vad_default" || scenario == "realtime_vad_partial" {
+						// Configuration fields from the official default session example:
+						// automatic creation and idle timeout are both omitted.
+						serverConfig = []byte(`{"type":"session.created","session":{"input_audio_format":"pcm16","output_audio_format":"pcm16","input_audio_transcription":null,"turn_detection":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":200}}}`)
+					}
+					if scenario == "realtime_vad_ga_default" {
+						serverConfig = []byte(`{"type":"session.created","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":null,"turn_detection":{"type":"server_vad","threshold":0.5}},"output":{"format":{"type":"audio/pcm","rate":24000}}}}}`)
+					}
+					if scenario == "realtime_vad_partial_disabled" {
+						serverConfig = []byte(`{"type":"session.created","session":{"input_audio_format":"pcm16","input_audio_transcription":null,"turn_detection":{"type":"server_vad","create_response":false}}}`)
+					}
+					require.NoError(t, coordinator.ServerEvent(serverConfig, at))
+					if scenario == "realtime_vad_partial" || scenario == "realtime_vad_partial_disabled" {
+						require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"session.updated","session":{"turn_detection":{"threshold":0.7}}}`), at))
+					}
+					if scenario == "realtime_vad_ga_default" {
+						require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"session.updated","session":{"audio":{"input":{"turn_detection":{"threshold":0.7}}}}}`), at))
+					}
+					segments := 1
+					if scenario == "realtime_vad_two_inputs" {
+						segments = 2
+					}
+					audio, err := common.Marshal(map[string]any{"type": "input_audio_buffer.append", "audio": base64.StdEncoding.EncodeToString(make([]byte, 4800))})
+					require.NoError(t, err)
+					for segment := range segments {
+						require.NoError(t, coordinator.ClientEvent(audio, at))
+						item := fmt.Sprintf("vad-input-%d", segment)
+						started, err := common.Marshal(map[string]any{"type": "input_audio_buffer.speech_started", "audio_start_ms": segment * 100, "item_id": item})
+						require.NoError(t, err)
+						stopped, err := common.Marshal(map[string]any{"type": "input_audio_buffer.speech_stopped", "audio_end_ms": (segment + 1) * 100, "item_id": item})
+						require.NoError(t, err)
+						committed, err := common.Marshal(map[string]any{"type": "input_audio_buffer.committed", "item_id": item})
+						require.NoError(t, err)
+						require.NoError(t, coordinator.ServerEvent(started, at))
+						require.NoError(t, coordinator.ServerEvent(stopped, at))
+						require.NoError(t, coordinator.ServerEvent(committed, at))
+					}
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"vad-response"}}`), at))
+					terminal := []byte(`{"type":"response.done","response":{"id":"vad-response","status":"completed","usage":{"total_tokens":23,"input_tokens":3,"output_tokens":20,"input_token_details":{"audio_tokens":3},"output_token_details":{"text_tokens":20}}}}`)
+					require.NoError(t, coordinator.ServerEvent(terminal, at))
+					require.NoError(t, coordinator.ServerEvent(terminal, at), "repeated terminal cannot charge input twice")
+					require.NoError(t, coordinator.Close("VAD response finished; verify independent input admission"))
+					assert.EqualValues(t, 23, session.funding.ActualQuota)
+					assert.EqualValues(t, 23, session.funding.SettledQuota)
+					assert.Equal(t, 23, coordinator.Usage().TotalTokens)
+					remainingHold := int64(segments * 3)
+					if vadNormal {
+						remainingHold = 0
+						assert.Equal(t, "settled", session.funding.State)
+						assert.False(t, session.funding.RealtimeInputPending)
+					} else {
+						assert.Equal(t, "review", session.funding.State)
+						assert.True(t, session.funding.RealtimeInputPending)
+						assert.False(t, session.funding.CostKnown)
+					}
+					var inputAllocations []model.MarketingAllocation
+					require.NoError(t, db.Where("funding_id = ? AND round_id = ?", session.funding.ID, 0).Find(&inputAllocations).Error)
+					var inputHeld int64
+					for _, allocation := range inputAllocations {
+						inputHeld += allocation.ReservedQuota
+					}
+					assert.Equal(t, remainingHold, inputHeld, "only unassociated input keeps an admission reservation")
+					assert.Equal(t, remainingHold, session.funding.ReservedQuota)
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.EqualValues(t, 97-remainingHold, user.Quota)
+					var gift model.MarketingGift
+					require.NoError(t, db.Where("user_id = ?", user.Id).First(&gift).Error)
+					assert.Equal(t, 20-remainingHold, gift.ConsumedQuota)
+					assert.Equal(t, remainingHold, gift.ReservedQuota)
+					require.NoError(t, db.First(&token, token.Id).Error)
+					assert.Equal(t, 77, token.RemainQuota)
+					assert.Equal(t, 23, token.UsedQuota)
+					var rounds []model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).Find(&rounds).Error)
+					require.Len(t, rounds, 1, "input items cannot become billable response rounds")
+					assert.Equal(t, now, rounds[0].QualifiedAt)
+					require.NoError(t, model.RecoverMarketingUsage(context.Background(), 100))
+					logs, count, err := model.GetUserLogs(user.Id, model.LogFilter{}, 0, 10)
+					require.NoError(t, err)
+					require.EqualValues(t, 1, count)
+					require.Len(t, logs, 1)
+					assert.Equal(t, 23, logs[0].Quota)
+					return
+				}
+
+				if scenario == "realtime_metadata_capacity" {
+					metadata := map[string]any{}
+					for i := range 16 {
+						metadata[fmt.Sprintf("client_%02d", i)] = fmt.Sprint(i)
+					}
+					raw, err := common.Marshal(map[string]any{"type": "response.create", "response": map[string]any{"metadata": metadata}})
+					require.NoError(t, err)
+					forwarded, err := coordinator.ProcessClientEvent(raw, at)
+					require.NoError(t, err, "valid full metadata must not require a provider allowlist or lose a user field")
+					var sent map[string]any
+					require.NoError(t, common.Unmarshal(forwarded, &sent))
+					assert.Equal(t, metadata, sent["response"].(map[string]any)["metadata"])
+					require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"full-metadata"}}`), forwarded), at))
+					_, err = coordinator.ProcessClientEvent(raw, at)
+					require.ErrorIs(t, err, model.ErrMarketingConflict, "the same full fingerprint cannot identify two unfinished manual responses")
+					done := marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.done","response":{"id":"full-metadata","status":"completed","usage":{"total_tokens":30,"input_tokens":10,"output_tokens":20,"input_token_details":{"text_tokens":10},"output_token_details":{"text_tokens":20}}}}`), forwarded)
+					visible, err := coordinator.ProcessServerEvent(done, at)
+					require.NoError(t, err)
+					var received map[string]any
+					require.NoError(t, common.Unmarshal(visible, &received))
+					assert.Equal(t, metadata, received["response"].(map[string]any)["metadata"])
+					secondCreate, err := coordinator.ProcessClientEvent(raw, at)
+					require.NoError(t, err, "a terminal response with stable identity makes the same full metadata reusable")
+					require.NoError(t, coordinator.ServerEvent(done, at), "late first terminal must retain its own response identity while second is pending")
+					assert.EqualValues(t, 30, session.funding.SettledQuota)
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"full-metadata-second"}}`), at))
+					secondDone := marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.done","response":{"id":"full-metadata-second","status":"completed","usage":{"total_tokens":5,"input_tokens":5,"output_tokens":0,"input_token_details":{"text_tokens":5}}}}`), secondCreate)
+					require.NoError(t, coordinator.Close("lost socket before second full-metadata terminal"))
+					assert.Equal(t, "review", session.funding.State)
+					recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, secondDone, at)
+					require.NoError(t, err, "metadata-only correlation must survive process loss and preserve the newer intent")
+					assert.Equal(t, "settled", recovered.State)
+					assert.EqualValues(t, 35, recovered.SettledQuota)
+					replayed, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, done, at)
+					require.NoError(t, err, "an old full-metadata terminal remains tied to its persisted response")
+					assert.Equal(t, recovered.Revision, replayed.Revision)
+					assert.EqualValues(t, 35, replayed.SettledQuota)
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 85, user.Quota)
+					var rounds []model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ? AND observed = ?", session.funding.ID, false).Order("id").Find(&rounds).Error)
+					require.Len(t, rounds, 2)
+					assert.NotEqual(t, rounds[0].ReferenceKey, rounds[1].ReferenceKey, "a repeated fingerprint must create a genuinely new durable intent")
+					return
+				}
+				if scenario == "realtime_terminal_metadata" {
+					// The supplier promises metadata at done, not necessarily at created.
+					// An intervening automatic reply must never take the earlier gift.
+					create, err := coordinator.ProcessClientEvent([]byte(`{"type":"response.create","response":{"metadata":{"_silvermoon_request":"client-owned","label":"preserve"}}}`), at.Add(-2*time.Second))
+					require.NoError(t, err)
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"auto-between"}}`), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"auto-between","status":"completed","usage":{"total_tokens":5,"input_tokens":5,"output_tokens":0,"input_token_details":{"text_tokens":5}}}}`), at))
+					var gift model.MarketingGift
+					require.NoError(t, db.Where("user_id = ?", user.Id).First(&gift).Error)
+					assert.Zero(t, gift.ConsumedQuota, "automatic response cannot take the pending manual round's gift")
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 95, user.Quota, "automatic actual usage settles even while manual create awaits correlation")
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"manual-late"}}`), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.output_text.delta","response_id":"manual-late","delta":"hi"}`), at))
+					done := marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.done","response":{"id":"manual-late","status":"completed","usage":{"total_tokens":30,"input_tokens":10,"output_tokens":20,"input_token_details":{"text_tokens":10},"output_token_details":{"text_tokens":20}}}}`), create)
+					forwarded, err := coordinator.ProcessServerEvent(done, at)
+					require.NoError(t, err)
+					var visible map[string]any
+					require.NoError(t, common.Unmarshal(forwarded, &visible))
+					assert.Equal(t, map[string]any{"_silvermoon_request": "client-owned", "label": "preserve"}, visible["response"].(map[string]any)["metadata"])
+					require.NoError(t, coordinator.ServerEvent(done, at))
+					require.NoError(t, coordinator.Close("terminal-only metadata correlation completed"))
+					assert.Equal(t, "settled", session.funding.State)
+					assert.EqualValues(t, 35, session.funding.SettledQuota)
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 85, user.Quota)
+					require.NoError(t, db.First(&gift, gift.ID).Error)
+					assert.EqualValues(t, 20, gift.ConsumedQuota)
+					var rounds []model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ? AND superseded_by = ?", session.funding.ID, 0).Order("response_order").Find(&rounds).Error)
+					require.Len(t, rounds, 2)
+					assert.Equal(t, now, rounds[0].QualifiedAt)
+					assert.Equal(t, now-2, rounds[1].QualifiedAt)
+					assert.True(t, rounds[1].OutputObserved, "late binding must preserve observed generation evidence")
+					return
+				}
+				if scenario == "realtime_automatic_expiry" {
+					// No client create or input timestamp exists for these idle replies.
+					// A duplicate notification cannot refresh or backdate the first start.
+					firstStart := []byte(`{"type":"response.created","response":{"id":"idle-first"}}`)
+					require.NoError(t, coordinator.ServerEvent(firstStart, at.Add(-2*time.Second)))
+					require.NoError(t, coordinator.ServerEvent(firstStart, at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"idle-first","status":"completed","usage":{"total_tokens":15,"input_tokens":5,"output_tokens":10,"input_token_details":{"text_tokens":5},"output_token_details":{"text_tokens":10}}}}`), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.created","response":{"id":"idle-second"}}`), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"idle-second","status":"completed","usage":{"total_tokens":25,"input_tokens":5,"output_tokens":20,"input_token_details":{"text_tokens":5},"output_token_details":{"text_tokens":20}}}}`), at))
+					require.NoError(t, coordinator.Close("both idle responses completed"))
+					assert.Equal(t, "settled", session.funding.State)
+					assert.EqualValues(t, 40, session.funding.SettledQuota)
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 75, user.Quota, "expired gift cannot fund the second automatic response")
+					var gift model.MarketingGift
+					require.NoError(t, db.Where("user_id = ?", user.Id).First(&gift).Error)
+					assert.EqualValues(t, 15, gift.ConsumedQuota)
+					var rounds []model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).Order("id").Find(&rounds).Error)
+					require.Len(t, rounds, 2)
+					assert.Equal(t, now-2, rounds[0].QualifiedAt)
+					assert.Equal(t, now, rounds[1].QualifiedAt)
+					return
+				}
+				if scenario == "realtime_buffer_zero" {
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.append","audio":""}`), at))
+					require.NoError(t, coordinator.Close("socket lost before any final usage"))
+					assert.Equal(t, "review", session.funding.State)
+					assert.False(t, session.funding.CostKnown)
+					return
+				}
+				if scenario == "realtime_pending_input" {
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.append","audio":"AAAA"}`), at))
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.commit"}`), at))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"input_audio_buffer.committed","item_id":"input-A"}`), at))
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.append","audio":"AAAA"}`), at))
+				}
+				if scenario == "realtime_pipelined_commit" {
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.append","audio":"AAAA"}`), at))
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"input_audio_buffer.commit"}`), at))
+				}
+				forwardedCreate, err := coordinator.ProcessClientEvent([]byte(`{"type":"response.create"}`), at)
+				require.NoError(t, err)
+				if scenario == "realtime_pipelined_commit" {
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"input_audio_buffer.committed","item_id":"input-A"}`), at))
+				}
+
+				require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"first"}}`), forwardedCreate), at))
+				terminal := []byte(`{"type":"response.done","response":{"id":"first","status":"completed","usage":{"total_tokens":30,"input_tokens":10,"output_tokens":20,"input_token_details":{"text_tokens":10},"output_token_details":{"text_tokens":20}}}}`)
+				if scenario == "realtime_cancelled_usage" {
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.output_text.delta","response_id":"first","delta":"hello"}`), at))
+					require.NoError(t, coordinator.ClientEvent([]byte(`{"type":"response.cancel","response_id":"first"}`), at))
+					terminal = []byte(`{"type":"response.done","response":{"id":"first","status":"cancelled","status_details":{"type":"cancelled","reason":"client_cancelled"},"usage":{"total_tokens":30,"input_tokens":10,"output_tokens":20,"input_token_details":{"text_tokens":10},"output_token_details":{"text_tokens":20}}}}`)
+				}
+
+				if scenario == "realtime_audio_mismatch" {
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.output_audio.delta","response_id":"first","delta":"AAAA"}`), at))
+					require.ErrorIs(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"first","status":"completed","usage":{"total_tokens":1,"input_tokens":0,"output_tokens":1,"output_token_details":{"text_tokens":1,"audio_tokens":0}}}}`), at), model.ErrMarketingReview)
+					require.NoError(t, coordinator.Close("audio output contradicts text-only usage"))
+					var round model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).First(&round).Error)
+					assert.True(t, round.AudioOutputObserved)
+					assert.True(t, round.Unknown)
+					assert.Equal(t, "review", session.funding.State)
+					return
+				}
+				if scenario == "realtime_pipelined_commit" {
+					require.NoError(t, coordinator.ServerEvent(terminal, at))
+					require.NoError(t, coordinator.Close("pipelined commit completed"))
+					assert.False(t, session.funding.RealtimeInputPending)
+					assert.Equal(t, "settled", session.funding.State)
+					assert.EqualValues(t, 30, session.funding.SettledQuota)
+					return
+				}
+				if scenario == "realtime_output_zero" {
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.output_text.delta","response_id":"first","delta":"hello"}`), at))
+					require.ErrorIs(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"first","status":"completed","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}}}`), at), model.ErrMarketingReview)
+					require.NoError(t, coordinator.Close("contradictory supplier usage"))
+					assert.Equal(t, "review", session.funding.State)
+					var round model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).First(&round).Error)
+					assert.True(t, round.OutputObserved)
+					assert.True(t, round.Unknown)
+					return
+				}
+				if scenario == "realtime_pricing_failure" {
+					require.Error(t, coordinator.ServerEvent(terminal, at))
+					var round model.MarketingRealtimeRound
+					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).First(&round).Error)
+					assert.Contains(t, round.UsageJSON, `"total_tokens":30`, "pricing failure must not rollback supplier facts")
+					require.NoError(t, coordinator.Close("pricing failure with durable facts"))
+					assert.Equal(t, "review", session.funding.State)
+					return
+				}
+				if scenario == "realtime_pending_input" {
+					require.NoError(t, coordinator.ServerEvent(terminal, at))
+					require.NoError(t, coordinator.Close("input B has no final usage"))
+					assert.Equal(t, "review", session.funding.State)
+					assert.True(t, session.funding.RealtimeInputPending)
+					return
+				}
+				if scenario == "realtime_unknown_late" {
+					require.ErrorIs(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"first","status":"cancelled"}}`), at), model.ErrMarketingReview)
+					require.NoError(t, coordinator.Close("socket lost without final usage"))
+					assert.Equal(t, "review", session.funding.State)
+					// Recovery cannot depend on the lost socket's in-memory maps or
+					// accept a new owner, response identity, or caller-selected price.
+					_, err = ReconcileMarketingRealtimeResponse(user.Id+100000, session.funding.ID, terminal, at)
+					require.Error(t, err)
+					_, err = ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, []byte(`{"type":"response.done","response":{"id":"unknown-new-response","status":"completed","usage":{"total_tokens":0,"input_tokens":0,"output_tokens":0}}}`), at)
+					require.Error(t, err)
+					recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, terminal, at)
+					require.NoError(t, err)
+					assert.Equal(t, "settled", recovered.State)
+					assert.EqualValues(t, 30, recovered.SettledQuota)
+					repeated, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, terminal, at)
+					require.NoError(t, err)
+					assert.Equal(t, recovered.Revision, repeated.Revision)
+					assert.Equal(t, recovered.SettledQuota, repeated.SettledQuota)
+					session.funding = *recovered
+				} else {
+					require.NoError(t, coordinator.ServerEvent(terminal, at))
+					require.NoError(t, coordinator.ServerEvent(terminal, at.Add(time.Millisecond)))
+					forwardedCreate, err = coordinator.ProcessClientEvent([]byte(`{"type":"response.create"}`), at)
+					require.NoError(t, err)
+					require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"second"}}`), forwardedCreate), at))
+					require.NoError(t, coordinator.ServerEvent(terminal, at.Add(time.Millisecond)))
+					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"second","status":"completed","usage":{"total_tokens":5,"input_tokens":5,"output_tokens":0,"input_token_details":{"text_tokens":5},"output_token_details":{"text_tokens":0}}}}`), at))
+					require.NoError(t, coordinator.Close("client closed after final usage"))
+					assert.Equal(t, "settled", session.funding.State)
+					assert.EqualValues(t, 35, session.funding.SettledQuota)
+					assert.Equal(t, 35, coordinator.Usage().TotalTokens)
+				}
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 100-int(session.funding.SettledQuota-20), user.Quota)
+				require.NoError(t, model.RecoverMarketingUsage(context.Background(), 100))
+				var identities int64
+				require.NoError(t, db.Model(&model.Log{}).Where("request_id = ?", info.RequestId).Distinct("usage_event_id").Count(&identities).Error)
+				assert.EqualValues(t, 1, identities, "one logical connection usage entry")
 			case "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done":
 				require.NoError(t, session.BeginDispatch())
 				usage := &dto.Usage{PromptTokens: 20, CompletionTokens: 20, TotalTokens: 40}
@@ -2130,4 +2524,19 @@ func TestMarketingPricingEvidenceKeepsBillingScalarsWithoutRequestSecrets(t *tes
 		assert.NotContains(t, encoded, secret)
 	}
 	assert.Contains(t, encoded, "fast-mode")
+}
+
+// The fixture echoes the metadata actually sent by the gateway. It does not
+// assume that the next response belongs to a pending client create.
+func marketingRealtimeFixtureEcho(t *testing.T, response, create []byte) []byte {
+	t.Helper()
+	var sent, received map[string]any
+	require.NoError(t, common.Unmarshal(create, &sent))
+	require.NoError(t, common.Unmarshal(response, &received))
+	request, ok := sent["response"].(map[string]any)
+	require.True(t, ok)
+	received["response"].(map[string]any)["metadata"] = request["metadata"]
+	encoded, err := common.Marshal(received)
+	require.NoError(t, err)
+	return encoded
 }

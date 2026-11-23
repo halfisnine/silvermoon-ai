@@ -47,7 +47,7 @@ func main() {
 	must(err)
 	defer sqlDB.Close()
 	candidate := os.Args[3] == "candidate"
-	for _, table := range []string{"marketing_v2_accounts", "marketing_v2_payments", "marketing_v2_gifts", "marketing_v2_funding", "marketing_v2_allocations", "marketing_v2_ledger", "marketing_v2_token_holds", "marketing_v2_funding_operations", "marketing_v2_debits", "marketing_v2_dispatches", "marketing_v2_usage_projections"} {
+	for _, table := range []string{"marketing_v2_accounts", "marketing_v2_payments", "marketing_v2_gifts", "marketing_v2_funding", "marketing_v2_allocations", "marketing_v2_ledger", "marketing_v2_token_holds", "marketing_v2_funding_operations", "marketing_v2_debits", "marketing_v2_dispatches", "marketing_v2_usage_projections", "marketing_v2_realtime_rounds", "marketing_v2_realtime_events"} {
 		if model.DB.Migrator().HasTable(table) != candidate {
 			panic("unexpected migration state for " + table)
 		}

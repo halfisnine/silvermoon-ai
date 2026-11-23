@@ -89,27 +89,31 @@ type MarketingGift struct {
 func (MarketingGift) TableName() string { return "marketing_v2_gifts" }
 
 type MarketingFunding struct {
-	ID              int64  `gorm:"primaryKey"`
-	RequestKey      string `gorm:"size:64;not null;uniqueIndex"`
-	PayloadHash     string `gorm:"size:64;not null"`
-	PricingEvidence string `gorm:"type:text;not null"`
-	UsageEvidence   string `gorm:"type:text;not null"`
-	ReviewReason    string `gorm:"size:64;not null"`
-	CostKnown       bool   `gorm:"not null"`
-	FinalObserved   bool   `gorm:"not null"`
-	UserID          int    `gorm:"not null;index"`
-	TokenID         int    `gorm:"not null"`
-	QualifiedAt     int64  `gorm:"not null"`
-	ReservedQuota   int64  `gorm:"not null"`
-	ActualQuota     int64  `gorm:"not null"`
-	SettledQuota    int64  `gorm:"not null"`
-	Revision        int64  `gorm:"not null"`
-	State           string `gorm:"size:24;not null"`
+	Realtime             bool   `gorm:"not null"`
+	RealtimeClosed       bool   `gorm:"not null"`
+	RealtimeInputPending bool   `gorm:"not null"`
+	ID                   int64  `gorm:"primaryKey"`
+	RequestKey           string `gorm:"size:64;not null;uniqueIndex"`
+	PayloadHash          string `gorm:"size:64;not null"`
+	PricingEvidence      string `gorm:"type:text;not null"`
+	UsageEvidence        string `gorm:"type:text;not null"`
+	ReviewReason         string `gorm:"size:64;not null"`
+	CostKnown            bool   `gorm:"not null"`
+	FinalObserved        bool   `gorm:"not null"`
+	UserID               int    `gorm:"not null;index"`
+	TokenID              int    `gorm:"not null"`
+	QualifiedAt          int64  `gorm:"not null"`
+	ReservedQuota        int64  `gorm:"not null"`
+	ActualQuota          int64  `gorm:"not null"`
+	SettledQuota         int64  `gorm:"not null"`
+	Revision             int64  `gorm:"not null"`
+	State                string `gorm:"size:24;not null"`
 }
 
 func (MarketingFunding) TableName() string { return "marketing_v2_funding" }
 
 type MarketingAllocation struct {
+	RoundID       int64 `gorm:"not null;uniqueIndex:idx_mv2_allocation_source,priority:3"`
 	ID            int64 `gorm:"primaryKey"`
 	FundingID     int64 `gorm:"not null;uniqueIndex:idx_mv2_allocation_source,priority:1"`
 	GiftID        int64 `gorm:"not null;uniqueIndex:idx_mv2_allocation_source,priority:2"` // 0 = paid source.
@@ -135,7 +139,7 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{})
+	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{})
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion

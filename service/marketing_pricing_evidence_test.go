@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -148,4 +150,48 @@ func TestMarketingPricingEvidencePreservesTaskAndImageQuantities(t *testing.T) {
 	restored, err = ReplayMarketingTieredPricing(encoded, billingexpr.TokenParams{}, nil, nil, &actual)
 	require.NoError(t, err)
 	assert.Equal(t, 300, restored.ActualQuotaAfterGroup)
+}
+
+func TestMarketingRealtimeUsageEvidenceAndCumulativePricing(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"input_tokens":0,"output_tokens":0}`, `{"input_tokens":-1,"output_tokens":1,"total_tokens":0}`, `{"input_tokens":1,"output_tokens":2,"total_tokens":4}`, `{"input_tokens":1,"output_tokens":0,"total_tokens":1,"input_token_details":{"audio_tokens":2}}`} {
+		_, err := ParseMarketingRealtimeUsage([]byte(raw))
+		require.Error(t, err)
+	}
+	zero, err := ParseMarketingRealtimeUsage([]byte(`{"input_tokens":0,"output_tokens":0,"total_tokens":0}`))
+	require.NoError(t, err)
+	assert.Zero(t, zero.TotalTokens)
+	first, err := ParseMarketingRealtimeUsage([]byte(`{"input_tokens":100,"output_tokens":20,"total_tokens":120,"input_token_details":{"text_tokens":40,"audio_tokens":60,"cached_tokens":10,"cached_tokens_details":{"text_tokens":4,"audio_tokens":6}},"output_token_details":{"text_tokens":5,"audio_tokens":15}}`))
+	require.NoError(t, err)
+	total, err := SumMarketingRealtimeUsage([]dto.RealtimeUsage{*first, *first})
+	require.NoError(t, err)
+	assert.Equal(t, 240, total.TotalTokens)
+	assert.Equal(t, 12, *total.InputTokenDetails.CachedTokensDetails.AudioTokens)
+	*total.InputTokenDetails.CachedTokensDetails.AudioTokens = 1
+	assert.Equal(t, 6, *first.InputTokenDetails.CachedTokensDetails.AudioTokens)
+	total, err = SumMarketingRealtimeUsage([]dto.RealtimeUsage{*first, *first})
+	require.NoError(t, err)
+	_, err = SumMarketingRealtimeUsage([]dto.RealtimeUsage{{InputTokens: math.MaxInt32, TotalTokens: math.MaxInt32}, *first})
+	require.Error(t, err)
+	expression := `len <= 100 ? tier("first", p * 10 + ai * 20 + c * 30 + ao * 40) : tier("discount", p + ai + c + ao)`
+	info := &relaycommon.RelayInfo{TieredBillingSnapshot: &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: 1_000_000, GroupRatio: 1}}
+	pricing, err := marketingPricingEvidence(info)
+	require.NoError(t, err)
+	at := time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+	before, err := PriceMarketingRealtimeUsage(pricing, *first, at)
+	require.NoError(t, err)
+	after, err := PriceMarketingRealtimeUsage(pricing, total, at)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2350), before)
+	assert.Equal(t, int64(240), after)
+	assert.Equal(t, 240, total.TotalTokens, "repricing does not erase actual tokens")
+}
+
+func TestMarketingRealtimeRatioPricingIgnoresUnusedFixedPriceSentinel(t *testing.T) {
+	info := &relaycommon.RelayInfo{PriceData: hosttypes.PriceData{ModelPrice: -1, ModelRatio: 1, CompletionRatio: 1, AudioRatio: 1, AudioCompletionRatio: 1, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+	pricing, err := marketingPricingEvidence(info)
+	require.NoError(t, err)
+	usage := dto.RealtimeUsage{InputTokens: 10, OutputTokens: 20, TotalTokens: 30, InputTokenDetails: dto.InputTokenDetails{TextTokens: 10}, OutputTokenDetails: dto.OutputTokenDetails{TextTokens: 20}}
+	cost, err := PriceMarketingRealtimeUsage(pricing, usage, time.Now())
+	require.NoError(t, err)
+	assert.EqualValues(t, 30, cost)
 }
