@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/go-sql-driver/mysql"
 	"gorm.io/gorm"
 )
 
-// WithMarketingTransaction retries the whole rolled-back transaction only for
-// SQLite lock contention. Callers must use stable business keys and keep network
-// calls outside fn. An ambiguous commit or business error is never retried here.
+// WithMarketingTransaction retries whole transactions after SQLite lock
+// contention or a confirmed MySQL deadlock rollback. Callers must use stable
+// business keys and keep network calls outside fn. An ambiguous commit, lock
+// timeout, connection failure or business error is never retried here.
 func WithMarketingTransaction(ctx context.Context, fn func(*gorm.DB) error) error {
 	if DB == nil {
 		return ErrMarketingTransaction
@@ -24,15 +26,24 @@ func WithMarketingTransaction(ctx context.Context, fn func(*gorm.DB) error) erro
 			return err
 		}
 		err := DB.WithContext(ctx).Transaction(fn)
-		if err == nil || !common.UsingMainDatabase(common.DatabaseTypeSQLite) || attempt == 3 {
+		if err == nil || attempt == 3 {
 			return err
 		}
-		var sqliteError interface{ Code() int }
-		if !errors.As(err, &sqliteError) || (sqliteError.Code()&0xff != 5 && sqliteError.Code()&0xff != 6) {
+		retry := false
+		switch common.MainDatabaseType() {
+		case common.DatabaseTypeSQLite:
+			var sqliteError interface{ Code() int }
+			retry = errors.As(err, &sqliteError) && (sqliteError.Code()&0xff == 5 || sqliteError.Code()&0xff == 6)
+		case common.DatabaseTypeMySQL:
+			var mysqlError *mysql.MySQLError
+			// InnoDB rolls back the complete victim transaction for 1213.
+			// 1205 may roll back only the waiting statement, so it is excluded.
+			retry = errors.As(err, &mysqlError) && mysqlError.Number == 1213
+		}
+		if !retry {
 			return err
 		}
-		// BUSY (5), including BUSY_SNAPSHOT, and LOCKED (6) mean the
-		// transaction could not complete. Never retry only its final write.
+		// Retry all reads and writes together, never only the failed statement.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

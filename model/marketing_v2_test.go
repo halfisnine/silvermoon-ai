@@ -18,6 +18,59 @@ import (
 )
 
 func TestMarketingMoneyConversion(t *testing.T) {
+	t.Run("reward_bases_and_single_rounding", func(t *testing.T) {
+		base := MarketingMoneySnapshot{Amount: "100", QuotaPerUnit: "50", CurrencyPerUnit: "1", Currency: "CNY"}
+		data, err := common.Marshal(base)
+		require.NoError(t, err)
+		payment := MarketingPayment{ID: 1, PaidCents: 20000, CreditedQuota: 5000, Conversion: string(data)}
+		for _, tc := range []struct {
+			name, mode, ratio string
+			want              int64
+		}{
+			{"fixed_face_value", "fixed", "", 5000},
+			{"credited_paid_not_cash", "paid_ratio", "0.1", 500},
+			{"actual_cash_not_credited", "cash_ratio", "0.1", 1000},
+			{"small_ratio_records_zero", "paid_ratio", "0.000001", 0},
+			{"fraction_rounds_half_up", "paid_ratio", "0.0001", 1},
+			{"larger_than_paid_is_not_an_implicit_cap", "paid_ratio", "2", 10000},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				amount, err := CalculateMarketingRewardAmount(tc.mode, tc.ratio, base, &payment)
+				require.NoError(t, err)
+				assert.Equal(t, tc.want, amount.Quota)
+				if tc.mode != "fixed" {
+					assert.Equal(t, payment.ID, amount.PaymentID)
+					assert.Equal(t, int64(20000), amount.PaidCents)
+					assert.Equal(t, int64(5000), amount.CreditedQuota)
+				}
+			})
+		}
+		for _, ratio := range []string{"0", "-1", "NaN", "1e8", "0.1234567890123", "9999999999999999"} {
+			_, err := CalculateMarketingRewardAmount("paid_ratio", ratio, base, &payment)
+			require.ErrorIs(t, err, ErrMarketingInput, ratio)
+		}
+		wrong := payment
+		wrong.CreditedQuota++
+		_, err = CalculateMarketingRewardAmount("paid_ratio", "0.1", base, &wrong)
+		require.ErrorIs(t, err, ErrMarketingInput)
+		_, err = CalculateMarketingRewardAmount("cash_ratio", "0.1", MarketingMoneySnapshot{Currency: "USD", QuotaPerUnit: "50", CurrencyPerUnit: "1"}, &payment)
+		require.ErrorIs(t, err, ErrMarketingInput)
+		cny := MarketingMoneySnapshot{Currency: "CNY", QuotaPerUnit: "500000", CurrencyPerUnit: "7.3"}
+		payment.PaidCents = 10000
+		amount, err := CalculateMarketingRewardAmount("cash_ratio", "0.05", cny, &payment)
+		require.NoError(t, err)
+		assert.Equal(t, int64(342466), amount.Quota)
+		// One resulting quota cannot be represented by a 12-decimal display
+		// amount at this valid rate. Credited-paid ratios must not round twice.
+		extreme := MarketingMoneySnapshot{Currency: "CNY", Amount: "0.000000000001", QuotaPerUnit: "9999999999999999", CurrencyPerUnit: "1"}
+		data, err = common.Marshal(extreme)
+		require.NoError(t, err)
+		payment.Conversion, payment.CreditedQuota = string(data), 10000
+		amount, err = CalculateMarketingRewardAmount("paid_ratio", "0.0001", MarketingMoneySnapshot{}, &payment)
+		require.NoError(t, err)
+		assert.Equal(t, int64(1), amount.Quota)
+		assert.Equal(t, extreme, amount.Money)
+	})
 	for _, tc := range []struct {
 		name, amount, quota, rate string
 		want                      int64

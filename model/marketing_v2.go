@@ -139,7 +139,7 @@ type MarketingLedgerEntry struct {
 func (MarketingLedgerEntry) TableName() string { return "marketing_v2_ledger" }
 
 func migrateMarketingV2(db *gorm.DB) error {
-	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{})
+	return db.AutoMigrate(&MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{}, &MarketingActivity{}, &MarketingActivityOperation{}, &MarketingInvitation{}, &MarketingActivityFact{}, &MarketingActivityProgress{}, &MarketingActivityDecision{}, &MarketingActivityReward{}, &MarketingActivityDeliveryCursor{})
 }
 
 // MarketingMoneySnapshot stores the display amount and its actual conversion
@@ -335,12 +335,28 @@ func CreditMarketingPayment(tx *gorm.DB, input MarketingPaymentInput) (*Marketin
 	if err = tx.Create(&ledger).Error; err != nil {
 		return nil, err
 	}
+	if _, err = CaptureMarketingPaymentFact(tx, &event); err != nil {
+		return nil, err
+	}
 	return &event, nil
 }
 
 // GrantMarketingGift immediately makes a finite gift available, independently
 // of users.quota. Retries must use the originally committed grant time/rates.
 func GrantMarketingGift(tx *gorm.DB, input MarketingGiftInput) (*MarketingGift, error) {
+	quota, err := input.Money.Quota()
+	if err != nil {
+		return nil, err
+	}
+	return grantMarketingGift(tx, input, quota, input, input.Money)
+}
+
+// grantMarketingGift persists an already validated fixed or calculated gift.
+// Both entry points share the same source identity, wallet bound and ledger.
+func grantMarketingGift(tx *gorm.DB, input MarketingGiftInput, quota int64, digestEvidence, conversionEvidence any) (*MarketingGift, error) {
+	if quota <= 0 || quota > common.MaxWalletQuota {
+		return nil, ErrMarketingInput
+	}
 	switch input.Kind {
 	case "registration", "checkin", "recharge", "invitation", "lottery", "admin_gift":
 	default:
@@ -349,15 +365,11 @@ func GrantMarketingGift(tx *gorm.DB, input MarketingGiftInput) (*MarketingGift, 
 	if input.GrantedAt <= 0 || input.ExpiresAt < 0 || (input.ExpiresAt != 0 && input.ExpiresAt <= input.GrantedAt) {
 		return nil, ErrMarketingInput
 	}
-	quota, err := input.Money.Quota()
-	if err != nil {
-		return nil, err
-	}
 	key, err := marketingSourceKey(input.Kind, input.Reference)
 	if err != nil {
 		return nil, err
 	}
-	hash, err := marketingDigest(input)
+	hash, err := marketingDigest(digestEvidence)
 	if err != nil {
 		return nil, err
 	}
@@ -394,7 +406,7 @@ func GrantMarketingGift(tx *gorm.DB, input MarketingGiftInput) (*MarketingGift, 
 	if remaining < 0 || remaining > common.MaxWalletQuota-quota || account.Revision == math.MaxInt64 {
 		return nil, ErrMarketingInput
 	}
-	conversion, err := common.Marshal(input.Money)
+	conversion, err := common.Marshal(conversionEvidence)
 	if err != nil {
 		return nil, err
 	}

@@ -21,7 +21,7 @@ def build():
 
 
 def run(package="model"):
-    test_filter = "^TestMarketing(MoneyConversion|Persistence|Lottery)$" if package == "model" else "^TestMarketingBillingSessionLifecycle$"
+    test_filter = "^TestMarketing(MoneyConversion|Persistence|Lottery|Activity)$" if package == "model" else "^TestMarketingBillingSessionLifecycle$"
     command = [
         'docker', 'run', '--rm', '--pull=never', '--cpus=2', '--memory=3g', '--memory-swap=3g',
         '--network', 'silvermoon-marketing-v2_default',

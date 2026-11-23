@@ -418,10 +418,26 @@ func MutateMarketingLotteryPool(tx *gorm.DB, actorID int, poolID int64, referenc
 }
 
 func IssueMarketingLotteryChances(tx *gorm.DB, userID int, poolID int64, reference string, count, now int64) (*MarketingLotteryIssue, error) {
+	return issueMarketingLotteryChances(tx, userID, poolID, reference, count, now, 0)
+}
+
+// AtCapacity freezes the eligible issuance tranche of an earlier activity fact.
+// It reserves nothing before qualification and never spends later-added slots.
+func IssueMarketingLotteryChancesAtCapacity(tx *gorm.DB, userID int, poolID int64, reference string, count, now, capacity int64) (*MarketingLotteryIssue, error) {
+	if capacity <= 0 {
+		return nil, ErrMarketingInput
+	}
+	return issueMarketingLotteryChances(tx, userID, poolID, reference, count, now, capacity)
+}
+func issueMarketingLotteryChances(tx *gorm.DB, userID int, poolID int64, reference string, count, now, capacity int64) (*MarketingLotteryIssue, error) {
 	if count <= 0 || now <= 0 {
 		return nil, ErrMarketingInput
 	}
-	if err := lockMarketingLotteryActor(tx, userID, false); err != nil {
+	if capacity > 0 {
+		if err := lockMarketingActivityUsers(tx, []int{userID}); err != nil {
+			return nil, err
+		}
+	} else if err := lockMarketingLotteryActor(tx, userID, false); err != nil {
 		return nil, err
 	}
 	pool, err := lockMarketingLotteryPool(tx, poolID)
@@ -438,6 +454,15 @@ func IssueMarketingLotteryChances(tx *gorm.DB, userID int, poolID int64, referen
 	}{userID, poolID, count})
 	if err != nil {
 		return nil, err
+	}
+	if capacity > 0 {
+		hash, err = marketingDigest(struct {
+			UserID                  int
+			PoolID, Count, Capacity int64
+		}{userID, poolID, count, capacity})
+		if err != nil {
+			return nil, err
+		}
 	}
 	var issue MarketingLotteryIssue
 	err = lockForUpdate(tx).Where("source_key = ?", key).First(&issue).Error
@@ -456,7 +481,11 @@ func IssueMarketingLotteryChances(tx *gorm.DB, userID int, poolID int64, referen
 	if now >= pool.EndsAt {
 		return nil, ErrMarketingAccess
 	}
-	if count <= pool.Capacity-pool.Issued {
+	available := pool.Capacity - pool.Issued
+	if capacity > 0 {
+		available = min(pool.Capacity, capacity) - pool.Issued
+	}
+	if count <= available {
 		issue.State = "issued"
 	}
 	if err := tx.Create(&issue).Error; err != nil {
