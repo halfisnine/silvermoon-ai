@@ -1,3 +1,5 @@
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -29,8 +31,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { toIntlLocale } from '@/i18n/languages'
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const calendarLocales = {
   en: enUS,
@@ -42,11 +48,16 @@ const calendarLocales = {
   vi,
 } as const
 
-interface DateTimePickerProps {
+interface DateTimePickerProps extends Omit<
+  React.ComponentProps<typeof Button>,
+  'value' | 'onChange' | 'children'
+> {
   value?: Date
   onChange?: (date: Date | undefined) => void
   placeholder?: string
   className?: string
+  timeZone?: string
+  displayFormat?: string
 }
 
 export function DateTimePicker({
@@ -54,24 +65,35 @@ export function DateTimePicker({
   onChange,
   placeholder,
   className,
+  displayFormat,
+  timeZone,
+  disabled,
+  ...triggerProps
 }: DateTimePickerProps) {
   const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.language)
   const placeholderText = placeholder ?? t('Select date')
   const calendarLocale =
     calendarLocales[i18n.language as keyof typeof calendarLocales] ?? enUS
   const currentYear = new Date().getFullYear()
   const [open, setOpen] = React.useState(false)
-  const [date, setDate] = React.useState<Date | undefined>(value)
-  const [month, setMonth] = React.useState<Date | undefined>(value)
+  const [date, setDate] = React.useState<Date | undefined>(() =>
+    pickerDate(value, timeZone)
+  )
+  const [month, setMonth] = React.useState<Date | undefined>(() =>
+    pickerDate(value, timeZone)
+  )
   const [time, setTime] = React.useState<string>('00:00:00')
+  const selectedDateText = dateLabel(date, displayFormat, locale)
 
   React.useEffect(() => {
-    setDate(value)
-    setMonth(value)
-    if (value) {
-      setTime(dayjs(value).format('HH:mm:ss'))
+    const displayed = pickerDate(value, timeZone)
+    setDate(displayed)
+    setMonth(displayed)
+    if (displayed) {
+      setTime(dayjs(displayed).format('HH:mm:ss'))
     }
-  }, [value])
+  }, [value, timeZone])
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
@@ -80,7 +102,7 @@ export function DateTimePicker({
       newDate.setHours(hours, minutes, seconds, 0)
       setDate(newDate)
       setMonth(newDate)
-      onChange?.(newDate)
+      onChange?.(pickerInstant(newDate, timeZone))
       setOpen(false)
     } else {
       setDate(undefined)
@@ -102,7 +124,7 @@ export function DateTimePicker({
       const newDate = new Date(date)
       newDate.setHours(hours, minutes, seconds, 0)
       setDate(newDate)
-      onChange?.(newDate)
+      onChange?.(pickerInstant(newDate, timeZone))
     }
   }
 
@@ -119,6 +141,9 @@ export function DateTimePicker({
         <PopoverTrigger
           render={
             <Button
+              {...triggerProps}
+              type='button'
+              disabled={disabled}
               variant='outline'
               className={cn(
                 'flex-1 justify-between font-normal',
@@ -127,7 +152,7 @@ export function DateTimePicker({
             />
           }
         >
-          {date ? dayjs(date).format('YYYY-MM-DD') : placeholderText}
+          {date ? selectedDateText : placeholderText}
           <ChevronDownIcon className='h-4 w-4 opacity-50' />
         </PopoverTrigger>
         <PopoverContent className='w-auto overflow-hidden p-0' align='start'>
@@ -151,7 +176,7 @@ export function DateTimePicker({
         aria-label={t('Time')}
         onChange={handleTimeChange}
         className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
-        disabled={!date}
+        disabled={disabled || !date}
       />
       {date && (
         <Button
@@ -160,11 +185,46 @@ export function DateTimePicker({
           size='icon'
           onClick={handleClear}
           className='shrink-0'
-          aria-label='Clear'
+          aria-label={t('Clear')}
+          disabled={disabled}
         >
           <span aria-hidden='true'>✕</span>
         </Button>
       )}
     </div>
   )
+}
+
+function dateLabel(
+  value: Date | undefined,
+  displayFormat: string | undefined,
+  locale: Intl.LocalesArgument | undefined
+): string {
+  if (!value) return ''
+  if (displayFormat) return dayjs(value).format(displayFormat)
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(value)
+}
+
+function pickerDate(
+  value: Date | undefined,
+  timeZone?: string
+): Date | undefined {
+  if (!value || !timeZone) return value
+  const zoned = dayjs(value).tz(timeZone)
+  return new Date(
+    zoned.year(),
+    zoned.month(),
+    zoned.date(),
+    zoned.hour(),
+    zoned.minute(),
+    zoned.second()
+  )
+}
+function pickerInstant(value: Date, timeZone?: string): Date {
+  if (!timeZone) return value
+  return dayjs.tz(dayjs(value).format('YYYY-MM-DD HH:mm:ss'), timeZone).toDate()
 }

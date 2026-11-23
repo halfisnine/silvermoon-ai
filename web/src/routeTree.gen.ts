@@ -40,6 +40,9 @@ import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authe
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
+import { Route as AuthenticatedMarketingAdminActivitiesRouteImport } from './routes/_authenticated/marketing-admin/activities'
+import { Route as AuthenticatedMarketingAdminPoolsRouteImport } from './routes/_authenticated/marketing-admin/pools'
+import { Route as AuthenticatedMarketingAdminRewardsRouteImport } from './routes/_authenticated/marketing-admin/rewards'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
@@ -231,6 +234,24 @@ const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   path: '/keys/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMarketingAdminActivitiesRoute =
+  AuthenticatedMarketingAdminActivitiesRouteImport.update({
+    id: '/marketing-admin/activities',
+    path: '/marketing-admin/activities',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMarketingAdminPoolsRoute =
+  AuthenticatedMarketingAdminPoolsRouteImport.update({
+    id: '/marketing-admin/pools',
+    path: '/marketing-admin/pools',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMarketingAdminRewardsRoute =
+  AuthenticatedMarketingAdminRewardsRouteImport.update({
+    id: '/marketing-admin/rewards',
+    path: '/marketing-admin/rewards',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -449,6 +470,9 @@ export interface FileRoutesByFullPath {
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -511,6 +535,9 @@ export interface FileRoutesByTo {
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -577,6 +604,9 @@ export interface FileRoutesById {
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/_authenticated/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/_authenticated/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -642,6 +672,9 @@ export interface FileRouteTypes {
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
+    | '/marketing-admin/activities'
+    | '/marketing-admin/pools'
+    | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -704,6 +737,9 @@ export interface FileRouteTypes {
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
+    | '/marketing-admin/activities'
+    | '/marketing-admin/pools'
+    | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -769,6 +805,9 @@ export interface FileRouteTypes {
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/marketing-admin/activities'
+    | '/_authenticated/marketing-admin/pools'
+    | '/_authenticated/marketing-admin/rewards'
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
@@ -1042,6 +1081,27 @@ declare module '@tanstack/react-router' {
       path: '/keys'
       fullPath: '/keys/'
       preLoaderRoute: typeof AuthenticatedKeysIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/activities': {
+      id: '/_authenticated/marketing-admin/activities'
+      path: '/marketing-admin/activities'
+      fullPath: '/marketing-admin/activities'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminActivitiesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/pools': {
+      id: '/_authenticated/marketing-admin/pools'
+      path: '/marketing-admin/pools'
+      fullPath: '/marketing-admin/pools'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminPoolsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/rewards': {
+      id: '/_authenticated/marketing-admin/rewards'
+      path: '/marketing-admin/rewards'
+      fullPath: '/marketing-admin/rewards'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminRewardsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/models/': {
@@ -1366,6 +1426,9 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedMarketingAdminActivitiesRoute: typeof AuthenticatedMarketingAdminActivitiesRoute
+  AuthenticatedMarketingAdminPoolsRoute: typeof AuthenticatedMarketingAdminPoolsRoute
+  AuthenticatedMarketingAdminRewardsRoute: typeof AuthenticatedMarketingAdminRewardsRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
@@ -1392,6 +1455,11 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedMarketingAdminActivitiesRoute:
+    AuthenticatedMarketingAdminActivitiesRoute,
+  AuthenticatedMarketingAdminPoolsRoute: AuthenticatedMarketingAdminPoolsRoute,
+  AuthenticatedMarketingAdminRewardsRoute:
+    AuthenticatedMarketingAdminRewardsRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,

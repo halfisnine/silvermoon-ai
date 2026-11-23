@@ -46,9 +46,11 @@ func TestPaidRedemptionAmountsUseTrustedSettings(t *testing.T) {
 			settings.QuotaDisplayType = tc.mode
 			settings.CustomCurrencySymbol = "¤"
 			settings.CustomCurrencyExchangeRate = tc.customRate
+			configuration, err := service.CurrentMarketingMoneyContext()
+			require.NoError(t, err)
 			spec, err := (paidRedemptionRequest{
 				Name: "Paid card", PaidAmountCNY: "0.01", CreditAmount: tc.amount,
-				CreditCurrency: tc.currency, SalesChannel: "shop", SalesBatch: "november",
+				CreditCurrency: tc.currency, MoneyRevision: configuration.Revision, SalesChannel: "shop", SalesBatch: "november",
 			}).saleSpec()
 			require.NoError(t, err)
 			assert.EqualValues(t, 1, spec.PaidCents, "sale proceeds never come from the wallet conversion")
@@ -74,6 +76,19 @@ func TestPaidRedemptionAmountsUseTrustedSettings(t *testing.T) {
 	settings.QuotaDisplayType = "CNY"
 	_, err = (paidRedemptionRequest{Name: "Card", PaidAmountCNY: "1", CreditAmount: "10", CreditCurrency: "USD"}).saleSpec()
 	require.Error(t, err, "stale browser currency cannot silently change the credited amount")
+
+	configuration, err := service.CurrentMarketingMoneyContext()
+	require.NoError(t, err)
+	request := paidRedemptionRequest{Name: "Paid", PaidAmountCNY: "1", CreditAmount: "2", CreditCurrency: "CNY", MoneyRevision: configuration.Revision, SalesChannel: "shop", SalesBatch: "batch"}
+	operation_setting.USDExchangeRate = 3
+	_, err = request.saleSpec()
+	require.Error(t, err, "same currency with changed exchange rate must reject the stale editor")
+	configuration, err = service.CurrentMarketingMoneyContext()
+	require.NoError(t, err)
+	request.MoneyRevision = configuration.Revision
+	common.QuotaPerUnit = 100000
+	_, err = request.saleSpec()
+	require.Error(t, err, "changed accounting conversion must reject the stale editor")
 	operation_setting.USDExchangeRate = 0
 	_, err = service.MarketingDisplayMoney("10")
 	require.Error(t, err, "invalid conversion cannot default to a fabricated rate")
@@ -171,6 +186,49 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			router.Use(middleware.RequestId())
 			router.POST("/api/redemption/batch", middleware.AdminAuth(), DeleteRedemptionBatch)
 
+			t.Run("display_and_current_authorization", func(t *testing.T) {
+				previousSettings := *operation_setting.GetGeneralSetting()
+				previousQuota, previousRate := common.QuotaPerUnit, operation_setting.USDExchangeRate
+				t.Cleanup(func() {
+					*operation_setting.GetGeneralSetting() = previousSettings
+					common.QuotaPerUnit, operation_setting.USDExchangeRate = previousQuota, previousRate
+				})
+				common.QuotaPerUnit, operation_setting.USDExchangeRate = 500000, 2.5
+				operation_setting.GetGeneralSetting().QuotaDisplayType = "CNY"
+				original := model.MarketingMoneySnapshot{Amount: "0.0002", Currency: "CNY", QuotaPerUnit: "500000", CurrencyPerUnit: "1"}
+				snapshot, err := common.Marshal(original)
+				require.NoError(t, err)
+				require.NoError(t, db.Model(&codes[0]).Updates(map[string]any{"paid_cents": 1, "credited_conversion": string(snapshot), "sales_channel": "shop", "sales_batch": "launch", "sales_evidence": "receipt"}).Error)
+				readRouter := gin.New()
+				// A stale session's cached admin role must never authorize the read.
+				readRouter.GET("/codes/:id", func(c *gin.Context) { c.Set("id", admin.Id); c.Set("role", common.RoleAdminUser) }, GetRedemption)
+				response := httptest.NewRecorder()
+				readRouter.ServeHTTP(response, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/codes/%d", codes[0].Id), nil))
+				var result struct {
+					Success bool               `json:"success"`
+					Data    paidRedemptionView `json:"data"`
+				}
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+				require.True(t, result.Success, response.Body.String())
+				assert.Equal(t, "0.01", result.Data.PaidAmountCNY)
+				assert.Equal(t, "0.0005", result.Data.CreditAmount)
+				assert.Equal(t, "0.0002", result.Data.OriginalCreditAmount)
+				assert.True(t, result.Data.SaleRegistered)
+				assert.Equal(t, "receipt", result.Data.SalesEvidence)
+				assert.NotEmpty(t, result.Data.MoneyRevision)
+				var envelope map[string]any
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &envelope))
+				fields := envelope["data"].(map[string]any)
+				for _, hidden := range []string{"quota", "paid_cents", "payment_id", "credited_conversion", "user_id", "used_user_id"} {
+					assert.NotContains(t, fields, hidden)
+				}
+				require.NoError(t, db.Model(&admin).Update("role", common.RoleCommonUser).Error)
+				response = httptest.NewRecorder()
+				readRouter.ServeHTTP(response, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/codes/%d", codes[0].Id), nil))
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+				assert.False(t, result.Success)
+				require.NoError(t, db.Model(&admin).Update("role", common.RoleAdminUser).Error)
+			})
 			overLimit := make([]int, 1001)
 			for index := range overLimit {
 				overLimit[index] = codes[0].Id

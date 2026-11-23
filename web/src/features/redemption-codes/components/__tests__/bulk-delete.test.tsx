@@ -36,15 +36,24 @@ import { RedemptionsProvider, useRedemptions } from '../redemptions-provider'
 
 const codes: Redemption[] = [11, 22, 33].map((id) => ({
   id,
-  user_id: 1,
   name: `code-${id}`,
   key: `key-${id}`,
   status: 1,
-  quota: 100,
+  money_revision: 'display-v1',
+  credit_amount: '1',
+  credit_currency: 'CNY',
+  paid_amount_cny: '1',
+  original_credit_amount: '1',
+  original_credit_currency: 'CNY',
+  sales_channel: 'shop',
+  sales_batch: 'batch',
+  sales_evidence: '',
+  sale_registered: true,
+  redeemed: false,
+  used_user_name: '',
   created_time: 1,
   redeemed_time: 0,
   expired_time: 0,
-  used_user_id: 0,
 }))
 const columns = [{ accessorKey: 'name' }]
 const clients: QueryClient[] = []

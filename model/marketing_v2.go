@@ -144,6 +144,9 @@ func migrateMarketingV2(db *gorm.DB) error {
 	if err := db.AutoMigrate(&MarketingFactSequence{}, &MarketingMaintenanceOperation{}, &MarketingAccount{}, &MarketingPayment{}, &MarketingGift{}, &MarketingFunding{}, &MarketingAllocation{}, &MarketingLedgerEntry{}, &MarketingTokenHold{}, &MarketingFundingOperation{}, &MarketingDebit{}, &MarketingDispatch{}, &MarketingUsageProjection{}, &MarketingRealtimeRound{}, &MarketingRealtimeEvent{}, &MarketingLotteryPool{}, &MarketingLotteryPrize{}, &MarketingLotteryIssue{}, &MarketingLotteryChance{}, &MarketingLotteryDraw{}, &MarketingLotteryAward{}, &MarketingLotteryOperation{}, &MarketingActivity{}, &MarketingActivityOperation{}, &MarketingInvitation{}, &MarketingActivityFact{}, &MarketingActivityProgress{}, &MarketingActivityDecision{}, &MarketingActivityReward{}, &MarketingActivityDeliveryCursor{}, &MarketingCheckinDay{}, &MarketingCheckinClaim{}); err != nil {
 		return err
 	}
+	if err := BackfillMarketingAdminGroups(db); err != nil {
+		return err
+	}
 	return initializeMarketingFactSequence(db)
 }
 

@@ -27,6 +27,7 @@ import {
   DataTablePage,
   useDataTable,
 } from '@/components/data-table'
+import { ErrorState } from '@/components/error-state'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { createServerError } from '@/lib/server-error-message'
@@ -81,7 +82,7 @@ export function RedemptionsTable() {
   const statusFilterValue = statusFilter[0] ?? ''
 
   // Fetch data with React Query
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, isError, refetch } = useQuery({
     queryKey: [
       'redemptions',
       pagination.pageIndex + 1,
@@ -138,7 +139,7 @@ export function RedemptionsTable() {
     pagination,
     globalFilterFn: (row, _columnId, filterValue) => {
       const name = String(row.getValue('name')).toLowerCase()
-      const id = String(row.getValue('id'))
+      const id = String(row.original.id)
       const searchValue = String(filterValue).toLowerCase()
 
       return name.includes(searchValue) || id.includes(searchValue)
@@ -157,6 +158,15 @@ export function RedemptionsTable() {
     [t]
   )
 
+  if (isError)
+    {return (
+      <ErrorState
+        title={t('Failed to load')}
+        onRetry={() => {
+          void refetch()
+        }}
+      />
+    )}
   return (
     <DataTablePage
       table={table}
@@ -170,7 +180,7 @@ export function RedemptionsTable() {
       skeletonKeyPrefix='redemptions-skeleton'
       applyHeaderSize
       toolbarProps={{
-        searchPlaceholder: t('Filter by name or ID...'),
+        searchPlaceholder: t('Filter by name...'),
         searchDebounceMs: 500,
         filters: [
           {

@@ -157,6 +157,24 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             icon: Users,
           },
           {
+            title: t('Marketing activities'),
+            url: '/marketing-admin/activities',
+            icon: Activity,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
+            title: t('Prize pools'),
+            url: '/marketing-admin/pools',
+            icon: Box,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
+            title: t('Marketing reward records'),
+            url: '/marketing-admin/rewards',
+            icon: ClipboardList,
+            requiredRole: ROLE.ADMIN,
+          },
+          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,

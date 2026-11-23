@@ -52,7 +52,7 @@ export function DataTableRowActions<TData>({
   const redemption = redemptionSchema.parse(row.original)
   const { setOpen, setCurrentRow, triggerRefresh } = useRedemptions()
   const isEnabled = redemption.status === REDEMPTION_STATUS.ENABLED
-  const isUsed = redemption.status === REDEMPTION_STATUS.USED
+  const isUsed = redemption.redeemed
   const isExpired = isRedemptionExpired(
     redemption.expired_time,
     redemption.status
@@ -79,7 +79,7 @@ export function DataTableRowActions<TData>({
     }
   }
 
-  const canEdit = isEnabled && !isExpired
+  const canEdit = !isUsed
   const canToggle = !isUsed && !isExpired
 
   return (
@@ -105,6 +105,14 @@ export function DataTableRowActions<TData>({
       </Tooltip>
 
       <DataTableRowActionMenu ariaLabel={t('Open menu')} modal={false}>
+        <DropdownMenuItem
+          onClick={() => {
+            setCurrentRow(redemption)
+            setOpen('view')
+          }}
+        >
+          {t('Sale details')}
+        </DropdownMenuItem>
         {canToggle && (
           <DropdownMenuItem onClick={handleToggleStatus}>
             {isEnabled ? (

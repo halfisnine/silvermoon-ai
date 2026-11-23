@@ -635,3 +635,42 @@ export function formatLocalCurrencyAmount(
 
   return formatCurrencyValue(amount, merged, meta)
 }
+
+/** Format a server-converted monetary string without another exchange conversion.
+ * Keep its decimal digits intact, including sub-cent gifts and large amounts.
+ * An explicit currency also prevents historical CNY payments taking on the
+ * current site's display symbol after configuration changes.
+ */
+export function formatExplicitCurrencyAmount(
+  amount: string,
+  currency: string,
+  locale?: Intl.LocalesArgument
+): string {
+  if (!/^-?\d+(\.\d+)?$/.test(amount)) return '—'
+  const negative = amount.startsWith('-')
+  const unsigned = negative ? amount.slice(1) : amount
+  const [whole, fraction = ''] = unsigned.split('.')
+  const digits = fraction.replace(/0+$/, '')
+  const grouped = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 0,
+  }).format(BigInt(whole))
+  const decimal =
+    new Intl.NumberFormat(locale)
+      .formatToParts(1.1)
+      .find((part) => part.type === 'decimal')?.value ?? '.'
+  const numeric = `${negative ? '-' : ''}${grouped}${digits ? decimal + digits : ''}`
+  if (!/^[A-Z]{3}$/.test(currency)) return `${currency} ${numeric}`
+  try {
+    const parts = new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 0,
+    }).formatToParts(0)
+    return parts
+      .map((part) => (part.type === 'integer' ? numeric : part.value))
+      .join('')
+  } catch {
+    return `${currency} ${numeric}`
+  }
+}

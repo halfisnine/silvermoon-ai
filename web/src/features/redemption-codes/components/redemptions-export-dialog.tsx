@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -28,7 +29,10 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 export type RedemptionExportData = {
   keys: string[]
   name: string
-  quota: string
+  credit: string
+  paid: string
+  salesChannel: string
+  salesBatch: string
 }
 
 type RedemptionsExportDialogProps = {
@@ -42,7 +46,7 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
   const [saveToFile, setSaveToFile] = useState(false)
   const [format, setFormat] = useState<'txt' | 'md'>('txt')
   const [includeName, setIncludeName] = useState(true)
-  const [includeQuota, setIncludeQuota] = useState(true)
+  const [includeAmounts, setIncludeAmounts] = useState(true)
 
   const handleComplete = () => {
     if (!saveToFile) {
@@ -52,13 +56,16 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
     const headers: string[] = []
     if (includeName) headers.push(t('Name'))
     headers.push(t('Code'))
-    if (includeQuota) headers.push(t('Quota'))
+    if (includeAmounts)
+      {headers.push(t('Actual payment (CNY)'), t('Credited paid amount'))}
+    headers.push(t('Sales channel'), t('Sales batch'))
 
     const rows = props.data.keys.map((key) => {
       const row: string[] = []
       if (includeName) row.push(props.data.name)
       row.push(key)
-      if (includeQuota) row.push(props.data.quota)
+      if (includeAmounts) row.push(props.data.paid, props.data.credit)
+      row.push(props.data.salesChannel, props.data.salesBatch)
       return row.map((value) => value.replaceAll(/[\t\r\n]+/g, ' '))
     })
 
@@ -110,6 +117,14 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
       bodyClassName='space-y-5'
       footer={<Button onClick={handleComplete}>{t('Done')}</Button>}
     >
+      <CopyButton
+        value={props.data.keys.join('\n')}
+        size='sm'
+        variant='outline'
+        aria-label={t('Copy created codes')}
+      >
+        {t('Copy created codes')}
+      </CopyButton>
       <div className='flex items-center gap-2'>
         <Checkbox
           id={`${id}-save-file`}
@@ -155,10 +170,12 @@ export function RedemptionsExportDialog(props: RedemptionsExportDialogProps) {
             <div className='flex items-center gap-2'>
               <Checkbox
                 id={`${id}-quota`}
-                checked={includeQuota}
-                onCheckedChange={setIncludeQuota}
+                checked={includeAmounts}
+                onCheckedChange={setIncludeAmounts}
               />
-              <Label htmlFor={`${id}-quota`}>{t('Include quota')}</Label>
+              <Label htmlFor={`${id}-quota`}>
+                {t('Include payment and credit amounts')}
+              </Label>
             </div>
           </div>
         </div>

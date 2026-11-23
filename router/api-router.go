@@ -307,6 +307,15 @@ func SetApiRouter(router *gin.Engine) {
 			}
 		}
 
+		marketingAdmin := apiRouter.Group("/marketing/admin", middleware.AdminAuth(), middleware.DisableCache())
+		marketingAdmin.GET("/metadata", controller.MarketingAdminRead)
+		marketingAdmin.GET("/:resource", controller.MarketingAdminRead)
+		marketingAdmin.GET("/:resource/:id", controller.MarketingAdminRead)
+		marketingAdmin.GET("/rewards/:kind/:id", controller.MarketingAdminRead)
+		marketingAdmin.POST("/:resource", controller.MarketingAdminWrite)
+		marketingAdmin.PUT("/:resource/:id", controller.MarketingAdminWrite)
+		marketingAdmin.POST("/:resource/:id/:action", controller.MarketingAdminWrite)
+
 		redemptionRoute := apiRouter.Group("/redemption")
 		redemptionRoute.Use(middleware.AdminAuth())
 		{

@@ -2,7 +2,6 @@ package controller
 
 import (
 	"errors"
-	"net/http"
 	"strconv"
 	"unicode/utf8"
 
@@ -14,9 +13,85 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
+// paidRedemptionView keeps storage units and internal funding IDs out of the
+// administration contract. The recorded sale remains independent of display settings.
+type paidRedemptionView struct {
+	ID                     int    `json:"id"`
+	Name                   string `json:"name"`
+	Key                    string `json:"key"`
+	Status                 int    `json:"status"`
+	CreatedTime            int64  `json:"created_time"`
+	RedeemedTime           int64  `json:"redeemed_time"`
+	ExpiredTime            int64  `json:"expired_time"`
+	Redeemed               bool   `json:"redeemed"`
+	UsedUserName           string `json:"used_user_name"`
+	PaidAmountCNY          string `json:"paid_amount_cny"`
+	CreditAmount           string `json:"credit_amount"`
+	CreditCurrency         string `json:"credit_currency"`
+	MoneyRevision          string `json:"money_revision"`
+	OriginalCreditAmount   string `json:"original_credit_amount"`
+	OriginalCreditCurrency string `json:"original_credit_currency"`
+	SalesChannel           string `json:"sales_channel"`
+	SalesBatch             string `json:"sales_batch"`
+	SalesEvidence          string `json:"sales_evidence"`
+	SaleRegistered         bool   `json:"sale_registered"`
+}
+
+func paidRedemptionViews(rows []*model.Redemption) ([]paidRedemptionView, error) {
+	moneyContext, err := service.CurrentMarketingMoneyContext()
+	if err != nil {
+		return nil, err
+	}
+	units, _ := decimal.NewFromString(moneyContext.Display.QuotaPerUnit)
+	rate, _ := decimal.NewFromString(moneyContext.Display.CurrencyPerUnit)
+	views := make([]paidRedemptionView, 0, len(rows))
+	userIDs := make([]int, 0, len(rows))
+	for _, row := range rows {
+		if row.UsedUserId > 0 {
+			userIDs = append(userIDs, row.UsedUserId)
+		}
+	}
+	users := make(map[int]string)
+	if len(userIDs) > 0 {
+		var names []model.User
+		if err := model.DB.Select("id", "username").Where("id IN ?", userIDs).Find(&names).Error; err != nil {
+			return nil, err
+		}
+		for _, user := range names {
+			users[user.Id] = user.Username
+		}
+	}
+	for _, row := range rows {
+		amount := decimal.NewFromInt(int64(row.Quota)).Mul(rate).DivRound(units, 12).String()
+		currency := moneyContext.Display.Currency
+		view := paidRedemptionView{ID: row.Id, Name: row.Name, Key: row.Key, Status: row.Status,
+			CreatedTime: row.CreatedTime, RedeemedTime: row.RedeemedTime, ExpiredTime: row.ExpiredTime,
+			Redeemed:     row.Status == common.RedemptionCodeStatusUsed || row.UsedUserId != 0 || row.RedeemedTime != 0 || row.PaymentID != 0,
+			UsedUserName: users[row.UsedUserId], PaidAmountCNY: decimal.NewFromInt(row.PaidCents).Shift(-2).String(),
+			CreditAmount: amount, CreditCurrency: currency, MoneyRevision: moneyContext.Revision,
+			SalesChannel: row.SalesChannel, SalesBatch: row.SalesBatch, SalesEvidence: row.SalesEvidence,
+		}
+		var original model.MarketingMoneySnapshot
+		if row.PaidCents > 0 && row.SalesChannel != "" && row.SalesBatch != "" && common.UnmarshalJsonStr(row.CreditedConversion, &original) == nil {
+			quota, err := original.Quota()
+			if err == nil && quota == int64(row.Quota) {
+				view.SaleRegistered = true
+				view.OriginalCreditAmount, view.OriginalCreditCurrency = original.Amount, original.Currency
+			}
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+
 func GetAllRedemptions(c *gin.Context) {
+	if err := model.WithMarketingTransaction(c.Request.Context(), func(tx *gorm.DB) error { return model.AuthorizeMarketingAdmin(tx, c.GetInt("id")) }); err != nil {
+		marketingAPIError(c, err)
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
 	redemptions, total, err := model.GetAllRedemptions(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
@@ -24,12 +99,21 @@ func GetAllRedemptions(c *gin.Context) {
 		return
 	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(redemptions)
+	views, err := paidRedemptionViews(redemptions)
+	if err != nil {
+		marketingAPIError(c, err)
+		return
+	}
+	pageInfo.SetItems(views)
 	common.ApiSuccess(c, pageInfo)
 	return
 }
 
 func SearchRedemptions(c *gin.Context) {
+	if err := model.WithMarketingTransaction(c.Request.Context(), func(tx *gorm.DB) error { return model.AuthorizeMarketingAdmin(tx, c.GetInt("id")) }); err != nil {
+		marketingAPIError(c, err)
+		return
+	}
 	keyword := c.Query("keyword")
 	status := c.Query("status")
 	pageInfo := common.GetPageQuery(c)
@@ -39,12 +123,21 @@ func SearchRedemptions(c *gin.Context) {
 		return
 	}
 	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(redemptions)
+	views, err := paidRedemptionViews(redemptions)
+	if err != nil {
+		marketingAPIError(c, err)
+		return
+	}
+	pageInfo.SetItems(views)
 	common.ApiSuccess(c, pageInfo)
 	return
 }
 
 func GetRedemption(c *gin.Context) {
+	if err := model.WithMarketingTransaction(c.Request.Context(), func(tx *gorm.DB) error { return model.AuthorizeMarketingAdmin(tx, c.GetInt("id")) }); err != nil {
+		marketingAPIError(c, err)
+		return
+	}
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		marketingAPIError(c, err)
@@ -55,11 +148,12 @@ func GetRedemption(c *gin.Context) {
 		marketingAPIError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    redemption,
-	})
+	views, err := paidRedemptionViews([]*model.Redemption{redemption})
+	if err != nil {
+		marketingAPIError(c, err)
+		return
+	}
+	common.ApiSuccess(c, views[0])
 	return
 }
 
@@ -73,6 +167,7 @@ type paidRedemptionRequest struct {
 	PaidAmountCNY  string `json:"paid_amount_cny"`
 	CreditAmount   string `json:"credit_amount"`
 	CreditCurrency string `json:"credit_currency"`
+	MoneyRevision  string `json:"money_revision"`
 	SalesChannel   string `json:"sales_channel"`
 	SalesBatch     string `json:"sales_batch"`
 	SalesEvidence  string `json:"sales_evidence"`
@@ -87,9 +182,17 @@ func (request paidRedemptionRequest) saleSpec() (model.PaidRedemptionSpec, error
 	if err != nil {
 		return model.PaidRedemptionSpec{}, err
 	}
-	money, err := service.MarketingDisplayMoney(request.CreditAmount)
+	moneyContext, err := service.CurrentMarketingMoneyContext()
 	if err != nil {
 		return model.PaidRedemptionSpec{}, err
+	}
+	if request.MoneyRevision == "" || request.MoneyRevision != moneyContext.Revision {
+		return model.PaidRedemptionSpec{}, common.NewMessage("Wallet currency settings changed. Refresh and try again")
+	}
+	money := moneyContext.Display
+	money.Amount = request.CreditAmount
+	if _, err := money.Quota(); err != nil {
+		return model.PaidRedemptionSpec{}, common.NewMessage("Invalid wallet amount or currency settings")
 	}
 	if request.CreditCurrency != money.Currency {
 		return model.PaidRedemptionSpec{}, common.NewMessage("Wallet currency settings changed. Refresh and try again")
@@ -189,7 +292,12 @@ func UpdateRedemption(c *gin.Context) {
 		marketingAPIError(c, err)
 		return
 	}
-	common.ApiSuccess(c, result)
+	views, err := paidRedemptionViews([]*model.Redemption{result})
+	if err != nil {
+		marketingAPIError(c, err)
+		return
+	}
+	common.ApiSuccess(c, views[0])
 }
 
 func DeleteInvalidRedemption(c *gin.Context) {
