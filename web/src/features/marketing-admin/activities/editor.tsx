@@ -60,13 +60,14 @@ export function ActivityEditor(props: {
   }))
   let initial =
     snapshot.original?.activity ?? defaultActivity(snapshot.currency)
-  if (props.copy)
-    {initial = {
+  if (props.copy) {
+    initial = {
       ...structuredClone(initial),
       name: `${initial.name} ${t('Copy')}`,
       starts_at: 0,
       ends_at: 0,
-    }}
+    }
+  }
   const form = useForm<MarketingActivity>({
     resolver: zodResolver(activitySchema),
     defaultValues: initial,
@@ -76,8 +77,9 @@ export function ActivityEditor(props: {
   const mutation = useMutation({
     mutationFn: async (values: MarketingActivity) => {
       const payload = JSON.stringify(values)
-      if (request.current.payload !== payload)
-        {request.current = { payload, key: crypto.randomUUID() }}
+      if (request.current.payload !== payload) {
+        request.current = { payload, key: crypto.randomUUID() }
+      }
       return saveActivity(
         values,
         request.current.key,
@@ -178,7 +180,7 @@ export function ActivityEditor(props: {
             disabled={mutation.isPending}
             className='flex min-w-0 flex-col gap-6'
           >
-            <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+            <FieldGroup className='grid items-start gap-4 sm:grid-cols-2'>
               <ActivityField name='name' label={t('Activity name')} />
               <ActivityField
                 name='kind'
@@ -219,7 +221,7 @@ export function ActivityEditor(props: {
             </FieldGroup>
             {(activity.kind === 'recharge' ||
               activity.kind === 'invitation') && (
-              <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+              <FieldGroup className='grid items-start gap-4 sm:grid-cols-2'>
                 <ActivityField
                   name='condition'
                   label={t('Reward trigger')}
@@ -276,7 +278,7 @@ export function ActivityEditor(props: {
               <summary className='cursor-pointer'>
                 {t('Stacking and priority')}
               </summary>
-              <div className='mt-4 grid gap-4 sm:grid-cols-2'>
+              <div className='mt-4 grid items-start gap-4 sm:grid-cols-2'>
                 <ExclusiveGroupField />
                 <ActivityField
                   name='priority'

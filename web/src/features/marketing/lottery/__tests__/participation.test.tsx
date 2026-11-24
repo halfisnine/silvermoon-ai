@@ -126,6 +126,47 @@ function mount() {
   )
 }
 
+test.each(['wheel', 'blind_box'] as const)(
+  '%s shows immediate drawing feedback while waiting for the server',
+  (style) => {
+    render(
+      <DrawStage
+        pool={{ ...pool, style }}
+        disabled
+        busy
+        onDraw={vi.fn()}
+        onCloseResult={vi.fn()}
+      />
+    )
+    expect(screen.getByRole('status')).toHaveTextContent('Drawing…')
+    expect(
+      screen.getByRole('button', {
+        name: style === 'wheel' ? 'Spin once' : 'Open mystery box',
+      })
+    ).toBeDisabled()
+    if (style === 'blind_box') {
+      expect(
+        document.querySelector('.silvermoon-lottery-box-button svg')
+      ).toHaveClass('size-full')
+    }
+  }
+)
+
+test('wheel segments and prize list show prize names without numbered labels', async () => {
+  mount()
+  const wheel = await screen.findByRole('img', { name: 'Prize wheel' })
+  expect(
+    Array.from(wheel.querySelectorAll('text'), (label) => label.textContent)
+  ).toEqual(['Combined gift', 'Grand prize'])
+  const list = screen.getByRole('region', { name: 'Prize list' })
+  expect(
+    Array.from(list.querySelectorAll('h4'), (title) => title.textContent)
+  ).toEqual(['Combined gift', 'Grand prize'])
+  for (const article of list.querySelectorAll('article')) {
+    expect(article.querySelector('div')?.firstElementChild?.tagName).toBe('H4')
+  }
+})
+
 test('server outcome survives a lost response and navigation without a second draw', async () => {
   const user = userEvent.setup()
   const post = vi.spyOn(api, 'post').mockImplementation(async () => {
@@ -194,7 +235,9 @@ test('pending partial gifts never claim all credited and closing the dialog pres
   localStorage.setItem(`silvermoon:lottery:v1:${userId}:4`, 'pending-original')
   const post = vi.spyOn(api, 'post')
   mount()
-  const dialog = await screen.findByRole('dialog', { name: 'Your draw result' })
+  const dialog = await screen.findByRole('dialog', {
+    name: 'Your draw result',
+  })
   expect(dialog).toHaveTextContent('Pending delivery')
   expect(dialog).not.toHaveTextContent(
     'All gifts from this draw have been credited.'

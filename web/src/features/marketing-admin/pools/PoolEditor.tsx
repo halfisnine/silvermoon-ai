@@ -165,7 +165,10 @@ export function PoolEditor(props: {
               )}
             </p>
           )}
-          <fieldset disabled={disabled} className='grid gap-4 sm:grid-cols-2'>
+          <fieldset
+            disabled={disabled}
+            className='grid items-start gap-4 sm:grid-cols-2'
+          >
             <legend className='sr-only'>{t('Prize pool settings')}</legend>
             <PoolInput name='name' label={t('Prize pool name')} />
             <FormField
@@ -335,17 +338,19 @@ export function PoolEditor(props: {
                     control={form.control}
                     name={`prizes.${index}.stock`}
                     render={({ field }) => (
-                      <FormItem className='flex min-h-14 items-center gap-2'>
-                        <FormControl>
-                          <Checkbox
-                            checked={field.value === -1}
-                            disabled={disabled}
-                            onCheckedChange={(checked) =>
-                              field.onChange(checked ? -1 : 0)
-                            }
-                          />
-                        </FormControl>
+                      <FormItem>
                         <FormLabel>{t('Unlimited stock')}</FormLabel>
+                        <div className='flex h-8 items-center'>
+                          <FormControl>
+                            <Checkbox
+                              checked={field.value === -1}
+                              disabled={disabled}
+                              onCheckedChange={(checked) =>
+                                field.onChange(checked ? -1 : 0)
+                              }
+                            />
+                          </FormControl>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}

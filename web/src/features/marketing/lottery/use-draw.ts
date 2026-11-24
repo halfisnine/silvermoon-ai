@@ -38,7 +38,7 @@ export function useLotteryDraw(userId: number, poolId: number) {
   const result = useQuery({
     queryKey: ['marketing', 'draw', userId, poolId, key],
     queryFn: () => getLotteryDraw(key),
-    enabled: !!key,
+    enabled: !!key && !inFlight.current,
     retry: false,
     refetchInterval: (query) =>
       query.state.data?.state === 'pending' ? 3000 : false,
@@ -104,7 +104,7 @@ export function useLotteryDraw(userId: number, poolId: number) {
   }
   return {
     result: result.data,
-    recovering: !!key && result.isPending,
+    recovering: !!key && result.isPending && !mutation.isPending,
     busy: mutation.isPending,
     pendingKey: !!key,
     error: error || result.error,

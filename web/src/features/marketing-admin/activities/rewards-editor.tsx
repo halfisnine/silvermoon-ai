@@ -216,7 +216,12 @@ function RewardRow(props: {
             )}
           </>
         )}
-        <Button type='button' variant='outline' onClick={props.onRemove}>
+        <Button
+          type='button'
+          variant='outline'
+          className='sm:mt-6'
+          onClick={props.onRemove}
+        >
           {t('Remove reward')}
         </Button>
       </FieldGroup>
@@ -243,16 +248,35 @@ function PoolField(props: {
   if (
     props.selected.pool_id &&
     !options.some((o) => o.value === String(props.selected.pool_id))
-  )
-    {options.unshift({
+  ) {
+    options.unshift({
       value: String(props.selected.pool_id),
       label: props.selected.pool_name || t('Selected prize pool'),
-    })}
+    })
+  }
   options.unshift({ value: '0', label: t('Select a prize pool') })
   return (
     <div className='flex min-w-0 flex-col gap-2'>
+      <ActivityField
+        name={props.name}
+        type='number'
+        label={t('Prize pool')}
+        options={options}
+        disabled={pools.isPending}
+        onChange={(v) => {
+          form.setValue(props.name, Number(v))
+          form.setValue(
+            props.name.replace(
+              /pool_id$/,
+              'pool_name'
+            ) as FieldPath<MarketingActivity>,
+            options.find((o) => o.value === v)?.label ?? ''
+          )
+        }}
+      />
       <Input
         aria-label={t('Search prize pools')}
+        placeholder={t('Search prize pools')}
         value={keyword}
         onChange={(e) => {
           setKeyword(e.target.value)
@@ -263,46 +287,38 @@ function PoolField(props: {
         <ErrorState onRetry={() => void pools.refetch()} />
       ) : (
         <>
-          <ActivityField
-            name={props.name}
-            type='number'
-            label={t('Prize pool')}
-            options={options}
-            disabled={pools.isPending}
-            onChange={(v) => {
-              form.setValue(props.name, Number(v))
-              form.setValue(
-                props.name.replace(
-                  /pool_id$/,
-                  'pool_name'
-                ) as FieldPath<MarketingActivity>,
-                options.find((o) => o.value === v)?.label ?? ''
-              )
-            }}
-          />
           {pools.isPending && <LoadingState inline message={t('Loading...')} />}
-          <div className='flex gap-2'>
-            <Button
-              type='button'
-              variant='ghost'
-              size='sm'
-              disabled={page === 1 || pools.isFetching}
-              onClick={() => setPage(page - 1)}
-            >
-              {t('Previous')}
-            </Button>
-            <Button
-              type='button'
-              variant='ghost'
-              size='sm'
-              disabled={
-                !pools.data || page * 20 >= pools.data.total || pools.isFetching
-              }
-              onClick={() => setPage(page + 1)}
-            >
-              {t('Next')}
-            </Button>
-          </div>
+          {!pools.isPending && pools.data?.items.length === 0 && (
+            <p role='status' className='text-muted-foreground text-sm'>
+              {t('No prize pools found')}
+            </p>
+          )}
+          {(page > 1 || (pools.data?.total ?? 0) > 20) && (
+            <div className='flex gap-2'>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                disabled={page === 1 || pools.isFetching}
+                onClick={() => setPage(page - 1)}
+              >
+                {t('Previous')}
+              </Button>
+              <Button
+                type='button'
+                variant='ghost'
+                size='sm'
+                disabled={
+                  !pools.data ||
+                  page * 20 >= pools.data.total ||
+                  pools.isFetching
+                }
+                onClick={() => setPage(page + 1)}
+              >
+                {t('Next')}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

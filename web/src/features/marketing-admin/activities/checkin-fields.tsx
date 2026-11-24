@@ -41,7 +41,7 @@ export function CheckinFields(props: { currency: string }) {
     <>
       <FieldSet>
         <FieldLegend>{t('Check-in eligibility')}</FieldLegend>
-        <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+        <FieldGroup className='grid items-start gap-4 sm:grid-cols-2'>
           <ActivityField
             name='checkin.condition'
             label={t('Eligibility')}

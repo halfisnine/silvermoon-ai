@@ -200,15 +200,12 @@ function PoolExperience(props: { userId: number; poolId: number }) {
           )}
         </p>
         <div className='grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-3'>
-          {pool.prizes.map((prize, index) => (
+          {pool.prizes.map((prize) => (
             <article
               key={prize.id}
               className='silvermoon-lottery-prize flex min-w-0 flex-col gap-3 rounded-xl p-4'
             >
               <div className='flex items-start gap-2'>
-                <span className='text-muted-foreground text-sm'>
-                  {formatNumber(index + 1, toIntlLocale(i18n.language))}
-                </span>
                 <h4 className='min-w-0 flex-1 font-semibold break-words'>
                   {prize.name}
                 </h4>

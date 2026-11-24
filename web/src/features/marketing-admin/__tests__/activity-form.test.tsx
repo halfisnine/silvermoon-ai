@@ -91,6 +91,70 @@ afterEach(() => {
 })
 
 describe('activity editing', () => {
+  test('prize pool search stays editable through empty results and failures without losing selection', async () => {
+    vi.mocked(api.get).mockImplementation(async (_url, config) => {
+      const keyword = (config?.params as { keyword?: string } | undefined)
+        ?.keyword
+      if (keyword === 'offline') throw new Error('Offline')
+      return {
+        data: {
+          success: true,
+          data: {
+            items: keyword
+              ? []
+              : [
+                  {
+                    id: 4,
+                    state: 'active',
+                    pool: { name: 'Recharge prize pool' },
+                    remaining_capacity: 20,
+                  },
+                ],
+            total: keyword ? 0 : 1,
+            page: 1,
+            page_size: 20,
+          },
+        },
+      }
+    })
+    show()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Add draw opportunities' })
+    )
+    const search = screen.getByPlaceholderText('Search prize pools')
+    const select = screen.getByRole('combobox', { name: 'Prize pool' })
+    await screen.findByRole('option', { name: 'Recharge prize pool' })
+    fireEvent.change(select, { target: { value: '4' } })
+    fireEvent.change(search, { target: { value: 'unmatched activity name' } })
+    expect(await screen.findByText('No prize pools found')).toBeVisible()
+    expect(select).toHaveValue('4')
+    fireEvent.change(search, { target: { value: '' } })
+    await waitFor(() =>
+      expect(screen.queryByText('No prize pools found')).not.toBeInTheDocument()
+    )
+    expect(select).toHaveValue('4')
+    fireEvent.change(search, { target: { value: 'offline' } })
+    expect(await screen.findByRole('button', { name: 'Retry' })).toBeVisible()
+    expect(search).toBeVisible()
+    expect(select).toHaveValue('4')
+    fireEvent.change(search, { target: { value: '' } })
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: 'Retry' })
+      ).not.toBeInTheDocument()
+    )
+    expect(select).toHaveValue('4')
+    expect(
+      screen.getByRole('option', { name: 'Recharge prize pool' })
+    ).toBeVisible()
+  })
+
+  test('date fields keep their controls aligned when only the end date has help text', () => {
+    show()
+    expect(
+      screen.getByLabelText('Activity name').closest('[data-slot=field-group]')
+    ).toHaveClass('items-start')
+  })
   test('a corrected client validation error can be saved without closing the form', async () => {
     const put = vi
       .spyOn(api, 'put')
@@ -264,14 +328,40 @@ describe('confirmed activity rules', () => {
 })
 
 test('an open activity form retains its original amount and conversion revision after background refresh', async () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
   clients.push(client)
-  const put = vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true, data: initial } })
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true, data: initial } })
   const onClose = vi.fn()
-  const view = render(<QueryClientProvider client={client}><ActivityEditor currency='CNY' moneyRevision='rate-a' original={initial} onClose={onClose} /></QueryClientProvider>)
-  view.rerender(<QueryClientProvider client={client}><ActivityEditor currency='USD' moneyRevision='rate-b' original={{ ...initial, revision: 8 }} onClose={onClose} /></QueryClientProvider>)
+  const view = render(
+    <QueryClientProvider client={client}>
+      <ActivityEditor
+        currency='CNY'
+        moneyRevision='rate-a'
+        original={initial}
+        onClose={onClose}
+      />
+    </QueryClientProvider>
+  )
+  view.rerender(
+    <QueryClientProvider client={client}>
+      <ActivityEditor
+        currency='USD'
+        moneyRevision='rate-b'
+        original={{ ...initial, revision: 8 }}
+        onClose={onClose}
+      />
+    </QueryClientProvider>
+  )
   expect(screen.getByLabelText('Gift amount (CNY)')).toHaveValue('0.000002')
   fireEvent.click(screen.getByRole('button', { name: 'Save draft' }))
   await waitFor(() => expect(onClose).toHaveBeenCalled())
-  expect(put.mock.calls[0][1]).toMatchObject({ money_revision: 'rate-a', revision: 2, activity: { rewards: [{ amount: '0.000002', currency: 'CNY' }] } })
+  expect(put.mock.calls[0][1]).toMatchObject({
+    money_revision: 'rate-a',
+    revision: 2,
+    activity: { rewards: [{ amount: '0.000002', currency: 'CNY' }] },
+  })
 })

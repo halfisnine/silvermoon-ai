@@ -175,21 +175,23 @@ function GiftRow(props: {
         control={form.control}
         name={`${path}.permanent`}
         render={({ field }) => (
-          <FormItem className='flex min-h-14 items-center gap-2'>
-            <FormControl>
-              <Checkbox
-                checked={field.value}
-                onCheckedChange={(checked) => {
-                  field.onChange(checked)
-                  if (checked) {
-                    form.setValue(`${path}.duration`, 0)
-                    form.clearErrors(`${path}.duration`)
-                  }
-                }}
-                disabled={props.disabled}
-              />
-            </FormControl>
+          <FormItem>
             <FormLabel>{t('Permanent gift')}</FormLabel>
+            <div className='flex h-8 items-center'>
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={(checked) => {
+                    field.onChange(checked)
+                    if (checked) {
+                      form.setValue(`${path}.duration`, 0)
+                      form.clearErrors(`${path}.duration`)
+                    }
+                  }}
+                  disabled={props.disabled}
+                />
+              </FormControl>
+            </div>
             <FormMessage />
           </FormItem>
         )}
@@ -240,7 +242,7 @@ function GiftRow(props: {
       <Button
         type='button'
         variant='ghost'
-        className='self-end'
+        className='sm:mt-6'
         disabled={props.disabled || !props.removable}
         aria-label={t('Remove gift {{number}} from prize {{prize}}', {
           number: props.giftIndex + 1,
