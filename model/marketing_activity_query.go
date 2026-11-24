@@ -1,10 +1,37 @@
 package model
 
 import (
+	"context"
 	"errors"
 
 	"gorm.io/gorm"
 )
+
+// PendingMarketingRewardSources returns source users, not beneficiaries: one
+// registration/payment may also owe a gift to its inviter. A failed earlier
+// source must not prevent a later keyset page from making progress.
+func PendingMarketingRewardSources(ctx context.Context, afterUserID, limit int) ([]int, error) {
+	if afterUserID < 0 || limit < 1 || limit > 100 {
+		return nil, ErrMarketingInput
+	}
+	var users []int
+	err := DB.WithContext(ctx).Model(&MarketingActivityFact{}).Distinct("user_id").
+		Where("user_id > ? AND delivery_state = ?", afterUserID, "pending").
+		Order("user_id").Limit(limit).Pluck("user_id", &users).Error
+	return users, err
+}
+
+// PendingMarketingLotteryDraws reads only committed, unfinished results. The
+// worker fulfills their original awards; it must never consume another chance.
+func PendingMarketingLotteryDraws(ctx context.Context, afterID int64, limit int) ([]MarketingLotteryDraw, error) {
+	if afterID < 0 || limit < 1 || limit > 100 {
+		return nil, ErrMarketingInput
+	}
+	var draws []MarketingLotteryDraw
+	err := DB.WithContext(ctx).Select("id", "user_id").Where("id > ? AND state = ?", afterID, "pending").
+		Order("id").Limit(limit).Find(&draws).Error
+	return draws, err
+}
 
 // MarketingActivityDeliveryCursor rotates technical retry work across calls.
 // Moving it does not complete or discard an obligation; pending rows remain the
@@ -91,6 +118,16 @@ func NextMarketingActivityDeliveryWork(tx *gorm.DB, sourceUserID int, limit int)
 	if len(work.Rewards) > 0 {
 		cursor.AfterID = work.Rewards[len(work.Rewards)-1].ID
 		if err := tx.Save(&cursor).Error; err != nil {
+			return nil, err
+		}
+	} else {
+		// Clearing a beneficiary removes obligations without taking locks on
+		// other source users. After wrapping, this current read proves that no
+		// beneficiary has work left for this source. The source lock prevents
+		// new decisions/deliveries while we converge completed fact markers.
+		if err := tx.Model(&MarketingActivityFact{}).
+			Where("user_id = ? AND state = ? AND delivery_state = ?", sourceUserID, "decided", "pending").
+			Update("delivery_state", "complete").Error; err != nil {
 			return nil, err
 		}
 	}

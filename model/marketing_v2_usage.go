@@ -328,3 +328,22 @@ func HasPendingMarketingRecovery() bool {
 	}
 	return projectionID != 0
 }
+
+// Reward obligations are separate from pending usage: completing a model task
+// must not imply that unrelated registration or payment rewards are complete.
+func HasPendingMarketingRewardRecovery() bool {
+	users, err := PendingMarketingRewardSources(context.Background(), 0, 1)
+	if err != nil {
+		common.SysError("marketing reward recovery lookup failed: " + err.Error())
+		return false
+	}
+	if len(users) != 0 {
+		return true
+	}
+	draws, err := PendingMarketingLotteryDraws(context.Background(), 0, 1)
+	if err != nil {
+		common.SysError("marketing lottery recovery lookup failed: " + err.Error())
+		return false
+	}
+	return len(draws) != 0
+}

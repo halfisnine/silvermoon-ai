@@ -168,8 +168,20 @@ func TestMarketingMaintenance(t *testing.T) {
 				var operations int64
 				require.NoError(t, db.Model(&MarketingMaintenanceOperation{}).Where("user_id = ? AND kind = ?", user.Id, "clear_prepare").Count(&operations).Error)
 				assert.EqualValues(t, 1, operations)
+				// Commit gift obligations before clearing; no foreground delivery
+				// will remain to refresh their fact after the clear transaction.
+				marketingActivityProcessTest(t, db, user.Id, 125)
 				var op *MarketingMaintenanceOperation
 				require.NoError(t, db.Transaction(func(tx *gorm.DB) error { var err error; op, err = ClearMarketingAssets(tx, input, 130); return err }))
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+					work, err := NextMarketingActivityDeliveryWork(tx, user.Id, 128)
+					require.NoError(t, err)
+					assert.Empty(t, work.Rewards)
+					return nil
+				}))
+				pendingSources, err := PendingMarketingRewardSources(context.Background(), 0, 100)
+				require.NoError(t, err)
+				assert.NotContains(t, pendingSources, user.Id, "cleared obligations must leave background recovery")
 				var result MarketingAssetClearResult
 				require.NoError(t, common.UnmarshalJsonStr(op.Result, &result))
 				assert.Equal(t, "0.001", result.RoundingDifferenceCNY)
@@ -237,7 +249,18 @@ func TestMarketingMaintenance(t *testing.T) {
 				pending, err := PlanMarketingClearQualificationsAuthorized(context.Background(), input, 100)
 				require.NoError(t, err)
 				assert.False(t, pending)
+				marketingActivityProcessTest(t, db, friend.Id, 2025)
 				require.NoError(t, db.Transaction(func(tx *gorm.DB) error { _, err := ClearMarketingAssets(tx, input, 2030); return err }))
+				require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+					work, err := NextMarketingActivityDeliveryWork(tx, friend.Id, 128)
+					require.NoError(t, err)
+					require.Len(t, work.Rewards, 1)
+					assert.Equal(t, friend.Id, work.Rewards[0].UserID)
+					var fact MarketingActivityFact
+					require.NoError(t, tx.First(&fact, work.Rewards[0].FactID).Error)
+					assert.Equal(t, "pending", fact.DeliveryState, "another beneficiary still has an obligation")
+					return nil
+				}))
 				require.NoError(t, db.Model(&User{}).Where("id = ?", inviter.Id).Update("status", common.UserStatusEnabled).Error)
 				marketingActivityProcessTest(t, db, friend.Id, 2040)
 				marketingActivityDeliverTest(t, db, friend.Id, 2040)

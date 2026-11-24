@@ -68,7 +68,7 @@ type MarketingLotteryChance struct {
 func (MarketingLotteryChance) TableName() string { return "marketing_v2_lottery_chances" }
 
 type MarketingLotteryDraw struct {
-	ID              int64  `gorm:"primaryKey"`
+	ID              int64  `gorm:"primaryKey;index:idx_mv2_draw_pending,priority:2"`
 	ChanceID        int64  `gorm:"not null;index"`
 	RequestKey      string `gorm:"size:64;not null;uniqueIndex"`
 	SourceReference string `gorm:"size:128;not null"`
@@ -76,7 +76,7 @@ type MarketingLotteryDraw struct {
 	PoolID          int64  `gorm:"not null;index"`
 	PrizeID         int64  `gorm:"not null"`
 	PrizeSnapshot   string `gorm:"type:text;not null"`
-	State           string `gorm:"size:16;not null"`
+	State           string `gorm:"size:16;not null;index:idx_mv2_draw_pending,priority:1"`
 	DrawnAt         int64  `gorm:"not null"`
 }
 

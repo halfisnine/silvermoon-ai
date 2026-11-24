@@ -221,8 +221,11 @@ func login(port string, who *identity) {
 	}
 	check(who.cookie != nil && who.cookie.Secure && who.cookie.HttpOnly, "secure refresh cookie returned")
 }
+
+var cardMoneyRevision string
+
 func codeBody(name, paid, credit string) map[string]any {
-	return map[string]any{"name": name, "count": 1, "paid_amount_cny": paid, "credit_amount": credit, "credit_currency": "CNY", "sales_channel": "registered-card-shop", "sales_batch": "http-fixture-batch", "sales_evidence": "fixture-receipt", "expired_time": 0}
+	return map[string]any{"name": name, "count": 1, "paid_amount_cny": paid, "credit_amount": credit, "credit_currency": "CNY", "money_revision": cardMoneyRevision, "sales_channel": "registered-card-shop", "sales_batch": "http-fixture-batch", "sales_evidence": "fixture-receipt", "expired_time": 0}
 }
 func createCode(port string, admin identity, body map[string]any) model.Redemption {
 	r := call(port, "POST", "/api/redemption/", admin.token, body, nil, nil)
@@ -500,6 +503,12 @@ func main() {
 	g2 := launch("18482")
 	defer g2.stop()
 	login("18481", &root)
+	metadata := call("18481", "GET", "/api/marketing/admin/metadata", root.token, nil, nil, nil)
+	success(metadata, "current money context")
+	var contextFields map[string]string
+	must(common.Unmarshal(metadata.Data, &contextFields))
+	cardMoneyRevision = contextFields["money_revision"]
+	check(cardMoneyRevision != "", "money revision required by paid-card form")
 	inviter := register("18481", "realinviter", "")
 	other := register("18482", "otherinviter", "")
 	old := register("18481", "oldfriend", inviter.user.AffCode)
@@ -686,5 +695,46 @@ func main() {
 	must(model.DB.First(&inviter.user, inviter.user.Id).Error)
 	check(inviter.user.Quota == 0 && inviter.user.AffQuota == 0, "all invitation gifts remain nonrefundable")
 	fmt.Println("REGISTRATION_RECOVERY_OK actual_registration=true delivery_failure_obligations=2 committed_reply_lost=true two_process_replay=true trace_fact_decision_reward_gift_ledger=true")
-	fmt.Println("REGISTRATION_ALL_OK actual_password_registration=true actual_generic_oauth=true payment_history_not_reset=true startup_recovery_not_claimed=true")
+	// Both real gateways are replaced with committed but undelivered rewards.
+	// No foreground retry or worker CLI is called after restart.
+	must(model.DB.Exec("ALTER TABLE marketing_v2_gifts ADD CONSTRAINT registration_fixture_delivery_failure CHECK (false) NOT VALID").Error)
+	restartUser := register("18481", "restartfriend", inviter.user.AffCode)
+	check(giftCount(restartUser.user.Id, own) == 0, "restart fixture must retain pending registration gift")
+	g1.stop()
+	g2.stop()
+	must(model.DB.Exec("ALTER TABLE marketing_v2_gifts DROP CONSTRAINT registration_fixture_delivery_failure").Error)
+	var restartDraw *model.MarketingLotteryDraw
+	must(model.DB.Transaction(func(tx *gorm.DB) error {
+		at := time.Now().Unix()
+		money := model.MarketingMoneySnapshot{Amount: "2", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}
+		pool, err := model.CreateMarketingLotteryPool(tx, root.user.Id, "restart-recovery-pool", model.MarketingLotteryPoolSpec{Name: "Restart fixture", Style: "wheel", StartsAt: at - 1, EndsAt: at + 3600, Capacity: 1, Prizes: []model.MarketingLotteryPrizeSpec{{Name: "Gift", Weight: 1, Stock: 1, Gifts: []model.MarketingLotteryGiftSpec{{Money: money}}}}}, at-1)
+		if err != nil {
+			return err
+		}
+		if _, err = model.IssueMarketingLotteryChances(tx, restartUser.user.Id, pool.ID, "restart-opportunity", 1, at); err != nil {
+			return err
+		}
+		restartDraw, err = model.DrawMarketingLotteryChance(tx, restartUser.user.Id, pool.ID, "restart-original-draw", at)
+		return err
+	}))
+	restartedA := launch("18481")
+	defer restartedA.stop()
+	restartedB := launch("18482")
+	defer restartedB.stop()
+	deadline := time.Now().Add(50 * time.Second)
+	for {
+		must(model.DB.First(restartDraw, restartDraw.ID).Error)
+		if giftCount(restartUser.user.Id, own) == 1 && giftCount(inviter.user.Id, invited) == 5 && restartDraw.State == "complete" {
+			break
+		}
+		check(time.Now().Before(deadline), "real gateways failed to recover pending activity/lottery on restart")
+		time.Sleep(100 * time.Millisecond)
+	}
+	var restartDrawCount, restartAwardCount int64
+	must(model.DB.Model(&model.MarketingLotteryDraw{}).Where("user_id = ?", restartUser.user.Id).Count(&restartDrawCount).Error)
+	must(model.DB.Model(&model.MarketingLotteryAward{}).Where("draw_id = ? AND state = ?", restartDraw.ID, "credited").Count(&restartAwardCount).Error)
+	check(restartDrawCount == 1 && restartAwardCount == 1, "startup recovery rerolled or duplicated original lottery")
+	trace(restartUser.user.Id)
+	fmt.Println("REGISTRATION_STARTUP_RECOVERY_OK gateways_restarted=2 shared_database_lease=true update_task_false=true no_user_retry=true own_and_inviter_gifts_once=true original_lottery_result_once=true")
+	fmt.Println("REGISTRATION_ALL_OK actual_password_registration=true actual_generic_oauth=true payment_history_not_reset=true startup_recovery=true")
 }

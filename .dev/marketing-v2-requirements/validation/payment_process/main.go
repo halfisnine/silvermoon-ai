@@ -385,8 +385,11 @@ func login(port string, who *identity) {
 	}
 	check(who.cookie != nil && who.cookie.Secure && who.cookie.HttpOnly, "secure refresh cookie returned")
 }
+
+var cardMoneyRevision string
+
 func codeBody(name, paid, credit string) map[string]any {
-	return map[string]any{"name": name, "count": 1, "paid_amount_cny": paid, "credit_amount": credit, "credit_currency": "CNY", "sales_channel": "registered-card-shop", "sales_batch": "http-fixture-batch", "sales_evidence": "fixture-receipt", "expired_time": 0}
+	return map[string]any{"name": name, "count": 1, "paid_amount_cny": paid, "credit_amount": credit, "credit_currency": "CNY", "money_revision": cardMoneyRevision, "sales_channel": "registered-card-shop", "sales_batch": "http-fixture-batch", "sales_evidence": "fixture-receipt", "expired_time": 0}
 }
 func createCode(port string, admin identity, body map[string]any) model.Redemption {
 	r := call(port, "POST", "/api/redemption/", admin.token, body, nil, nil)
@@ -483,6 +486,12 @@ func main() {
 	}
 
 	// All six administrative write routes enforce server identity and role.
+	metadata := call("18381", "GET", "/api/marketing/admin/metadata", admin.token, nil, nil, nil)
+	success(metadata, "current money context")
+	var contextFields map[string]string
+	must(common.Unmarshal(metadata.Data, &contextFields))
+	cardMoneyRevision = contextFields["money_revision"]
+	check(cardMoneyRevision != "", "money revision required by paid-card form")
 	base := createCode("18381", admin, codeBody("auth-target", "12", "3"))
 	change := codeBody("auth-change", "9", "4")
 	change["id"] = base.Id

@@ -26,6 +26,7 @@ type command struct {
 	CloseRedis        bool
 	LoseReply         bool
 	CrashBeforeCommit bool
+	Recovery          *recoveryCommand
 }
 type result struct {
 	Funding *model.MarketingFunding
@@ -68,6 +69,7 @@ func main() {
 	common.IsMasterNode = !worker
 	common.BatchUpdateEnabled = true // Deliberately enable legacy queue: core must bypass it.
 	must(model.InitDB())
+	must(model.InitLogDB())
 	must(common.InitRedisClient())
 	if worker {
 		work()
@@ -80,6 +82,7 @@ func main() {
 	duplicateFacts()
 	lostResponses()
 	transactionCrash()
+	recoveryLeaseAndPagination()
 	fmt.Println("FUNDING_PROCESS_MATRIX_OK two_real_worker_processes shared_postgresql shared_redis_db_15")
 }
 
@@ -89,6 +92,10 @@ func work() {
 	if cmd.CloseRedis {
 		must(common.RDB.Close())
 		check(common.RDB.Ping(context.Background()).Err() != nil, "Redis connection must actually fail")
+	}
+	if cmd.Recovery != nil {
+		recoverUsageWorker(*cmd.Recovery)
+		return
 	}
 	tx := model.DB.Begin()
 	must(tx.Error)

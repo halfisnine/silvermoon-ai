@@ -47,7 +47,8 @@ func TestXunfeiSingleRequestFundingAndProtocol(t *testing.T) {
 	oldLogs := common.LogConsumeEnabled
 	common.LogConsumeEnabled = true
 	t.Cleanup(func() { common.LogConsumeEnabled = oldLogs })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.MarketingAccount{}, &model.MarketingInvitation{}, &model.MarketingActivity{}, &model.MarketingActivityFact{}, &model.MarketingFactSequence{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}))
+	require.NoError(t, db.Create(&model.MarketingFactSequence{ID: 1}).Error)
 	terminal := `{"header":{"code":0},"payload":{"choices":{"status":2,"text":[{"content":"world"}]},"usage":{"text":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}}}}`
 	partial := `{"header":{"code":0},"payload":{"choices":{"status":1,"text":[{"content":"hello "}]},"usage":{"text":{"prompt_tokens":4,"completion_tokens":3,"total_tokens":7}}}}`
 	for _, stream := range []bool{false, true} {

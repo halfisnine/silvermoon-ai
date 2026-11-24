@@ -67,7 +67,7 @@ type MarketingActivityFact struct {
 	ID              int64  `gorm:"primaryKey"`
 	SourceKey       string `gorm:"size:64;not null;uniqueIndex"`
 	SourceReference string `gorm:"size:128;not null"`
-	UserID          int    `gorm:"not null;index:idx_mv2_fact_order,priority:1"`
+	UserID          int    `gorm:"not null;index:idx_mv2_fact_order,priority:1;index:idx_mv2_fact_delivery,priority:2"`
 	Kind            string `gorm:"size:24;not null"`
 	OccurredAt      int64  `gorm:"not null"`
 	PaymentID       int64  `gorm:"not null"`
@@ -76,7 +76,7 @@ type MarketingActivityFact struct {
 	Payload         string `gorm:"type:text;not null"`
 	Rules           string `gorm:"type:text;not null"`
 	State           string `gorm:"size:16;not null;index:idx_mv2_fact_order,priority:2"`
-	DeliveryState   string `gorm:"size:16;not null"`
+	DeliveryState   string `gorm:"size:16;not null;index:idx_mv2_fact_delivery,priority:1"`
 }
 
 func (MarketingActivityFact) TableName() string { return "marketing_v2_activity_facts" }
@@ -1222,7 +1222,13 @@ func FulfillMarketingActivityReward(tx *gorm.DB, beneficiaryID int, itemID, now 
 	}
 	if cleared {
 		reward.State = "cleared"
-		return &reward, tx.Model(&reward).Update("state", "cleared").Error
+		if err := tx.Model(&reward).Update("state", "cleared").Error; err != nil {
+			return nil, err
+		}
+		if err := lockForUpdate(tx).First(&fact, reward.FactID).Error; err != nil {
+			return nil, err
+		}
+		return &reward, refreshMarketingActivityDelivery(tx, &fact)
 	}
 	if reward.Kind != "gift" {
 		return nil, ErrMarketingConflict

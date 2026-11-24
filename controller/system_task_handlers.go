@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -148,7 +149,7 @@ type asyncTaskPollHandler struct{}
 func (asyncTaskPollHandler) Type() string { return model.SystemTaskTypeAsyncTaskPoll }
 
 func (asyncTaskPollHandler) Enabled() bool {
-	return (constant.UpdateTask && model.HasUnfinishedSyncTasks()) || model.HasPendingMarketingRecovery()
+	return (constant.UpdateTask && model.HasUnfinishedSyncTasks()) || model.HasPendingMarketingRecovery() || model.HasPendingMarketingRewardRecovery()
 }
 
 func (asyncTaskPollHandler) Interval() time.Duration { return 15 * time.Second }
@@ -158,10 +159,7 @@ func (asyncTaskPollHandler) NewPayload() any { return nil }
 func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
 	if !constant.UpdateTask {
 		// Financial/log recovery is independent of the upstream polling switch.
-		err := service.RecoverMarketingTasks(ctx)
-		if err == nil {
-			err = model.RecoverMarketingUsage(ctx, 100)
-		}
+		err := errors.Join(service.RecoverMarketingTasks(ctx), model.RecoverMarketingUsage(ctx, 100), service.RecoverMarketingRewards(ctx))
 		if err != nil {
 			finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
 		} else {
@@ -170,6 +168,10 @@ func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, run
 		return
 	}
 	summary := service.RunTaskPollingOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
+	if err := service.RecoverMarketingRewards(ctx); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, summary, err)
+		return
+	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 

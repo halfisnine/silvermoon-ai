@@ -93,6 +93,13 @@ func main() {
 	must(common.InitRedisClient())
 	defer common.RDB.Close()
 	must(common.RDB.FlushDB(context.Background()).Err())
+	if os.Getenv("MV2_GATEWAY_SUITE") == "capacity" {
+		runGatewayCapacity()
+		return
+	}
+	cacheProxy := startGatewayCacheProxy()
+	defer cacheProxy.listener.Close()
+	must(os.Setenv("REDIS_CONN_STRING", "redis://"+cacheProxy.listener.Addr().String()+"/14"))
 	var submitted, textCalls, imageCalls atomic.Int32
 	var complete atomic.Bool
 	realtimeProvider := &realtimeGatewayFixture{}
@@ -183,6 +190,8 @@ func main() {
 	b := launch("18372", true)
 	defer func() { _ = b.Process.Kill(); _ = b.Wait() }()
 	runRealtimeGatewayScenarios(realtimeProvider)
+	runGatewayCacheFailure(cacheProxy)
+	textCalls.Store(0)
 	for index, scenario := range []struct {
 		name                 string
 		stream, fixed, audio bool

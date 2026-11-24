@@ -1084,7 +1084,8 @@ func TestAwsManagedDispatchAndTerminalAccounting(t *testing.T) {
 	oldRedis, oldLogs := common.RedisEnabled, common.LogConsumeEnabled
 	common.RedisEnabled, common.LogConsumeEnabled = false, true
 	t.Cleanup(func() { common.RedisEnabled, common.LogConsumeEnabled = oldRedis, oldLogs })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.MarketingAccount{}, &model.MarketingInvitation{}, &model.MarketingActivity{}, &model.MarketingActivityFact{}, &model.MarketingFactSequence{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.QuotaData{}, &model.Log{}))
+	require.NoError(t, db.Create(&model.MarketingFactSequence{ID: 1}).Error)
 	start := `{"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"claude-test","content":[],"usage":{"input_tokens":4,"output_tokens":0}}}`
 	delta := `{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}`
 	stop := `{"type":"message_stop"}`
