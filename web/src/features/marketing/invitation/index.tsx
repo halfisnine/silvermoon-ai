@@ -47,6 +47,7 @@ export function InvitationPage() {
   const { t, i18n } = useTranslation()
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
   const isMobile = useMediaQuery('(max-width: 640px)')
+  const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [rulePage, setRulePage] = useState(1)
   const query = useQuery({
     queryKey: ['marketing-user', userId, 'invitation', pagination],
@@ -108,11 +109,11 @@ export function InvitationPage() {
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='marketing-invitation-layout mx-auto grid w-full max-w-6xl items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'>
-          <div className='marketing-invitation-info min-w-0 space-y-4'>
+        <div className='marketing-invitation-layout mx-auto grid w-full max-w-6xl gap-5 lg:h-[max(42rem,calc(100dvh-14rem))] lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'>
+          <div className='marketing-invitation-info flex min-h-0 min-w-0 flex-col gap-4'>
             {query.isPending && <LoadingState />}
             {query.data && (
-              <Card className='gap-3 p-4'>
+              <Card className='shrink-0 gap-3 p-4'>
                 <h3 className='font-semibold'>{t('Your invitation link')}</h3>
                 <div className='flex gap-2'>
                   <Input
@@ -133,45 +134,50 @@ export function InvitationPage() {
                 </p>
               </Card>
             )}
-            {rules.isPending && <LoadingState />}
-            {rules.isError && (
-              <ErrorState onRetry={() => void rules.refetch()} />
-            )}
-            {rules.data?.items.length === 0 && (
-              <EmptyState
-                title={t('No active invitation activity')}
-                description={t(
-                  'Your invitation link, existing friends and reward history remain available.'
-                )}
-              />
-            )}
-            {rules.data?.items.map((item) => (
-              <ActivityCard key={item.id} item={item} />
-            ))}
-            {rules.data && rules.data.total > 20 && (
-              <nav
-                className='flex justify-end gap-2'
-                aria-label={t('Activity pagination')}
-              >
-                <Button
-                  variant='outline'
-                  disabled={rulePage === 1}
-                  onClick={() => setRulePage(rulePage - 1)}
+            <div className='flex min-h-0 flex-1 flex-col gap-4 lg:overflow-y-auto [&>[data-slot=card]]:shrink-0'>
+              {rules.isPending && <LoadingState />}
+              {rules.isError && (
+                <ErrorState onRetry={() => void rules.refetch()} />
+              )}
+              {rules.data?.items.length === 0 && (
+                <Card className='marketing-invitation-empty min-h-72 flex-1 justify-center p-4'>
+                  <EmptyState
+                    className='min-h-0'
+                    title={t('No active invitation activity')}
+                    description={t(
+                      'Your invitation link, existing friends and reward history remain available.'
+                    )}
+                  />
+                </Card>
+              )}
+              {rules.data?.items.map((item) => (
+                <ActivityCard key={item.id} item={item} />
+              ))}
+              {rules.data && rules.data.total > 20 && (
+                <nav
+                  className='flex justify-end gap-2'
+                  aria-label={t('Activity pagination')}
                 >
-                  {t('Previous')}
-                </Button>
-                <Button
-                  variant='outline'
-                  disabled={rulePage * 20 >= rules.data.total}
-                  onClick={() => setRulePage(rulePage + 1)}
-                >
-                  {t('Next')}
-                </Button>
-              </nav>
-            )}
+                  <Button
+                    variant='outline'
+                    disabled={rulePage === 1}
+                    onClick={() => setRulePage(rulePage - 1)}
+                  >
+                    {t('Previous')}
+                  </Button>
+                  <Button
+                    variant='outline'
+                    disabled={rulePage * 20 >= rules.data.total}
+                    onClick={() => setRulePage(rulePage + 1)}
+                  >
+                    {t('Next')}
+                  </Button>
+                </nav>
+              )}
+            </div>
           </div>
-          <Card className='marketing-invitation-friends min-w-0 gap-3 p-4'>
-            <h3 className='font-semibold'>
+          <Card className='marketing-invitation-friends min-h-0 min-w-0 gap-3 p-4'>
+            <h3 className='shrink-0 font-semibold'>
               {t('Invited friends')}
               {query.data && (
                 <>
@@ -191,7 +197,7 @@ export function InvitationPage() {
                 table={table}
                 columns={columns}
                 toolbarProps={null}
-                fixedHeight={false}
+                fixedHeight={isDesktop}
                 paginationInFooter={false}
                 compactPagination={isMobile}
                 showPagination={

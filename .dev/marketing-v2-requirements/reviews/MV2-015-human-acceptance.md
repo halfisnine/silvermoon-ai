@@ -83,3 +83,10 @@
 - `.dev/run bun run test src/features/marketing/__tests__/participation.test.tsx src/features/marketing/lottery/__tests__/participation.test.tsx src/features/marketing-admin/__tests__/reward-records.test.tsx`：3文件34项通过。覆盖101个奖池／活动、后续页失败重试、选择后页选项、好友翻页与链接保留、空好友不显示多余分页。typecheck：1494文件2项目无错误；受影响9文件oxlint零警告零错误、oxfmt检查和git diff --check通过；前端及预览二进制构建通过。
 - 实际Chromium：中文邀请页左右布局，好友下一页／上一页及切换每页10条，1100/768/390/320px无横向溢出，窄屏上下排列，无好友隐藏分页；奖池读取101项并选择第101项；英文管理员活动筛选读取101项并选择第101项，确认奖励记录请求携带正确activity_id，1440/390/320px无页面横向溢出。用户与管理员使用独立浏览器进程避免自动化环境会话相互干扰，无页面脚本错误。浏览器只拦截只读列表提供样本，未创建好友、奖池、活动或奖励记录；脚本、截图在忽略目录`build/dev/marketing-pagination/`，日志为`build/dev/marketing-pagination-*.log`，不替代后端业务验收。
 - 独立sub agent完整范围只读复核通过。仅更新独立开发预览，更新前备份SQLite与原二进制；未修改后端、数据库或发奖规则，未运行seed/scenarios、未推送或部署线上，保留测试数据，不修改人工状态或原Issue验收标准。
+
+### 2026-11-24 同日补充：邀请页等高布局
+
+- 用户反馈好友表格过矮、左侧无活动提示悬浮且过窄。桌面两列改为共享可用高度（至少42rem），左侧链接卡片保持自然高度，下方活动区域填满剩余空间；无活动时提示卡片与链接等宽、底边与好友卡片对齐。继续复用 Card、EmptyState、DataTablePage，局部去掉主题空态的内层小卡片装饰；移动端保持自然堆叠。多条活动在左列独立滚动，卡片不收缩；好友表头、表内滚动和底部分页复用共享表格能力。无后端、数据库或业务规则变更。
+- 浏览器尺寸回归在修复前失败：桌面好友卡片实际532px，未达到672px最低高度；修复后通过。实际Chromium验证空态等宽及底部对齐、21好友内部滚动/上下页/每页10条、1100/768/390/320px无横向溢出、小屏自然高度、两主题和英文；20条长名称及完整规则的活动卡片逐个验证未裁切，末尾活动分页可访问。仅拦截只读列表提供样本，未写业务数据。脚本和截图保存在忽略目录 build/dev/invitation-height/（browser-layout.cjs运行时读取专用本地账号，不包含凭据）。
+- `.dev/run bun run test src/features/marketing/__tests__/participation.test.tsx`：18项通过。typecheck：1494文件2项目无错误；受影响文件oxlint、oxfmt和git diff --check通过；前端构建、预览二进制构建通过。预览数据库及原二进制已备份，仅更新46015独立开发预览。
+- 独立验收首次指出多活动卡片可能收缩裁切；修复后由同一验收者重新检查整体范围，全部通过。H01–H11人工业务验收状态保持原记录。
