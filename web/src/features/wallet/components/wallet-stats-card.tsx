@@ -26,12 +26,14 @@ import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatMarketingMoney } from '@/features/marketing-admin/format'
 import type { WalletBalance } from '@/features/marketing/accounting'
+import { cn } from '@/lib/utils'
 
 export function WalletStatsCard(props: {
   balance?: WalletBalance
   loading?: boolean
   error?: boolean
   onRetry?: () => void
+  compact?: boolean
 }) {
   const { t, i18n } = useTranslation()
   if (props.error) {
@@ -50,21 +52,41 @@ export function WalletStatsCard(props: {
     },
   ]
   return (
-    <div className='grid grid-cols-2 divide-x rounded-lg border'>
+    <div
+      role='group'
+      aria-label={t('Wallet')}
+      className={cn(
+        'grid grid-cols-2 divide-x rounded-lg border',
+        props.compact && 'bg-background/40'
+      )}
+    >
       {stats.map((item, index) => (
-        <div key={item.label} className='min-w-0 px-3 py-3 sm:px-5 sm:py-4'>
+        <div
+          key={item.label}
+          className={cn(
+            'min-w-0',
+            props.compact ? 'px-2.5 py-2.5' : 'px-3 py-3 sm:px-5 sm:py-4'
+          )}
+        >
           <div className='flex items-center gap-2'>
-            <IconBadge tone={index === 0 ? 'success' : 'info'} size='stat'>
-              <item.icon />
-            </IconBadge>
-            <span className='text-muted-foreground text-xs font-medium'>
+            {!props.compact && (
+              <IconBadge tone={index === 0 ? 'success' : 'info'} size='stat'>
+                <item.icon />
+              </IconBadge>
+            )}
+            <span className='text-muted-foreground text-xs font-medium break-words'>
               {item.label}
             </span>
           </div>
           {props.loading ? (
             <Skeleton className='mt-2 h-7 w-full' />
           ) : (
-            <div className='mt-2 font-mono text-lg font-bold break-all tabular-nums sm:text-2xl'>
+            <div
+              className={cn(
+                'mt-2 font-mono text-lg font-bold break-all tabular-nums',
+                !props.compact && 'sm:text-2xl'
+              )}
+            >
               {item.money
                 ? formatMarketingMoney(
                     item.money.amount,

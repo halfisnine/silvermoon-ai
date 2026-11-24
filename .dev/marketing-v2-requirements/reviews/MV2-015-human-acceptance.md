@@ -67,3 +67,11 @@
 - 实际Chromium浏览器验证：42日期格；已签／今日／补签／未来状态；方向键到可补签日、Enter确认及取消；补签提交准确日期、今日签到刷新、切换月份；1440/768/390/320px无横向溢出；中文／英文、绯云与银月梦境及默认主题、无活动与奖励入口无脚本错误。浏览器只在网络边界提供签到演示数据并拦截提交，**不代替后端签到／发奖业务验收**，未写入用户测试记录；脚本、截图及日志在忽略目录`build/dev/checkin-redesign/`及`build/dev/checkin-redesign-*.log`。
 - 独立sub agent完整复核：首次发现多活动已签记录遮蔽可补签日，修复并新增回归后通过；最终包含公共焦点修复及同月查询保护的完整范围只读复核也通过。没有修改H01–H11状态或原Issue验收标准。
 - 本次仅修改前端，无后端接口、数据库、签到条件、发奖或资金规则变更。仅更新并重启独立`silvermoon-mv2-015-preview`；更新前保留SQLite和原二进制备份，未运行seed/scenarios，原测试数据保留。未推送或部署线上。
+
+### 同日补充：概览卡片显示付费金额与赠金（待用户复验）
+
+- 对应H09/H11：概览右侧余额卡片复用钱包的`WalletStatsCard`，增加可选紧凑布局；分别显示剩余付费金额／剩余赠金，保留赠金明细及钱包入口。与钱包共用`['marketing-wallet', userId]`查询键和已有余额接口，直接格式化接口金额，不再次换算；原钱包不传compact，保留原显示布局。无后端或数据库变更。
+- 卡片余额状态及预计可用时长按付费金额与可用赠金合计估算，近期用量按站点配置折算到同一币种再比较。加载时显示骨架，读取失败显示重试，缺失数据时不显示余额耗尽或虚假零余额。沿用现有七语言文案，无新增翻译键。
+- `.dev/run bun run test src/features/dashboard/components/overview/__tests__/summary-cards.test.tsx src/features/dashboard/components/overview/__tests__/setup-guide.test.tsx src/features/wallet/__tests__/balances.test.tsx`：3文件13项通过，覆盖非默认单位与汇率下不重复换算、仅有赠金、微小金额、中英文、加载／失败／重试和真实零余额。typecheck：1493文件2项目无错误；受影响4文件oxfmt检查通过，oxlint零错误（引导页原有两处getElementById风格警告保留），git diff --check通过；前端和预览二进制构建通过。
+- 实际Chromium对独立预览读取真实账号数据：概览／钱包两项金额完全一致，赠金明细跳转正确；中文／英文、绯云／银月梦境、1440/1024/768/390/320px无横向溢出、无脚本错误。没有提交资金、营销或配置操作；仅浏览器会话刷新与钱包自动估价请求。脚本和截图在忽略目录`build/dev/overview-wallet/`，日志为`build/dev/overview-wallet-*.log`。
+- 独立sub agent对本次完整范围只读复核通过。仅备份并更新独立开发预览，未运行seed/scenarios、未推送或部署线上；不修改人工验收状态或原Issue验收标准。

@@ -27,8 +27,14 @@ import { Button } from '@/components/ui/button'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
 import type { QuotaDataItem } from '@/features/dashboard/types'
+import { getWalletBalance } from '@/features/marketing/accounting'
+import { WalletStatsCard } from '@/features/wallet/components/wallet-stats-card'
 import { useStatus } from '@/hooks/use-status'
-import { getCurrencyLabel, isCurrencyDisplayEnabled } from '@/lib/currency'
+import {
+  getCurrencyDisplay,
+  getCurrencyLabel,
+  isCurrencyDisplayEnabled,
+} from '@/lib/currency'
 import { formatNumber, formatQuota } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { computeTimeRange } from '@/lib/time'
@@ -141,6 +147,11 @@ export function SummaryCards() {
   const { t } = useTranslation()
   const user = useAuthStore((state) => state.auth.user)
   const { status, loading } = useStatus()
+  const wallet = useQuery({
+    queryKey: ['marketing-wallet', user?.id],
+    queryFn: getWalletBalance,
+    enabled: user?.id != null,
+  })
 
   const summaryTimeRange = useMemo(() => computeTimeRange(1), [])
   const remainQuota = Number(user?.quota ?? 0)
@@ -209,13 +220,23 @@ export function SummaryCards() {
     [usageTrendQuery.data?.data]
   )
 
-  const healthLevel = getHealthLevel(remainQuota, recentUsage)
+  // Compare both available sources with usage in the same display currency.
+  // Wallet amounts are already converted; only the usage estimate needs a rate.
+  const { config, meta } = getCurrencyDisplay()
+  const displayRate = meta.kind === 'tokens' ? 1 : meta.exchangeRate
+  const recentMoney = (recentUsage / config.quotaPerUnit) * displayRate
+  const availableMoney = wallet.data
+    ? Number(wallet.data.paid.amount) + Number(wallet.data.gift.amount)
+    : null
+  const healthLevel = getHealthLevel(availableMoney ?? 0, recentMoney)
   const healthCfg = HEALTH_CONFIG[healthLevel]
-  const runwayDays = getRunwayDays(remainQuota, recentUsage)
+  const runwayDays = getRunwayDays(availableMoney ?? 0, recentMoney)
 
   const todayUsageDisplay = formatQuota(recentUsage)
   let runwayDisplay: string
-  if (runwayDays !== null) {
+  if (availableMoney === null || wallet.isError) {
+    runwayDisplay = '—'
+  } else if (runwayDays !== null) {
     if (runwayDays < 1) {
       runwayDisplay = t('Less than 1 day left')
     } else if (runwayDays > 999) {
@@ -223,7 +244,7 @@ export function SummaryCards() {
     } else {
       runwayDisplay = `~${formatNumber(Math.floor(runwayDays))} ${t('days')}`
     }
-  } else if (remainQuota <= 0) {
+  } else if (availableMoney <= 0) {
     runwayDisplay = t('Balance depleted')
   } else {
     runwayDisplay = t('No recent usage')
@@ -292,22 +313,28 @@ export function SummaryCards() {
           <div className='flex flex-col gap-2 sm:gap-3'>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-xs font-medium'>
-                {t('Credit remaining')}
+                {t('Wallet')}
               </span>
-              <span className='flex items-center gap-1.5'>
-                <span
-                  className={cn('size-1.5 rounded-full', healthCfg.dotClass)}
-                  aria-hidden='true'
-                />
-                <span className='text-muted-foreground text-[11px] font-medium'>
-                  {t(healthCfg.labelKey)}
+              {wallet.data && !wallet.isError && (
+                <span className='flex items-center gap-1.5'>
+                  <span
+                    className={cn('size-1.5 rounded-full', healthCfg.dotClass)}
+                    aria-hidden='true'
+                  />
+                  <span className='text-muted-foreground text-[11px] font-medium'>
+                    {t(healthCfg.labelKey)}
+                  </span>
                 </span>
-              </span>
+              )}
             </div>
 
-            <div className='font-mono text-xl font-semibold tracking-tight sm:text-2xl'>
-              {formatQuota(remainQuota)}
-            </div>
+            <WalletStatsCard
+              compact
+              balance={wallet.data}
+              loading={wallet.isPending}
+              error={wallet.isError}
+              onRetry={() => void wallet.refetch()}
+            />
 
             <div className='grid grid-cols-2 gap-2'>
               <div className='bg-background/60 rounded-lg px-2.5 py-2'>
