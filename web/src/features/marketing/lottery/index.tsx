@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -120,6 +121,25 @@ function PoolExperience(props: { userId: number; poolId: number }) {
   if (query.isError || !pool) {
     return <ErrorState onRetry={() => void query.refetch()} />
   }
+  let nextExpiry = 0
+  let expiringChances = 0
+  if (pool.available_chances > 0) {
+    for (const chance of pool.chances) {
+      if (
+        chance.state !== 'ready' ||
+        chance.remaining <= 0 ||
+        chance.expires_at <= pool.server_now
+      ) {
+        continue
+      }
+      if (!nextExpiry || chance.expires_at < nextExpiry) {
+        nextExpiry = chance.expires_at
+        expiringChances = chance.remaining
+      } else if (chance.expires_at === nextExpiry) {
+        expiringChances += chance.remaining
+      }
+    }
+  }
   const blocked =
     !pool.can_draw ||
     draw.busy ||
@@ -136,12 +156,6 @@ function PoolExperience(props: { userId: number; poolId: number }) {
             {formatMarketingDate(pool.ends_at, i18n.language)}
           </p>
         </div>
-        <p>
-          {t('Available chances')}:{' '}
-          <strong>
-            {formatNumber(pool.available_chances, toIntlLocale(i18n.language))}
-          </strong>
-        </p>
       </header>
       <p role='status' className='text-sm'>
         {poolState(pool, t)}
@@ -165,6 +179,40 @@ function PoolExperience(props: { userId: number; poolId: number }) {
           <Button onClick={draw.start}>{t('Retry this draw')}</Button>
         </div>
       )}
+      <div className='bg-card/60 flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4'>
+        <div className='min-w-0 space-y-1'>
+          <p className='font-semibold'>
+            {pool.available_chances > 0
+              ? t('Remaining draw opportunities: {{amount}}', {
+                  amount: formatNumber(
+                    pool.available_chances,
+                    toIntlLocale(i18n.language)
+                  ),
+                })
+              : t('No available draw opportunities')}
+          </p>
+          {nextExpiry > 0 && (
+            <p className='text-muted-foreground text-sm'>
+              {t('Next expiry: {{date}} ({{amount}} remaining)', {
+                date: formatMarketingDate(nextExpiry, i18n.language),
+                amount: formatNumber(
+                  expiringChances,
+                  toIntlLocale(i18n.language)
+                ),
+              })}
+            </p>
+          )}
+        </div>
+        {pool.available_chances === 0 && (
+          <Button
+            variant='outline'
+            role='link'
+            render={<Link to='/activities/center' />}
+          >
+            {t('View activity details')}
+          </Button>
+        )}
+      </div>
       <DrawStage
         pool={pool}
         result={draw.result}
@@ -208,37 +256,6 @@ function PoolExperience(props: { userId: number; poolId: number }) {
             </article>
           ))}
         </div>
-      </section>
-      <section className='space-y-3' aria-label={t('Chance sources')}>
-        <h3 className='font-semibold'>{t('Chance sources')}</h3>
-        <p className='text-muted-foreground text-sm'>
-          {t(
-            'Chances keep their own deadlines when their source activity ends. Pausing a pool does not pause expiry.'
-          )}
-        </p>
-        <ul className='divide-y'>
-          {pool.chances.map((chance) => (
-            <li
-              key={chance.id}
-              className='flex flex-wrap justify-between gap-2 py-3 text-sm'
-            >
-              <span className='min-w-0 break-words'>{chance.source_name}</span>
-              <span>
-                {formatNumber(chance.remaining, toIntlLocale(i18n.language))} ·{' '}
-                {
-                  {
-                    expired: t('Expired'),
-                    cleared: t('Cleared after refund'),
-                    used: t('Used'),
-                    ready: t('Available'),
-                  }[chance.state]
-                }{' '}
-                · {t('Expires at')}:{' '}
-                {formatMarketingDate(chance.expires_at, i18n.language)}
-              </span>
-            </li>
-          ))}
-        </ul>
       </section>
     </>
   )

@@ -17,6 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
@@ -119,9 +125,13 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 function mount() {
+  const router = createRouter({
+    routeTree: createRootRoute({ component: LotteryPage }),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  })
   return render(
     <QueryClientProvider client={client}>
-      <LotteryPage />
+      <RouterProvider router={router} />
     </QueryClientProvider>
   )
 }
@@ -269,7 +279,8 @@ test('paused pools preserve chance deadlines and clearly show sold-out prizes wi
     await screen.findByRole('button', { name: 'Spin once' })
   ).toBeDisabled()
   expect(screen.getByText('Sold out')).toBeVisible()
-  expect(screen.getByText('Ended source activity')).toBeVisible()
+  expect(screen.queryByText('Ended source activity')).not.toBeInTheDocument()
+  expect(screen.getByText(/Next expiry:/)).toBeVisible()
   expect(
     screen.getByText(
       'Draws are paused. Existing chances continue to expire at their original deadlines.'
@@ -450,4 +461,87 @@ test('a later pool-options failure shows retry instead of silently offering only
   await userEvent.click(retry)
   expect(await screen.findByLabelText('Prize pool')).toBeVisible()
   expect(screen.getAllByRole('option')).toHaveLength(2)
+})
+
+test('chance summary groups the nearest valid deadline and hides source history', async () => {
+  const detailed = {
+    ...pool,
+    available_chances: 6,
+    chances: [
+      { ...pool.chances[0], id: 1, remaining: 2, expires_at: 2000 },
+      { ...pool.chances[0], id: 2, remaining: 1, expires_at: 2000 },
+      { ...pool.chances[0], id: 3, remaining: 3, expires_at: 3000 },
+      {
+        ...pool.chances[0],
+        id: 4,
+        remaining: 4,
+        expires_at: 500,
+        state: 'ready',
+      },
+      {
+        ...pool.chances[0],
+        id: 5,
+        remaining: 0,
+        expires_at: 1500,
+        state: 'used',
+      },
+      {
+        ...pool.chances[0],
+        id: 6,
+        remaining: 9,
+        expires_at: 1500,
+        state: 'cleared',
+      },
+      {
+        ...pool.chances[0],
+        id: 7,
+        remaining: 8,
+        expires_at: 1500,
+        state: 'expired',
+      },
+    ],
+  }
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url.endsWith('/pools')
+        ? { items: [pool], total: 1, page: 1, page_size: 20 }
+        : detailed,
+    },
+  }))
+  mount()
+  expect(
+    await screen.findByText('Remaining draw opportunities: 6')
+  ).toBeVisible()
+  expect(screen.getByText(/Next expiry:.*\(3 remaining\)/)).toBeVisible()
+  expect(
+    screen.queryByRole('region', { name: 'Chance sources' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByText('Ended source activity')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'Spin once' })).toBeEnabled()
+})
+
+test('no available chances hides expiry history and links to activities', async () => {
+  vi.mocked(api.get).mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url.endsWith('/pools')
+        ? { items: [pool], total: 1, page: 1, page_size: 20 }
+        : {
+            ...pool,
+            available_chances: 0,
+            can_draw: false,
+            chances: [{ ...pool.chances[0], remaining: 0, state: 'used' }],
+          },
+    },
+  }))
+  mount()
+  expect(
+    await screen.findByText('No available draw opportunities')
+  ).toBeVisible()
+  expect(screen.queryByText(/Next expiry:/)).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('link', { name: 'View activity details' })
+  ).toHaveAttribute('href', '/activities/center')
+  expect(screen.getByRole('button', { name: 'Spin once' })).toBeDisabled()
 })
