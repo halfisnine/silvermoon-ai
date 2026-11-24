@@ -172,6 +172,69 @@ test('activity center loading failure exposes Retry and recovers to a truthful e
   fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
   expect(await screen.findByText('No activities to display')).toBeVisible()
 })
+test('activity center loads every page for scrolling and reloads the complete filtered list', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (_url, config) => {
+    const params = config?.params as { page: number; kind: string }
+    const filtered = params.kind === 'invitation'
+    const count = filtered ? 21 : 22
+    const offset = (params.page - 1) * 20
+    const items = Array.from(
+      { length: Math.min(20, count - offset) },
+      (_, i) => ({
+        ...activity,
+        id: offset + i + 1,
+        activity: {
+          ...activity.activity,
+          name: `${filtered ? 'Invitation' : 'Recharge'} ${offset + i + 1}`,
+          kind: filtered ? 'invitation' : 'recharge',
+        },
+      })
+    )
+    return envelope({ ...page(items), total: count, page: params.page })
+  })
+  await view(<ActivityCenterPage />)
+  expect(await screen.findByText('Recharge 22')).toBeVisible()
+  expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(22)
+  expect(
+    screen.queryByRole('navigation', { name: 'Pagination' })
+  ).not.toBeInTheDocument()
+  fireEvent.change(screen.getByRole('combobox', { name: 'Activity type' }), {
+    target: { value: 'invitation' },
+  })
+  expect(await screen.findByText('Invitation 21')).toBeVisible()
+  expect(screen.queryByText('Recharge 22')).not.toBeInTheDocument()
+  expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(21)
+  expect(get).toHaveBeenCalledWith('/api/marketing/user/activities', {
+    params: { page: 2, page_size: 20, kind: 'invitation', state: '' },
+  })
+})
+test('a later activity page failure is retryable without silently truncating the list', async () => {
+  let fail = true
+  vi.spyOn(api, 'get').mockImplementation(async (_url, config) => {
+    const params = config?.params as { page: number } | undefined
+    const current = params?.page ?? 1
+    if (current === 2 && fail) throw new Error('Second page unavailable')
+    return envelope({
+      ...page([
+        {
+          ...activity,
+          id: current,
+          activity: { ...activity.activity, name: `Page ${current}` },
+        },
+      ]),
+      total: 2,
+      page: current,
+      page_size: 1,
+    })
+  })
+  await view(<ActivityCenterPage />)
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect(screen.queryByText('Page 1')).not.toBeInTheDocument()
+  fail = false
+  fireEvent.click(retry)
+  expect(await screen.findByText('Page 2')).toBeVisible()
+  expect(screen.getByText('Page 1')).toBeVisible()
+})
 const checkin = {
   month: '2026-11',
   today: '2026-11-23',

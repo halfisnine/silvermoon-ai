@@ -53,8 +53,8 @@ export function ActivityField(props: Props) {
       name={props.name}
       render={({ field }) => {
         let control
-        if (props.options)
-          {control = (
+        if (props.options) {
+          control = (
             <NativeSelect
               value={String(field.value ?? '')}
               onChange={(e) =>
@@ -77,9 +77,9 @@ export function ActivityField(props: Props) {
                 </NativeSelectOption>
               ))}
             </NativeSelect>
-          )}
-        else if (props.type === 'date')
-          {control = (
+          )
+        } else if (props.type === 'date') {
+          control = (
             <DateTimePicker
               timeZone='Asia/Shanghai'
               value={
@@ -91,18 +91,18 @@ export function ActivityField(props: Props) {
               ref={field.ref}
               disabled={props.disabled}
             />
-          )}
-        else if (props.type === 'check')
-          {control = (
+          )
+        } else if (props.type === 'check') {
+          control = (
             <Checkbox
               checked={Boolean(field.value)}
               onCheckedChange={field.onChange}
               disabled={props.disabled}
               ref={field.ref}
             />
-          )}
-        else
-          {control = (
+          )
+        } else {
+          control = (
             <Input
               value={String(field.value ?? '')}
               type={props.type === 'number' ? 'number' : 'text'}
@@ -118,7 +118,8 @@ export function ActivityField(props: Props) {
               ref={field.ref}
               disabled={props.disabled}
             />
-          )}
+          )
+        }
         return (
           <FormItem>
             <FormLabel>{props.label}</FormLabel>
@@ -179,6 +180,7 @@ export function GiftValidityField(props: {
                 min={0}
                 step='any'
                 aria-label={t('Validity duration')}
+                className='min-w-0 flex-1'
                 value={
                   Number.isFinite(Number(field.value))
                     ? Number(field.value) / unit
@@ -195,6 +197,7 @@ export function GiftValidityField(props: {
               />
               <NativeSelect
                 aria-label={t('Validity unit')}
+                className='w-max min-w-24 shrink-0'
                 value={unit}
                 onChange={(e) => setUnit(Number(e.target.value))}
               >

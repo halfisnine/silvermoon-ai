@@ -120,7 +120,7 @@ export function MarketingActivitiesPage() {
       id: 'actions',
       header: t('Actions'),
       cell: ({ row }) => (
-        <div className='flex flex-wrap gap-2'>
+        <div className='flex w-max items-center gap-2'>
           <Button
             variant='outline'
             size='sm'
@@ -238,8 +238,8 @@ function ActivityPanel(props: { selection: Selection; onClose: () => void }) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
   })
-  if (metadata.isError || detail.isError)
-    {return (
+  if (metadata.isError || detail.isError) {
+    return (
       <Dialog
         open
         onOpenChange={(open) => {
@@ -254,9 +254,10 @@ function ActivityPanel(props: { selection: Selection; onClose: () => void }) {
           }}
         />
       </Dialog>
-    )}
-  if (!metadata.data || (props.selection.id && !detail.data))
-    {return (
+    )
+  }
+  if (!metadata.data || (props.selection.id && !detail.data)) {
+    return (
       <Dialog
         open
         onOpenChange={(open) => {
@@ -266,13 +267,15 @@ function ActivityPanel(props: { selection: Selection; onClose: () => void }) {
       >
         <LoadingState />
       </Dialog>
-    )}
+    )
+  }
   if (
     detail.data &&
     (props.selection.mode === 'view' ||
       (props.selection.mode === 'edit' && !detail.data.editable))
-  )
-    {return <ActivityDetailView data={detail.data} onClose={props.onClose} />}
+  ) {
+    return <ActivityDetailView data={detail.data} onClose={props.onClose} />
+  }
   return (
     <ActivityEditor
       currency={metadata.data.currency}
@@ -309,12 +312,13 @@ function ActivityDetailView(props: {
     },
   })
   const actions: { name: string; label: string }[] = []
-  if (props.data.state === 'draft')
-    {actions.push({ name: 'activate', label: t('Activate activity') })}
-  else if (props.data.state === 'paused')
-    {actions.push({ name: 'resume', label: t('Resume activity') })}
-  else if (props.data.state !== 'ended')
-    {actions.push({ name: 'pause', label: t('Pause activity') })}
+  if (props.data.state === 'draft') {
+    actions.push({ name: 'activate', label: t('Activate activity') })
+  } else if (props.data.state === 'paused') {
+    actions.push({ name: 'resume', label: t('Resume activity') })
+  } else if (props.data.state !== 'ended') {
+    actions.push({ name: 'pause', label: t('Pause activity') })
+  }
   actions.push(
     props.data.activity.published
       ? { name: 'unpublish', label: t('Hide from activity center') }

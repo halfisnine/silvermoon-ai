@@ -113,3 +113,11 @@
 - 数据库验证：`.dev/run go test -c -o /artifacts/marketing-v2-013-controller.test ./controller`，随后`python3 .dev/marketing-v2-requirements/validation/user_http_matrix.py`，真实SQLite3.50.4、MySQL8.4.13、PostgreSQL17.11均通过TestMarketingUserHTTP与TestMarketingCheckinHTTP，无跳过。此变更仅查询现有表，不涉及迁移。矩阵日志副本为build/dev/invitation-rewards/{sqlite,mysql,postgres}-http.log。
 - 实际Chromium先读取真实开发接口验证每好友summary与过滤来源，再用网络拦截样本验证已发/待发/其他/零记录、21好友翻页、按好友跳转/详情/清空、中文英文和两主题、1100/768/390/320px无横向溢出。未创建测试好友、未补发奖励、未改用户活动。脚本截图在忽略目录build/dev/invitation-rewards/，专用账号运行时读取且不含凭据常量。预览数据库及旧二进制备份后，仅更新46015独立开发预览。
 - 独立sub agent首次及最终全链路复验通过，不修改H01–H11人工验收状态。
+
+### 2026-11-25 补充：有效期单位、活动中心滚动与操作按钮横排
+
+- 活动赠金有效期沿用原数字输入与NativeSelect：数字输入可收缩，单位保留最小宽度且不被压缩，完整显示小时／分钟／天，单位换算、保存及发奖规则未变。管理员活动表操作容器按内容宽度横排，编辑权限和复制入口保留。受影响文件按oxfmt规范格式化。
+- 活动中心复用既有loadAllOptions，按服务端分页信息取齐公开活动并按ID去重；移除用户翻页按钮，固定内容区域内使用既有no-scrollbar上下滚动，保留分类、活动状态分组、错误重试与空态，并支持键盘聚焦滚动。新测试覆盖超过20条、筛选后多页、后页失败整体提示和重试；修改前24项通过2项失败，修改后participation/activity-form/reward-validity共42项通过。测试mock的可选参数lint修正后participation26项再次全通过。
+- `.dev/run bun run typecheck`：1494文件2项目无类型错误；受影响4文件oxlint零警告零错误，oxfmt检查、git diff --check通过。`.dev/run bun run build`与`.dev/run go build -o /artifacts/mv2-015-preview/gateway.next .`通过。没有后端或数据库逻辑变更，没有新增翻译键，复用现有七语言文本和组件。
+- 实际Chromium修改前确认单位文字空间12px小于“小时”约28px、编辑和复制分两行；修改后中文／英文、绯云／银月梦境、1440/1100/768/390/320px，三种单位完整可读，操作同一行且复制按钮可滚动到可见位置，无页面横向溢出。活动中心25条及筛选后21条均读取第二页，最后一条可滚动到，滚动条隐藏，键盘End有效，1440/390/320px无页面溢出，无脚本错误。
+- 浏览器仅拦截只读列表与详情提供样本，禁止营销写操作，没有新建或修改真实活动、奖励或账号资产。脚本／截图／测量在忽略目录build/dev/activity-layout/，日志为build/dev/activity-layout-*.log。预览数据库与旧二进制已备份到build/dev/mv2-015-preview/ui-fix-backups/activity-layout-*，仅更新46015独立开发预览。独立sub agent集中验收三项范围通过；原H01–H11人工验收状态和Issue验收标准不变。

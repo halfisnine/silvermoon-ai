@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
+import { loadAllOptions } from '@/lib/paginated-options'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getUserActivities } from '../api'
@@ -39,94 +40,81 @@ export function ActivityCenterPage() {
   const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { t } = useTranslation()
-  const [page, setPage] = useState(1)
   const [kind, setKind] = useState('')
   const query = useQuery({
-    queryKey: ['marketing-user', userId, 'activities', page, kind],
-    queryFn: () => getUserActivities(page, kind),
+    queryKey: ['marketing-user', userId, 'activities', 'all', kind],
+    queryFn: () => loadAllOptions((page) => getUserActivities(page, kind)),
     refetchInterval: 30000,
   })
   return (
-    <SectionPageLayout>
+    <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Activity center')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='mx-auto flex max-w-6xl flex-col gap-4'>
-          <NativeSelect
-            aria-label={t('Activity type')}
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value)
-              setPage(1)
-            }}
-          >
-            <NativeSelectOption value=''>
-              {t('All activities')}
-            </NativeSelectOption>
-            <NativeSelectOption value='registration'>
-              {t('Registration rewards')}
-            </NativeSelectOption>
-            <NativeSelectOption value='checkin'>
-              {t('Check-in rewards')}
-            </NativeSelectOption>
-            <NativeSelectOption value='recharge'>
-              {t('Recharge rewards')}
-            </NativeSelectOption>
-            <NativeSelectOption value='invitation'>
-              {t('Invitation rewards')}
-            </NativeSelectOption>
-          </NativeSelect>
-          {query.isPending && <LoadingState />}
-          {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
-          {query.data?.items.length === 0 && (
-            <EmptyState
-              title={t('No activities to display')}
-              description={t(
-                'Your existing gifts and draw opportunities keep their own validity. View them in Activity rewards or Lottery.'
-              )}
-            />
-          )}
-          {(['current', 'scheduled', 'ended'] as const).map((group) => {
-            const items =
-              query.data?.items.filter((item) =>
-                group === 'current'
-                  ? item.state === 'active' || item.state === 'paused'
-                  : item.state === group
-              ) ?? []
-            if (!items.length) return null
-            let heading = t('Current activities')
-            if (group === 'scheduled') heading = t('Upcoming activities')
-            if (group === 'ended') heading = t('Recently ended activities')
-            return (
-              <section
-                key={group}
-                className='flex flex-col gap-4'
-                aria-label={heading}
-              >
-                <h2 className='font-semibold'>{heading}</h2>
-                {items.map((item) => (
-                  <ActivityCard key={item.id} item={item} />
-                ))}
-              </section>
-            )
-          })}
-          <nav aria-label={t('Pagination')} className='flex justify-end gap-2'>
-            <Button
-              variant='outline'
-              disabled={page === 1 || query.isFetching}
-              onClick={() => setPage(page - 1)}
+        <div
+          className='no-scrollbar h-full overflow-y-auto'
+          role='region'
+          aria-label={t('Activity center')}
+          tabIndex={0}
+        >
+          <div className='mx-auto flex max-w-6xl flex-col gap-4'>
+            <NativeSelect
+              aria-label={t('Activity type')}
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
             >
-              {t('Previous')}
-            </Button>
-            <Button
-              variant='outline'
-              disabled={
-                !query.data || page * 20 >= query.data.total || query.isFetching
-              }
-              onClick={() => setPage(page + 1)}
-            >
-              {t('Next')}
-            </Button>
-          </nav>
+              <NativeSelectOption value=''>
+                {t('All activities')}
+              </NativeSelectOption>
+              <NativeSelectOption value='registration'>
+                {t('Registration rewards')}
+              </NativeSelectOption>
+              <NativeSelectOption value='checkin'>
+                {t('Check-in rewards')}
+              </NativeSelectOption>
+              <NativeSelectOption value='recharge'>
+                {t('Recharge rewards')}
+              </NativeSelectOption>
+              <NativeSelectOption value='invitation'>
+                {t('Invitation rewards')}
+              </NativeSelectOption>
+            </NativeSelect>
+            {query.isPending && <LoadingState />}
+            {query.isError && (
+              <ErrorState onRetry={() => void query.refetch()} />
+            )}
+            {query.data?.length === 0 && (
+              <EmptyState
+                title={t('No activities to display')}
+                description={t(
+                  'Your existing gifts and draw opportunities keep their own validity. View them in Activity rewards or Lottery.'
+                )}
+              />
+            )}
+            {(['current', 'scheduled', 'ended'] as const).map((group) => {
+              const items =
+                query.data?.filter((item) =>
+                  group === 'current'
+                    ? item.state === 'active' || item.state === 'paused'
+                    : item.state === group
+                ) ?? []
+              if (!items.length) return null
+              let heading = t('Current activities')
+              if (group === 'scheduled') heading = t('Upcoming activities')
+              if (group === 'ended') heading = t('Recently ended activities')
+              return (
+                <section
+                  key={group}
+                  className='flex flex-col gap-4'
+                  aria-label={heading}
+                >
+                  <h2 className='font-semibold'>{heading}</h2>
+                  {items.map((item) => (
+                    <ActivityCard key={item.id} item={item} />
+                  ))}
+                </section>
+              )
+            })}
+          </div>
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
