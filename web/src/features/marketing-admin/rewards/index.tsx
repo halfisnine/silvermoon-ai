@@ -35,7 +35,7 @@ import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { toIntlLocale } from '@/i18n/languages'
 
 import { RewardSummary } from '../activities/summary'
-import { getActivities, marketingGet } from '../api'
+import { getAllActivityOptions, marketingGet } from '../api'
 import { formatMarketingDate, formatMarketingMoney } from '../format'
 import type { MarketingPage, MarketingReward } from '../types'
 
@@ -231,10 +231,9 @@ function ActivityFilter(props: {
 }) {
   const { t } = useTranslation()
   const [keyword, setKeyword] = useState('')
-  const [page, setPage] = useState(1)
   const query = useQuery({
-    queryKey: ['marketing-admin', 'activity-options', page, keyword],
-    queryFn: () => getActivities(page, 20, keyword, ''),
+    queryKey: ['marketing-admin', 'activity-options', 'all', keyword],
+    queryFn: () => getAllActivityOptions(keyword),
   })
   return (
     <div className='flex flex-col gap-2'>
@@ -244,7 +243,6 @@ function ActivityFilter(props: {
         value={keyword}
         onChange={(e) => {
           setKeyword(e.target.value)
-          setPage(1)
           props.onChange(0)
         }}
       />
@@ -253,43 +251,20 @@ function ActivityFilter(props: {
       ) : (
         <NativeSelect
           aria-label={t('Activity')}
+          disabled={query.isPending}
           value={props.value}
           onChange={(e) => props.onChange(Number(e.target.value))}
         >
           <NativeSelectOption value={0}>
             {t('All activities')}
           </NativeSelectOption>
-          {query.data?.items.map((a) => (
+          {query.data?.map((a) => (
             <NativeSelectOption key={a.id} value={a.id}>
               {a.activity.name}
             </NativeSelectOption>
           ))}
         </NativeSelect>
       )}
-      <div className='flex gap-2'>
-        <Button
-          variant='ghost'
-          size='sm'
-          disabled={page === 1}
-          onClick={() => {
-            setPage(page - 1)
-            props.onChange(0)
-          }}
-        >
-          {t('Previous')}
-        </Button>
-        <Button
-          variant='ghost'
-          size='sm'
-          disabled={!query.data || page * 20 >= query.data.total}
-          onClick={() => {
-            setPage(page + 1)
-            props.onChange(0)
-          }}
-        >
-          {t('Next')}
-        </Button>
-      </div>
     </div>
   )
 }

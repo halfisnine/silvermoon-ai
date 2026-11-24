@@ -17,16 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { loadAllOptions } from '@/lib/paginated-options'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type { LotteryDraw, LotteryPageData, LotteryPool } from './types'
 
 const base = '/api/marketing/user'
-export async function getLotteryPools(page: number): Promise<LotteryPageData> {
-  const response = await api.get(`${base}/pools`, {
-    params: { page, page_size: 20 },
+export async function getLotteryPools(): Promise<LotteryPool[]> {
+  return loadAllOptions(async (page) => {
+    const response = await api.get(`${base}/pools`, {
+      params: { page, page_size: 100 },
+    })
+    return requireServerSuccess<{ data: LotteryPageData }>(response.data).data
   })
-  return requireServerSuccess(response.data).data
 }
 export async function getLotteryPool(id: number): Promise<LotteryPool> {
   const response = await api.get(`${base}/pools/${id}`)

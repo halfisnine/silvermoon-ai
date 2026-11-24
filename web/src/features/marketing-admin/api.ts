@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { loadAllOptions } from '@/lib/paginated-options'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
@@ -65,6 +66,8 @@ export async function getActivity(id: number): Promise<ActivityDetail> {
   if (detail.activity.checkin) detail.activity.checkin.threshold_cny ??= ''
   return detail
 }
+export const getAllActivityOptions = (keyword: string) =>
+  loadAllOptions((page) => getActivities(page, 100, keyword, ''))
 export const getPoolOptions = (page: number, keyword: string) =>
   marketingGet<MarketingPage<PoolOption>>('/pools', {
     page,

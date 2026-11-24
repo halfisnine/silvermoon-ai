@@ -18,10 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import type { ColumnDef } from '@tanstack/react-table'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
+import { DataTablePage, useDataTable } from '@/components/data-table'
 import { EmptyState } from '@/components/empty-state'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
@@ -30,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { formatMarketingDate } from '@/features/marketing-admin/format'
+import { useMediaQuery } from '@/hooks'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth-store'
@@ -42,23 +45,49 @@ export function InvitationPage() {
   const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { t, i18n } = useTranslation()
-  const [page, setPage] = useState(1)
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
+  const isMobile = useMediaQuery('(max-width: 640px)')
   const [rulePage, setRulePage] = useState(1)
   const query = useQuery({
-    queryKey: ['marketing-user', userId, 'invitation', page],
+    queryKey: ['marketing-user', userId, 'invitation', pagination],
     queryFn: () =>
-      userMarketingGet<Invitation>('/invitation', { page, page_size: 20 }),
+      userMarketingGet<Invitation>('/invitation', {
+        page: pagination.pageIndex + 1,
+        page_size: pagination.pageSize,
+      }),
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === userId ? previous : undefined,
+    enabled: userId != null,
   })
   const rules = useQuery({
     queryKey: ['marketing-user', userId, 'invitation-rules', rulePage],
     queryFn: () => getUserActivities(rulePage, 'invitation', 'active'),
     refetchInterval: 30000,
+    enabled: userId != null,
   })
   const path = query.data?.invitation_path
   const link =
     path && path.startsWith('/') && !path.startsWith('//')
       ? `${window.location.origin}${path}`
       : ''
+  const columns: ColumnDef<Invitation['friends']['items'][number]>[] = [
+    { accessorKey: 'username', header: t('Username') },
+    {
+      accessorKey: 'joined_at',
+      header: t('Registration time'),
+      cell: ({ row }) =>
+        formatMarketingDate(row.original.joined_at, i18n.language),
+    },
+  ]
+  const { table } = useDataTable({
+    data: query.data?.friends.items ?? [],
+    columns,
+    pagination,
+    onPaginationChange: setPagination,
+    manualPagination: true,
+    enableRowSelection: false,
+    totalCount: query.data?.friends.total ?? 0,
+  })
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>
@@ -79,112 +108,102 @@ export function InvitationPage() {
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='mx-auto flex max-w-6xl flex-col gap-4'>
-          {query.isPending && <LoadingState />}
-          {query.isError && <ErrorState onRetry={() => void query.refetch()} />}
-          {query.data && (
-            <Card className='gap-3 p-4'>
-              <h3 className='font-semibold'>{t('Your invitation link')}</h3>
-              <div className='flex gap-2'>
-                <Input
-                  readOnly
-                  value={link}
-                  aria-label={t('Your invitation link')}
-                />
-                <CopyButton
-                  value={link}
-                  variant='outline'
-                  aria-label={t('Copy invitation link')}
-                />
-              </div>
-              <p className='text-muted-foreground text-sm'>
-                {t(
-                  'Inviting a friend does not guarantee a reward. The active invitation rules apply.'
+        <div className='marketing-invitation-layout mx-auto grid w-full max-w-6xl items-start gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'>
+          <div className='marketing-invitation-info min-w-0 space-y-4'>
+            {query.isPending && <LoadingState />}
+            {query.data && (
+              <Card className='gap-3 p-4'>
+                <h3 className='font-semibold'>{t('Your invitation link')}</h3>
+                <div className='flex gap-2'>
+                  <Input
+                    readOnly
+                    value={link}
+                    aria-label={t('Your invitation link')}
+                  />
+                  <CopyButton
+                    value={link}
+                    variant='outline'
+                    aria-label={t('Copy invitation link')}
+                  />
+                </div>
+                <p className='text-muted-foreground text-sm'>
+                  {t(
+                    'Inviting a friend does not guarantee a reward. The active invitation rules apply.'
+                  )}
+                </p>
+              </Card>
+            )}
+            {rules.isPending && <LoadingState />}
+            {rules.isError && (
+              <ErrorState onRetry={() => void rules.refetch()} />
+            )}
+            {rules.data?.items.length === 0 && (
+              <EmptyState
+                title={t('No active invitation activity')}
+                description={t(
+                  'Your invitation link, existing friends and reward history remain available.'
                 )}
-              </p>
-            </Card>
-          )}
-          {rules.isPending && <LoadingState />}
-          {rules.isError && <ErrorState onRetry={() => void rules.refetch()} />}
-          {rules.data?.items.length === 0 && (
-            <EmptyState
-              title={t('No active invitation activity')}
-              description={t(
-                'Your invitation link, existing friends and reward history remain available.'
-              )}
-            />
-          )}
-          {rules.data?.items.map((item) => (
-            <ActivityCard key={item.id} item={item} />
-          ))}
-          {rules.data && rules.data.total > 20 && (
-            <nav
-              className='flex justify-end gap-2'
-              aria-label={t('Activity pagination')}
-            >
-              <Button
-                variant='outline'
-                disabled={rulePage === 1}
-                onClick={() => setRulePage(rulePage - 1)}
-              >
-                {t('Previous')}
-              </Button>
-              <Button
-                variant='outline'
-                disabled={rulePage * 20 >= rules.data.total}
-                onClick={() => setRulePage(rulePage + 1)}
-              >
-                {t('Next')}
-              </Button>
-            </nav>
-          )}
-          {query.data && (
-            <Card className='gap-3 p-4'>
-              <h3 className='font-semibold'>
-                {t('Invited friends')} ·{' '}
-                {formatNumber(
-                  query.data.friend_count,
-                  toIntlLocale(i18n.language)
-                )}
-              </h3>
-              {query.data.friends.items.length === 0 ? (
-                <p>{t('No invited friends yet')}</p>
-              ) : (
-                <ul className='divide-y'>
-                  {query.data.friends.items.map((friend) => (
-                    <li
-                      key={friend.username}
-                      className='flex flex-wrap justify-between gap-2 py-3 text-sm'
-                    >
-                      <span className='break-all'>{friend.username}</span>
-                      <span>
-                        {formatMarketingDate(friend.joined_at, i18n.language)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              />
+            )}
+            {rules.data?.items.map((item) => (
+              <ActivityCard key={item.id} item={item} />
+            ))}
+            {rules.data && rules.data.total > 20 && (
               <nav
-                aria-label={t('Friends pagination')}
                 className='flex justify-end gap-2'
+                aria-label={t('Activity pagination')}
               >
                 <Button
                   variant='outline'
-                  disabled={page === 1}
-                  onClick={() => setPage(page - 1)}
+                  disabled={rulePage === 1}
+                  onClick={() => setRulePage(rulePage - 1)}
                 >
                   {t('Previous')}
                 </Button>
                 <Button
                   variant='outline'
-                  disabled={page * 20 >= query.data.friends.total}
-                  onClick={() => setPage(page + 1)}
+                  disabled={rulePage * 20 >= rules.data.total}
+                  onClick={() => setRulePage(rulePage + 1)}
                 >
                   {t('Next')}
                 </Button>
               </nav>
-            </Card>
-          )}
+            )}
+          </div>
+          <Card className='marketing-invitation-friends min-w-0 gap-3 p-4'>
+            <h3 className='font-semibold'>
+              {t('Invited friends')}
+              {query.data && (
+                <>
+                  {' '}
+                  ·{' '}
+                  {formatNumber(
+                    query.data.friend_count,
+                    toIntlLocale(i18n.language)
+                  )}
+                </>
+              )}
+            </h3>
+            {query.isError ? (
+              <ErrorState onRetry={() => void query.refetch()} />
+            ) : (
+              <DataTablePage
+                table={table}
+                columns={columns}
+                toolbarProps={null}
+                fixedHeight={false}
+                paginationInFooter={false}
+                compactPagination={isMobile}
+                showPagination={
+                  (query.data?.friends.total ?? 0) > pagination.pageSize ||
+                  pagination.pageIndex > 0
+                }
+                isLoading={query.isPending}
+                isFetching={query.isFetching}
+                emptyTitle={t('No invited friends yet')}
+              />
+            )}
+          </Card>
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>

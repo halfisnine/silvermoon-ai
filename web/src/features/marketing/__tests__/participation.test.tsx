@@ -520,3 +520,73 @@ test('a fixed-gift-only recharge campaign does not imply it awards lottery oppor
     )
   ).not.toBeInTheDocument()
 })
+
+test('invited friends use the shared table pagination and preserve the invitation link across pages', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    if (url === '/api/marketing/user/invitation') {
+      const page =
+        (config?.params as Record<string, number> | undefined)?.page ?? 1
+      return envelope({
+        invitation_path: '/sign-up?aff=alice',
+        friend_count: 21,
+        friends: {
+          items:
+            page === 1
+              ? [{ username: 'First friend', joined_at: 1795132800 }]
+              : [{ username: 'Last friend', joined_at: 1795132800 }],
+          total: 21,
+          page,
+          page_size: 20,
+        },
+      })
+    }
+    return envelope({ items: [], total: 0, page: 1, page_size: 20 })
+  })
+  await view(<InvitationPage />)
+  expect(
+    await screen.findByRole('columnheader', { name: 'Username' })
+  ).toBeVisible()
+  expect(
+    screen.getByRole('columnheader', { name: 'Registration time' })
+  ).toBeVisible()
+  expect(await screen.findByText('First friend')).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Previous' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  await userEvent.click(screen.getByRole('button', { name: 'Go to next page' }))
+  expect(await screen.findByText('Last friend')).toBeVisible()
+  expect(
+    screen.getByRole('textbox', { name: 'Your invitation link' })
+  ).toHaveValue(`${window.location.origin}/sign-up?aff=alice`)
+  expect(get).toHaveBeenCalledWith('/api/marketing/user/invitation', {
+    params: { page: 2, page_size: 20 },
+  })
+  expect(screen.getByRole('button', { name: 'Go to next page' })).toBeDisabled()
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Go to previous page' })
+  )
+  expect(await screen.findByText('First friend')).toBeVisible()
+})
+
+test('invitation with no friends shows a table empty state without redundant pagination', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    envelope(
+      url === '/api/marketing/user/invitation'
+        ? {
+            invitation_path: '/sign-up?aff=alice',
+            friend_count: 0,
+            friends: { items: [], total: 0, page: 1, page_size: 20 },
+          }
+        : { items: [], total: 0, page: 1, page_size: 20 }
+    )
+  )
+  await view(<InvitationPage />)
+  expect(await screen.findByText('No invited friends yet')).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Go to next page' })
+  ).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('textbox', { name: 'Your invitation link' })
+  ).toBeVisible()
+})

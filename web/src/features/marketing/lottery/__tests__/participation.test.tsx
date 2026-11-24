@@ -370,3 +370,84 @@ test('forbidden pool details expose no private pool or draw action', async () =>
   expect(screen.queryByText('Combined gift')).not.toBeInTheDocument()
   expect(post).not.toHaveBeenCalled()
 })
+
+test('pool selector loads every page and switches to a pool beyond the first page without paging controls', async () => {
+  const second = { ...pool, id: 105, name: 'Last pool' }
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    if (url.endsWith('/pools')) {
+      const page =
+        (config?.params as Record<string, number> | undefined)?.page ?? 1
+      return {
+        data: {
+          success: true,
+          data: {
+            items:
+              page === 1
+                ? Array.from({ length: 100 }, (_, i) => ({
+                    ...pool,
+                    id: i + 1,
+                    name: `Pool ${i + 1}`,
+                  }))
+                : [second],
+            total: 101,
+            page,
+            page_size: 100,
+          },
+        },
+      }
+    }
+    if (url.endsWith('/pools/105')) {
+      return { data: { success: true, data: second } }
+    }
+    if (url.includes('/draws/')) throw { response: { status: 404 } }
+    return { data: { success: true, data: { ...pool, id: 1, name: 'Pool 1' } } }
+  })
+  mount()
+  expect(
+    await screen.findByRole('option', { name: 'Last pool' })
+  ).toBeInTheDocument()
+  expect(get).toHaveBeenCalledWith('/api/marketing/user/pools', {
+    params: { page: 2, page_size: 100 },
+  })
+  expect(
+    screen.queryByRole('button', { name: 'Previous' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Prize pool'), {
+    target: { value: '105' },
+  })
+  expect(
+    await screen.findByRole('heading', { name: 'Last pool' })
+  ).toBeVisible()
+})
+
+test('a later pool-options failure shows retry instead of silently offering only the first page', async () => {
+  let fail = true
+  vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    if (url.endsWith('/pools')) {
+      const page =
+        (config?.params as Record<string, number> | undefined)?.page ?? 1
+      if (page === 2 && fail) throw new Error('Second page unavailable')
+      return {
+        data: {
+          success: true,
+          data: {
+            items: [{ ...pool, id: page }],
+            total: 2,
+            page,
+            page_size: 1,
+          },
+        },
+      }
+    }
+    if (url.includes('/draws/')) throw { response: { status: 404 } }
+    return { data: { success: true, data: pool } }
+  })
+  mount()
+  const retry = await screen.findByRole('button', { name: 'Retry' })
+  expect(screen.queryByLabelText('Prize pool')).not.toBeInTheDocument()
+  fail = false
+  await userEvent.click(retry)
+  expect(await screen.findByLabelText('Prize pool')).toBeVisible()
+  expect(screen.getAllByRole('option')).toHaveLength(2)
+})

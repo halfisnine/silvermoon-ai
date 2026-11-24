@@ -75,3 +75,11 @@
 - `.dev/run bun run test src/features/dashboard/components/overview/__tests__/summary-cards.test.tsx src/features/dashboard/components/overview/__tests__/setup-guide.test.tsx src/features/wallet/__tests__/balances.test.tsx`：3文件13项通过，覆盖非默认单位与汇率下不重复换算、仅有赠金、微小金额、中英文、加载／失败／重试和真实零余额。typecheck：1493文件2项目无错误；受影响4文件oxfmt检查通过，oxlint零错误（引导页原有两处getElementById风格警告保留），git diff --check通过；前端和预览二进制构建通过。
 - 实际Chromium对独立预览读取真实账号数据：概览／钱包两项金额完全一致，赠金明细跳转正确；中文／英文、绯云／银月梦境、1440/1024/768/390/320px无横向溢出、无脚本错误。没有提交资金、营销或配置操作；仅浏览器会话刷新与钱包自动估价请求。脚本和截图在忽略目录`build/dev/overview-wallet/`，日志为`build/dev/overview-wallet-*.log`。
 - 独立sub agent对本次完整范围只读复核通过。仅备份并更新独立开发预览，未运行seed/scenarios、未推送或部署线上；不修改人工验收状态或原Issue验收标准。
+
+### 同日补充：下拉选项取齐与邀请页表格（待用户复验）
+
+- 对应H06/H08/H11：抽奖奖池下拉展示当前接口允许返回的全部奖池，不再将选项分页操作放在页面上；管理员奖励记录的活动筛选同样取齐全部匹配活动，保留搜索与“全部活动”，表格记录分页独立保留。新增共享`loadAllOptions`按接口实际page_size继续读取、按ID去重，每次最多100条，不扩大后端列表上限；后续页失败整体报错重试，避免把部分选项当作全部。
+- 邀请有礼桌面左侧为邀请链接与活动说明，右侧为好友表格，窄屏上下排列；复用DataTablePage/useDataTable及公共分页，支持页码与每页条数，空列表或不足一页隐藏分页。翻页期间保留同账号链接和记录，切换账号不复用上一账号占位数据。列为用户名／注册时间；新增Registration time通过翻译脚本与i18n:sync补齐七种语言。现有邀请活动说明本身超过一页时的分页保持原行为。
+- `.dev/run bun run test src/features/marketing/__tests__/participation.test.tsx src/features/marketing/lottery/__tests__/participation.test.tsx src/features/marketing-admin/__tests__/reward-records.test.tsx`：3文件34项通过。覆盖101个奖池／活动、后续页失败重试、选择后页选项、好友翻页与链接保留、空好友不显示多余分页。typecheck：1494文件2项目无错误；受影响9文件oxlint零警告零错误、oxfmt检查和git diff --check通过；前端及预览二进制构建通过。
+- 实际Chromium：中文邀请页左右布局，好友下一页／上一页及切换每页10条，1100/768/390/320px无横向溢出，窄屏上下排列，无好友隐藏分页；奖池读取101项并选择第101项；英文管理员活动筛选读取101项并选择第101项，确认奖励记录请求携带正确activity_id，1440/390/320px无页面横向溢出。用户与管理员使用独立浏览器进程避免自动化环境会话相互干扰，无页面脚本错误。浏览器只拦截只读列表提供样本，未创建好友、奖池、活动或奖励记录；脚本、截图在忽略目录`build/dev/marketing-pagination/`，日志为`build/dev/marketing-pagination-*.log`，不替代后端业务验收。
+- 独立sub agent完整范围只读复核通过。仅更新独立开发预览，更新前备份SQLite与原二进制；未修改后端、数据库或发奖规则，未运行seed/scenarios、未推送或部署线上，保留测试数据，不修改人工状态或原Issue验收标准。

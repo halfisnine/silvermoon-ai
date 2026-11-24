@@ -121,3 +121,55 @@ test('failed record loading can be retried and username filtering uses the visib
     })
   )
 })
+
+test('activity filter includes all pages, selects a later activity and keeps record pagination separate', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+    const page =
+      (config?.params as Record<string, number> | undefined)?.page ?? 1
+    if (url === '/api/marketing/admin/activities') {
+      return {
+        data: {
+          success: true,
+          data: {
+            items:
+              page === 1
+                ? Array.from({ length: 100 }, (_, i) => ({
+                    id: i + 1,
+                    activity: { name: `Activity ${i + 1}` },
+                  }))
+                : [{ id: 101, activity: { name: 'Final activity' } }],
+            total: 101,
+            page,
+            page_size: 100,
+          },
+        },
+      }
+    }
+    return {
+      data: {
+        success: true,
+        data: { items: [], total: 0, page: 1, page_size: 20 },
+      },
+    }
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingRewardsPage />
+    </QueryClientProvider>
+  )
+  expect(
+    await screen.findByRole('option', { name: 'Final activity' })
+  ).toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: 'Previous' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('Activity'), {
+    target: { value: '101' },
+  })
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/marketing/admin/rewards', {
+      params: expect.objectContaining({ activity_id: 101, page: 1 }),
+    })
+  )
+})

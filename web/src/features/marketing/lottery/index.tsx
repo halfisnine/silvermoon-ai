@@ -43,15 +43,16 @@ import { useLotteryDraw } from './use-draw'
 export function LotteryPage() {
   const { t } = useTranslation()
   const userId = useAuthStore((state) => state.auth.user?.id)
-  const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<number>()
   const query = useQuery({
-    queryKey: ['marketing', 'lottery', userId, page],
-    queryFn: () => getLotteryPools(page),
+    queryKey: ['marketing', 'lottery', userId, 'options'],
+    queryFn: getLotteryPools,
     enabled: !!userId,
     refetchInterval: 30000,
   })
-  const poolId = selected ?? query.data?.items[0]?.id
+  const poolId = query.data?.some((pool) => pool.id === selected)
+    ? selected
+    : query.data?.[0]?.id
   let content
   if (!userId) {
     content = <ErrorState />
@@ -59,7 +60,7 @@ export function LotteryPage() {
     content = <LoadingState />
   } else if (query.isError) {
     content = <ErrorState onRetry={() => void query.refetch()} />
-  } else if (!query.data.items.length) {
+  } else if (!query.data.length) {
     content = (
       <EmptyState
         title={t('No prize pools available')}
@@ -80,33 +81,13 @@ export function LotteryPage() {
               onChange={(e) => setSelected(Number(e.target.value))}
               className='w-full'
             >
-              {query.data.items.map((pool) => (
+              {query.data.map((pool) => (
                 <NativeSelectOption key={pool.id} value={pool.id}>
                   {pool.name}
                 </NativeSelectOption>
               ))}
             </NativeSelect>
           </div>
-          <Button
-            variant='outline'
-            disabled={page === 1}
-            onClick={() => {
-              setSelected(undefined)
-              setPage(page - 1)
-            }}
-          >
-            {t('Previous')}
-          </Button>
-          <Button
-            variant='outline'
-            disabled={page * 20 >= query.data.total}
-            onClick={() => {
-              setSelected(undefined)
-              setPage(page + 1)
-            }}
-          >
-            {t('Next')}
-          </Button>
         </div>
         {poolId && (
           <PoolExperience
