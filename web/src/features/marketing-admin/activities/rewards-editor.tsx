@@ -219,7 +219,7 @@ function RewardRow(props: {
         <Button
           type='button'
           variant='outline'
-          className='sm:mt-6'
+          className='sm:mt-5.5'
           onClick={props.onRemove}
         >
           {t('Remove reward')}
