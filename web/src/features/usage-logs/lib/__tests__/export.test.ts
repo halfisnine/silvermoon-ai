@@ -112,6 +112,8 @@ describe('usage log CSV export', () => {
       '203.0.113.9',
       'req-1',
       '',
+      '',
+      '',
     ])
   })
 

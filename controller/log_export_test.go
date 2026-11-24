@@ -107,7 +107,12 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 				mainType = common.DatabaseTypeSQLite
 			}
 			useLogExportDatabases(t, mainDB, db, mainType, tc.typ)
-			require.NoError(t, mainDB.AutoMigrate(&model.Channel{}))
+			require.NoError(t, mainDB.AutoMigrate(&model.Channel{}, &model.User{}, &model.MarketingFunding{}))
+			// Log-only legacy projections have no accounting evidence, but their
+			// owners still exist in the authoritative business database.
+			for _, id := range []int{7, 8} {
+				require.NoError(t, mainDB.Create(&model.User{Id: id, Username: fmt.Sprintf("export-%d", id), AffCode: fmt.Sprintf("export-%d", id)}).Error)
+			}
 			if tc.kind == "clickhouse" {
 				t.Setenv("LOG_SQL_DSN", isolatedDSN)
 				require.NoError(t, model.InitLogDB())

@@ -20,6 +20,11 @@ func MarketingAdminRead(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
 		return
 	}
+	switch c.Param("resource") {
+	case "consumption", "accounting", "payments", "cash-refunds":
+		marketingAccountingRead(c, identity.UserID, true)
+		return
+	}
 	resource := c.Param("resource")
 	if resource == "" {
 		resource = "metadata"

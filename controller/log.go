@@ -61,6 +61,11 @@ func GetAllLogs(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if err = service.EnrichMarketingUsageLogs(c.Request.Context(), logs); err != nil {
+		common.SysError("failed to read marketing accounting sources: " + err.Error())
+		common.ApiErrorT(c, "Failed to query logs")
+		return
+	}
 	if c.GetInt("role") < common.RoleRootUser {
 		model.FormatAdminLogs(logs)
 	} else {
@@ -86,6 +91,11 @@ func GetUserLogs(c *gin.Context) {
 	logs, total, err := model.GetUserLogs(c.GetInt("id"), filter, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if err = service.EnrichMarketingUsageLogs(c.Request.Context(), logs); err != nil {
+		common.SysError("failed to read marketing accounting sources: " + err.Error())
+		common.ApiErrorT(c, "Failed to query logs")
 		return
 	}
 	pageInfo.SetTotal(int(total))
@@ -139,6 +149,7 @@ func exportLogs(c *gin.Context, all bool) {
 	c.Header("X-Accel-Buffering", "no")
 	c.Status(http.StatusOK)
 
+	ctx := c.Request.Context()
 	count := 0
 	writeLog := func(log *model.Log) error {
 		line, err := common.Marshal(log)
@@ -151,12 +162,7 @@ func exportLogs(c *gin.Context, all bool) {
 		count++
 		return nil
 	}
-	ctx := c.Request.Context()
-	if all {
-		err = model.StreamAllLogs(ctx, filter, c.GetInt("role"), writeLog)
-	} else {
-		err = model.StreamUserLogs(ctx, userId, filter, writeLog)
-	}
+	err = service.StreamAccountingLogExport(ctx, all, userId, c.GetInt("role"), filter, writeLog)
 	if ctx.Err() != nil {
 		return
 	}

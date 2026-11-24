@@ -1,13 +1,89 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 )
+
+// StreamAccountingLogExport closes the log cursor before querying accounting.
+// This also works when main/log stores share a single-connection SQLite pool:
+// querying funds while its log cursor is open would wait on that same connection.
+// A private temporary spool bounds memory, preserves the original stream order,
+// and batches source lookups; it never becomes another financial record store.
+func StreamAccountingLogExport(ctx context.Context, all bool, userID, role int, filter model.LogFilter, write func(*model.Log) error) error {
+	spool, err := os.CreateTemp("", "silvermoon-log-export-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(spool.Name())
+	defer spool.Close()
+	buffer := bufio.NewWriter(spool)
+	retain := func(log *model.Log) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		encoded, err := common.Marshal(log)
+		if err != nil {
+			return err
+		}
+		_, err = buffer.Write(append(encoded, '\n'))
+		return err
+	}
+	if all {
+		err = model.StreamAllLogs(ctx, filter, role, retain)
+	} else {
+		err = model.StreamUserLogs(ctx, userID, filter, retain)
+	}
+	if err != nil {
+		return err
+	}
+	if err = buffer.Flush(); err != nil {
+		return err
+	}
+	if _, err = spool.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	reader := bufio.NewReader(spool)
+	for {
+		if err = ctx.Err(); err != nil {
+			return err
+		}
+		batch := make([]*model.Log, 0, 100)
+		for range 100 {
+			line, readErr := reader.ReadBytes('\n')
+			if readErr == io.EOF {
+				break
+			}
+			if readErr != nil {
+				return readErr
+			}
+			var log model.Log
+			if err = common.Unmarshal(line, &log); err != nil {
+				return err
+			}
+			batch = append(batch, &log)
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		if err = EnrichMarketingUsageLogs(ctx, batch); err != nil {
+			return err
+		}
+		for _, log := range batch {
+			if err = write(log); err != nil {
+				return err
+			}
+		}
+	}
+}
 
 const logExportLockTTL = time.Minute
 

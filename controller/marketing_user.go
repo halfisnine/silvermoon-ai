@@ -20,6 +20,11 @@ func MarketingUserRead(c *gin.Context) {
 		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
 		return
 	}
+	switch c.Param("resource") {
+	case "wallet", "consumption", "accounting":
+		marketingAccountingRead(c, identity.UserID, false)
+		return
+	}
 	if _, exists := c.GetQuery("user_id"); exists {
 		marketingUserFailure(c, model.ErrMarketingInput)
 		return

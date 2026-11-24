@@ -1791,11 +1791,11 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 	previous, previousLog := model.DB, model.LOG_DB
 	model.DB, model.LOG_DB = db, db
 	t.Cleanup(func() { model.DB, model.LOG_DB = previous, previousLog })
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.MarketingRealtimeRound{}, &model.MarketingRealtimeEvent{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingFactSequence{}, &model.MarketingMaintenanceOperation{}, &model.TopUp{}, &model.Redemption{}, &model.UserSubscription{}, &model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.Token{}, &model.MarketingAccount{}, &model.MarketingPayment{}, &model.MarketingGift{}, &model.MarketingFunding{}, &model.MarketingAllocation{}, &model.MarketingLedgerEntry{}, &model.MarketingTokenHold{}, &model.MarketingFundingOperation{}, &model.MarketingDebit{}, &model.MarketingDispatch{}, &model.MarketingUsageProjection{}, &model.MarketingRealtimeRound{}, &model.MarketingRealtimeEvent{}, &model.MarketingActivity{}, &model.MarketingActivityOperation{}, &model.MarketingInvitation{}, &model.MarketingFactSequence{}, &model.MarketingMaintenanceOperation{}, &model.TopUp{}, &model.Redemption{}, &model.UserSubscription{}, &model.MarketingActivityFact{}, &model.MarketingActivityProgress{}, &model.MarketingActivityDecision{}, &model.MarketingActivityReward{}, &model.MarketingActivityDeliveryCursor{}, &model.QuotaData{}, &model.Log{}, &model.Task{}, &model.Midjourney{}, &model.MarketingLotteryAward{}, &model.MarketingLotteryPool{}))
 	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 
 	runTag := fmt.Sprint(time.Now().UnixNano())
-	for index, scenario := range []string{"zero_estimate_wallet", "zero_estimate_token", "zero_estimate_free", "zero_estimate_released", "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "crash_without_projection", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
+	for index, scenario := range []string{"zero_estimate_wallet", "zero_estimate_token", "zero_estimate_free", "zero_estimate_released", "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "crash_without_projection", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_tiered_reversal", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
 		t.Run(scenario, func(t *testing.T) {
 			user := model.User{Username: "mv2-" + fmt.Sprint(index) + runTag, AffCode: fmt.Sprintf("m%d%s", index, runTag[len(runTag)-6:]), Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
@@ -1821,7 +1821,22 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				_, err = model.GrantMarketingGift(tx, model.MarketingGiftInput{UserID: user.Id, Kind: "recharge", Reference: scenario + runTag, GrantedAt: grantedAt, ExpiresAt: expiresAt, Money: model.MarketingMoneySnapshot{Amount: "20", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 				return err
 			}))
+			if scenario == "realtime_two_rounds" || scenario == "realtime_tiered_reversal" {
+				originalUnits, originalRate, originalGeneral := common.QuotaPerUnit, operation_setting.USDExchangeRate, *operation_setting.GetGeneralSetting()
+				common.QuotaPerUnit = 100
+				operation_setting.USDExchangeRate = 1
+				operation_setting.GetGeneralSetting().QuotaDisplayType = "CNY"
+				t.Cleanup(func() {
+					common.QuotaPerUnit = originalUnits
+					operation_setting.USDExchangeRate = originalRate
+					*operation_setting.GetGeneralSetting() = originalGeneral
+				})
+			}
 			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, RequestId: "marketing-" + scenario + runTag, StartTime: time.Unix(now, 0), ChannelMeta: &relaycommon.ChannelMeta{}, OriginModelName: "marketing-model", PriceData: hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}}
+			if scenario == "realtime_tiered_reversal" {
+				expression := `len <= 10 ? tier("first", p + c) : tier("discount", (p + c) / 7)`
+				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: 1_000_000, GroupRatio: 1}
+			}
 			vadNormal := scenario == "realtime_vad_normal" || scenario == "realtime_vad_default" || scenario == "realtime_vad_partial" || scenario == "realtime_vad_ga_default"
 			vadScenario := vadNormal || scenario == "realtime_vad_two_inputs" || scenario == "realtime_vad_uncertain_config" || scenario == "realtime_vad_partial_disabled"
 			if vadScenario {
@@ -1875,7 +1890,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 			require.NoError(t, session.ReserveBeforeSubmit(submitEstimate))
 			assert.Equal(t, max(submitEstimate, 1), session.GetPreConsumedQuota())
 			switch scenario {
-			case "realtime_two_rounds", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero":
+			case "realtime_two_rounds", "realtime_tiered_reversal", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero":
 				coordinator, err := NewMarketingRealtimeCoordinator(ctx, info)
 				require.NoError(t, err)
 				assert.Zero(t, session.funding.ReservedQuota, "connection setup cannot retain old gift eligibility")
@@ -2099,7 +2114,11 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 					require.NoError(t, coordinator.ServerEvent(done, at))
 					require.NoError(t, coordinator.Close("terminal-only metadata correlation completed"))
 					assert.Equal(t, "settled", session.funding.State)
-					assert.EqualValues(t, 35, session.funding.SettledQuota)
+					expectedCost := int64(35)
+					if scenario == "realtime_tiered_reversal" {
+						expectedCost = 5
+					}
+					assert.EqualValues(t, expectedCost, session.funding.SettledQuota)
 					require.NoError(t, db.First(&user, user.Id).Error)
 					assert.Equal(t, 85, user.Quota)
 					require.NoError(t, db.First(&gift, gift.ID).Error)
@@ -2268,6 +2287,13 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				} else {
 					require.NoError(t, coordinator.ServerEvent(terminal, at))
 					require.NoError(t, coordinator.ServerEvent(terminal, at.Add(time.Millisecond)))
+					if scenario == "realtime_tiered_reversal" {
+						location, err := time.LoadLocation("Asia/Shanghai")
+						require.NoError(t, err)
+						interim, err := ReadMarketingPaidConsumption(context.Background(), user.Id, 0, false, at.In(location).Format("2006-01"))
+						require.NoError(t, err)
+						assert.Equal(t, []MarketingAccountingMoney{{Amount: "0.1", Currency: "CNY"}}, interim.(map[string]any)["amounts"], "first round consumes 20 gift units and 10 paid units before the cumulative discount")
+					}
 					forwardedCreate, err = coordinator.ProcessClientEvent([]byte(`{"type":"response.create"}`), at)
 					require.NoError(t, err)
 					require.NoError(t, coordinator.ServerEvent(marketingRealtimeFixtureEcho(t, []byte(`{"type":"response.created","response":{"id":"second"}}`), forwardedCreate), at))
@@ -2275,15 +2301,80 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 					require.NoError(t, coordinator.ServerEvent([]byte(`{"type":"response.done","response":{"id":"second","status":"completed","usage":{"total_tokens":5,"input_tokens":5,"output_tokens":0,"input_token_details":{"text_tokens":5},"output_token_details":{"text_tokens":0}}}}`), at))
 					require.NoError(t, coordinator.Close("client closed after final usage"))
 					assert.Equal(t, "settled", session.funding.State)
-					assert.EqualValues(t, 35, session.funding.SettledQuota)
+					expectedCost := int64(35)
+					if scenario == "realtime_tiered_reversal" {
+						expectedCost = 5
+					}
+					assert.EqualValues(t, expectedCost, session.funding.SettledQuota)
 					assert.Equal(t, 35, coordinator.Usage().TotalTokens)
 				}
 				require.NoError(t, db.First(&user, user.Id).Error)
-				assert.Equal(t, 100-int(session.funding.SettledQuota-20), user.Quota)
+				if scenario == "realtime_tiered_reversal" {
+					assert.Equal(t, 100, user.Quota, "paid debit is returned to the original paid asset")
+				} else {
+					assert.Equal(t, 100-int(session.funding.SettledQuota-20), user.Quota)
+				}
 				require.NoError(t, model.RecoverMarketingUsage(context.Background(), 100))
 				var identities int64
 				require.NoError(t, db.Model(&model.Log{}).Where("request_id = ?", info.RequestId).Distinct("usage_event_id").Count(&identities).Error)
 				assert.EqualValues(t, 1, identities, "one logical connection usage entry")
+				if scenario == "realtime_two_rounds" || scenario == "realtime_tiered_reversal" {
+					location, err := time.LoadLocation("Asia/Shanghai")
+					require.NoError(t, err)
+					month := time.Unix(now, 0).In(location).Format("2006-01")
+					expectedTotal, expectedPaid, expectedGift := "0.35", "0.15", "0.2"
+					if scenario == "realtime_tiered_reversal" {
+						expectedTotal, expectedPaid, expectedGift = "0.05", "0", "0.05"
+						var reversals []model.MarketingLedgerEntry
+						require.NoError(t, db.Where("funding_id = ? AND kind = ?", session.funding.ID, "consume_reversal").Order("id").Find(&reversals).Error)
+						require.Len(t, reversals, 2)
+						assert.Zero(t, reversals[0].GiftID, "latest paid source is reversed first")
+						assert.EqualValues(t, 10, reversals[0].AmountQuota)
+						assert.NotZero(t, reversals[1].GiftID, "remaining discount reverses the original gift")
+						assert.EqualValues(t, 15, reversals[1].AmountQuota)
+						for _, reverse := range reversals {
+							var debit model.MarketingDebit
+							require.NoError(t, db.First(&debit, reverse.DebitID).Error)
+							assert.Equal(t, reverse.GiftID, debit.GiftID)
+							assert.Equal(t, session.funding.ID, debit.FundingID)
+						}
+					}
+					monthly, err := ReadMarketingPaidConsumption(context.Background(), user.Id, 0, false, month)
+					require.NoError(t, err)
+					assert.Equal(t, []MarketingAccountingMoney{{Amount: expectedPaid, Currency: "CNY"}}, monthly.(map[string]any)["amounts"], "two rounds and the parent connection must contribute only their actual net paid ledger debits")
+					assert.Zero(t, monthly.(map[string]any)["conversion_unknown_count"])
+					result, err := ReadMarketingAccounting(context.Background(), user.Id, false, 0, MarketingAccountingFilter{Page: 1, PageSize: 20})
+					require.NoError(t, err)
+					page := result.(MarketingAdminPage)
+					assert.EqualValues(t, 1, page.Total)
+					rows := page.Items.([]MarketingAccountingRequest)
+					require.Len(t, rows, 1, "rounds remain source allocations beneath one connection record")
+					row := rows[0]
+					assert.Equal(t, info.RequestId, row.RequestID)
+					assert.True(t, row.Realtime)
+					assert.True(t, row.RealtimeClosed)
+					assert.Equal(t, "settled", row.State)
+					require.NotNil(t, row.Total)
+					require.NotNil(t, row.Paid)
+					require.NotNil(t, row.Gift)
+					assert.Equal(t, expectedTotal, row.Total.Amount)
+					assert.Equal(t, expectedPaid, row.Paid.Amount)
+					assert.Equal(t, expectedGift, row.Gift.Amount)
+					require.Len(t, row.GiftSources, 1)
+					assert.Equal(t, expectedGift, row.GiftSources[0].Money.Amount)
+					logs, total, err := model.GetUserLogs(user.Id, model.LogFilter{Type: model.LogTypeConsume, RequestId: info.RequestId}, 0, 20)
+					require.NoError(t, err)
+					assert.EqualValues(t, 1, total)
+					require.Len(t, logs, 1)
+					require.NoError(t, EnrichMarketingUsageLogs(context.Background(), logs))
+					var metadata struct {
+						Accounting MarketingAccountingRequest `json:"accounting"`
+					}
+					require.NoError(t, common.UnmarshalJsonStr(logs[0].Other, &metadata))
+					assert.Equal(t, row.ID, metadata.Accounting.ID)
+					assert.Equal(t, expectedTotal, metadata.Accounting.Total.Amount)
+					assert.Equal(t, expectedPaid, metadata.Accounting.Paid.Amount)
+				}
 			case "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done":
 				require.NoError(t, session.BeginDispatch())
 				usage := &dto.Usage{PromptTokens: 20, CompletionTokens: 20, TotalTokens: 40}

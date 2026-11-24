@@ -32,6 +32,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { formatMarketingMoney } from '@/features/marketing-admin/format'
 import { formatLogQuota } from '@/lib/format'
 
 import { hasToolSurcharge } from '../lib/format'
@@ -79,7 +80,43 @@ function ToolSurchargeMarker() {
 }
 
 export function LogCostDisplay(props: LogCostDisplayProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const accounting = props.other?.accounting
+  if (accounting) {
+    return (
+      <TooltipProvider>
+        <div className='flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs tabular-nums'>
+          <span className='font-semibold'>
+            {accounting.total
+              ? formatMarketingMoney(
+                  accounting.total.amount,
+                  accounting.total.currency,
+                  i18n.language
+                )
+              : t('Amount unavailable')}
+          </span>
+          {accounting.gift && Number(accounting.gift.amount) > 0 && (
+            <span className='text-muted-foreground'>
+              {t('Gift: {{amount}}', {
+                amount: formatMarketingMoney(
+                  accounting.gift.amount,
+                  accounting.gift.currency,
+                  i18n.language
+                ),
+              })}
+            </span>
+          )}
+          {hasToolSurcharge(props.other) && <ToolSurchargeMarker />}
+          {accounting.state !== 'settled' &&
+            accounting.state !== 'released' && (
+              <span className='text-muted-foreground'>
+                {t('Settlement pending')}
+              </span>
+            )}
+        </div>
+      </TooltipProvider>
+    )
+  }
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
   const quota = isSubscription

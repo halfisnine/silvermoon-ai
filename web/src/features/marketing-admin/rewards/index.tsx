@@ -98,7 +98,10 @@ export function MarketingRewardsPage() {
     {
       id: 'state',
       header: t('Result'),
-      cell: ({ row }) => row.original.source.no_prize ? t('No prize') : rewardStateLabel(row.original.state, t),
+      cell: ({ row }) =>
+        row.original.source.no_prize
+          ? t('No prize')
+          : rewardStateLabel(row.original.state, t),
     },
     {
       id: 'actions',
@@ -311,7 +314,10 @@ function RecordRewards(props: { record: RewardRecord }) {
     </div>
   )
 }
-function RewardDetail(props: { record: RewardRecord; onClose: () => void }) {
+export function RewardDetail(props: {
+  record: Pick<RewardRecord, 'kind' | 'id'>
+  onClose: () => void
+}) {
   const { t, i18n } = useTranslation()
   const query = useQuery({
     queryKey: [
@@ -339,30 +345,35 @@ function RewardDetail(props: { record: RewardRecord; onClose: () => void }) {
       prize_name: t('Prize'),
       opportunity_activity: t('Opportunity source activity'),
     }
-    for (const [key, label] of Object.entries(labels))
-      {if (source[key]) fields.push([label, String(source[key])])}
+    for (const [key, label] of Object.entries(labels)) {
+      if (source[key]) fields.push([label, String(source[key])])
+    }
     fields.push([t('Reward trigger'), rewardTrigger(record as RewardRecord, t)])
-    if (source.reason_key)
-      {fields.push([t('Reason'), t(String(source.reason_key))])}
-    if (source.paid_cny)
-      {fields.push([
+    if (source.reason_key) {
+      fields.push([t('Reason'), t(String(source.reason_key))])
+    }
+    if (source.paid_cny) {
+      fields.push([
         t('Actual payment (CNY)'),
         formatMarketingMoney(String(source.paid_cny), 'CNY', i18n.language),
-      ])}
-    if (source.posted_at)
-      {fields.push([
+      ])
+    }
+    if (source.posted_at) {
+      fields.push([
         t('Payment posted at'),
         formatMarketingDate(Number(source.posted_at), i18n.language),
-      ])}
-    if (source.expires_at !== undefined)
-      {fields.push([
+      ])
+    }
+    if (source.expires_at !== undefined) {
+      fields.push([
         t('Expires at'),
         Number(source.expires_at)
           ? formatMarketingDate(Number(source.expires_at), i18n.language)
           : t('Never expires'),
-      ])}
-    if (source.checkin_date)
-      {fields.push([
+      ])
+    }
+    if (source.checkin_date) {
+      fields.push([
         t('Check-in date'),
         new Intl.DateTimeFormat(toIntlLocale(i18n.language), {
           year: 'numeric',
@@ -370,7 +381,8 @@ function RewardDetail(props: { record: RewardRecord; onClose: () => void }) {
           day: 'numeric',
           timeZone: 'Asia/Shanghai',
         }).format(new Date(`${source.checkin_date}T00:00:00+08:00`)),
-      ])}
+      ])
+    }
   }
   return (
     <Dialog
@@ -390,7 +402,11 @@ function RewardDetail(props: { record: RewardRecord; onClose: () => void }) {
             <dt>{t('Source')}</dt>
             <dd>{record.source_name}</dd>
             <dt>{t('Result')}</dt>
-            <dd>{record.source.no_prize ? t('No prize') : rewardStateLabel(record.state, t)}</dd>
+            <dd>
+              {record.source.no_prize
+                ? t('No prize')
+                : rewardStateLabel(record.state, t)}
+            </dd>
             <dt>{t('Occurred at')}</dt>
             <dd>{formatMarketingDate(record.occurred_at, i18n.language)}</dd>
             {record.credited_at > 0 && (

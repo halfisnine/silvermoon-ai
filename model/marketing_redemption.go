@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
@@ -246,7 +247,7 @@ func redeemPaidCodeWithClock(tx *gorm.DB, userID int, key string, clock func() i
 		return nil, err
 	}
 	var row Redemption
-	if err := lockForUpdate(tx).Where(commonKeyCol+" = ?", key).First(&row).Error; err != nil {
+	if err := lockForUpdate(tx).Where(clause.Eq{Column: clause.Column{Name: "key"}, Value: key}).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrRedeemFailed
 		}

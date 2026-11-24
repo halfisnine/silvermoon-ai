@@ -56,6 +56,7 @@ import { Dialog } from '@/components/dialog'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { formatMarketingMoney } from '@/features/marketing-admin/format'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
@@ -91,6 +92,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { FundingDetails } from '../funding-details'
 import { ResponseModelDetails } from '../model-badge'
 import { PluginAuthorLink } from '../plugin-author-link'
 import { DetailRow, DetailSection } from './log-detail-layout'
@@ -170,7 +172,7 @@ function BillingBreakdown(props: {
   other: LogOtherData
   isAdmin: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { log, other, isAdmin } = props
   const isPerCall = isPerCallBilling(other.model_price)
   const isClaude = other.claude === true
@@ -361,6 +363,16 @@ function BillingBreakdown(props: {
       ? Object.entries(other.usage_facts)
       : []
 
+  let totalCost = formatLogQuota(log.quota)
+  if (other.accounting) {
+    totalCost = other.accounting.total
+      ? formatMarketingMoney(
+          other.accounting.total.amount,
+          other.accounting.total.currency,
+          i18n.language
+        )
+      : t('Amount unavailable')
+  }
   return (
     <DetailSection label={t('Billing Details')}>
       {rows.map((row) => (
@@ -381,11 +393,7 @@ function BillingBreakdown(props: {
           ))}
         </>
       )}
-      <DetailRow
-        label={t('Total Cost')}
-        value={formatLogQuota(log.quota)}
-        mono
-      />
+      <DetailRow label={t('Total Cost')} value={totalCost} mono />
     </DetailSection>
   )
 }
@@ -695,6 +703,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
       bodyClassName='pr-2 sm:pr-4'
     >
       <div className='w-full max-w-full min-w-0 space-y-2.5 overflow-x-hidden py-1 sm:space-y-3'>
+        {other?.accounting && (
+          <FundingDetails accounting={other.accounting} admin={props.isAdmin} />
+        )}
         {/* Overview section - key identifiers */}
         <div className='min-w-0 space-y-1'>
           {props.log.request_id && (
@@ -924,7 +935,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {/* Refund details (type=6) */}
         {isRefund && other && (other.task_id || other.reason) && (
-          <DetailSection label={t('Refund Details')}>
+          <DetailSection label={t('Task return details')}>
+            <p className='text-muted-foreground text-xs'>
+              {t(
+                'This returns funds to their original account sources; it is not a cash refund.'
+              )}
+            </p>
             {other.task_id && (
               <DetailRow label={t('Task ID')} value={other.task_id} mono />
             )}

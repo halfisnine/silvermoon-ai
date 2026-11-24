@@ -16,14 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
+import { getWalletBalance } from '@/features/marketing/accounting'
 import { WalletActivityNotice } from '@/features/marketing/components/wallet-activity-notice'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { getSelf } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
@@ -60,7 +63,13 @@ interface WalletProps {
 export function Wallet(props: WalletProps) {
   const { t } = useTranslation()
   const [user, setUser] = useState<UserWalletData | null>(null)
-  const [userLoading, setUserLoading] = useState(true)
+  const userId = useAuthStore((state) => state.auth.user?.id)
+  const queryClient = useQueryClient()
+  const wallet = useQuery({
+    queryKey: ['marketing-wallet', userId],
+    queryFn: getWalletBalance,
+    enabled: userId != null,
+  })
   const [topupAmount, setTopupAmount] = useState(0)
   const [selectedPreset, setSelectedPreset] = useState<number | null>(null)
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
@@ -103,7 +112,6 @@ export function Wallet(props: WalletProps) {
   // Fetch and refresh user data
   const fetchUser = useCallback(async () => {
     try {
-      setUserLoading(true)
       const response = await getSelf()
       if (response.success && response.data) {
         setUser(response.data as UserWalletData)
@@ -112,9 +120,11 @@ export function Wallet(props: WalletProps) {
       // eslint-disable-next-line no-console
       console.error('Failed to fetch user data:', error)
     } finally {
-      setUserLoading(false)
+      await queryClient.invalidateQueries({
+        queryKey: ['marketing-wallet', userId],
+      })
     }
-  }, [])
+  }, [queryClient, userId])
 
   useEffect(() => {
     fetchUser()
@@ -270,7 +280,12 @@ export function Wallet(props: WalletProps) {
         <SectionPageLayout.Title>{t('Wallet')}</SectionPageLayout.Title>
         <SectionPageLayout.Content>
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
-            <WalletStatsCard user={user} loading={userLoading} />
+            <WalletStatsCard
+              balance={wallet.data}
+              loading={wallet.isPending}
+              error={wallet.isError}
+              onRetry={() => void wallet.refetch()}
+            />
 
             <div
               className={

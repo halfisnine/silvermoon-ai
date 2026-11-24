@@ -78,6 +78,38 @@ type MarketingSettlementInput struct {
 	Evidence     string
 }
 
+// MarketingRequestKey uses the same identity for accounting lookups and relay
+// reservations. Knowing this key never grants access to another user's funds.
+func MarketingRequestKey(reference string) (string, error) {
+	return marketingSourceKey("request", reference)
+}
+
+// LockMarketingAccountingUsers keeps a source breakdown coherent with concurrent
+// settlement. Administrative history remains readable after disabling/deleting
+// an account; caller authorization is checked separately inside the transaction.
+func LockMarketingAccountingUsers(tx *gorm.DB, userIDs []int) error {
+	if tx == nil || tx.Statement == nil {
+		return ErrMarketingTransaction
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return ErrMarketingTransaction
+	}
+	ids := slices.Clone(userIDs)
+	slices.Sort(ids)
+	for _, id := range slices.Compact(ids) {
+		if id <= 0 {
+			return ErrMarketingInput
+		}
+		var user User
+		// A fresh statement per owner prevents Unscoped's chained statement
+		// from accumulating primary-key predicates across the lock batch.
+		if err := lockForUpdate(tx.Session(&gorm.Session{}).Unscoped()).Select("id").First(&user, id).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // fundingBook is a transaction-local snapshot, not a process-wide balance cache.
 // Every mutation holds the authoritative user then token row in that order.
 type fundingBook struct {

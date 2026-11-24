@@ -7,13 +7,44 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	hosttypes "github.com/QuantumNous/new-api/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMarketingPricingEvidenceFreezesDisplayConversion(t *testing.T) {
+	units, rate, settings := common.QuotaPerUnit, operation_setting.USDExchangeRate, *operation_setting.GetGeneralSetting()
+	t.Cleanup(func() {
+		common.QuotaPerUnit = units
+		operation_setting.USDExchangeRate = rate
+		*operation_setting.GetGeneralSetting() = settings
+	})
+	common.QuotaPerUnit = 50000
+	operation_setting.USDExchangeRate = 3
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeCNY
+	encoded, err := marketingPricingEvidence(&relaycommon.RelayInfo{OriginModelName: "historical-model"})
+	require.NoError(t, err)
+	common.QuotaPerUnit = 500000
+	operation_setting.USDExchangeRate = 9
+	var evidence struct {
+		Display model.MarketingMoneySnapshot `json:"display_money"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(encoded, &evidence))
+	assert.Equal(t, model.MarketingMoneySnapshot{Amount: "1", QuotaPerUnit: "50000", CurrencyPerUnit: "3", Currency: "CNY"}, evidence.Display)
+	// Freezing the display basis never changes the billable units or tariff.
+	var original struct {
+		QuotaPerUnit float64 `json:"quota_per_unit"`
+		Model        string  `json:"model"`
+	}
+	require.NoError(t, common.UnmarshalJsonStr(encoded, &original))
+	assert.Equal(t, float64(50000), original.QuotaPerUnit)
+	assert.Equal(t, "historical-model", original.Model)
+}
 
 func TestMarketingPricingEvidenceReplaysRequestDependencies(t *testing.T) {
 	for _, source := range []string{"param", "header"} {

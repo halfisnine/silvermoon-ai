@@ -65,8 +65,15 @@ func marketingPricingEvidence(info *relaycommon.RelayInfo) (string, error) {
 		}
 		requestPricing["expression"] = frozen
 	}
+	// Freeze display conversion with the request, not with the later log read.
+	// A settings change must not rewrite historical paid/gift consumption.
+	displayMoney, err := MarketingDisplayMoney("1")
+	if err != nil {
+		return "", err
+	}
 	data, err := common.Marshal(map[string]any{
-		"model": info.GetBillingModelName(), "channel_id": channelID,
+		"display_money": displayMoney,
+		"model":         info.GetBillingModelName(), "channel_id": channelID,
 		"group": info.UsingGroup, "price": info.PriceData,
 		"other_ratios":   info.PriceData.OtherRatios(),
 		"quota_per_unit": common.QuotaPerUnit, "tiered": info.TieredBillingSnapshot,
