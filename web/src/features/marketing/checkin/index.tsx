@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { enUS, fr, ja, ru, vi, zhCN, zhTW } from 'react-day-picker/locale'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -31,34 +30,22 @@ import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Turnstile } from '@/components/turnstile'
 import { Button } from '@/components/ui/button'
-import { Calendar } from '@/components/ui/calendar'
-import { Card } from '@/components/ui/card'
-import { RewardSummary } from '@/features/marketing-admin/activities/summary'
-import {
-  formatMarketingDate,
-  formatMarketingMoney,
-} from '@/features/marketing-admin/format'
 import { useStatus } from '@/hooks/use-status'
 import { toIntlLocale } from '@/i18n/languages'
-import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getCalendar, submitCheckin } from '../api'
-import type { CheckinActivity } from '../types'
+import { CheckinCalendarView } from './calendar'
+import { civilDate } from './dates'
+import { CheckinRuleCard } from './rule-card'
 
-// Calendar dates are civil dates from the server, independent of browser timezone.
-function civilDate(value: string): Date {
-  return new Date(`${value}T12:00:00`)
-}
-function civilKey(value: Date): string {
-  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`
-}
+import './checkin.css'
+
 export function CheckinPage() {
   const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { t, i18n } = useTranslation()
-  const locale = toIntlLocale(i18n.language)
   const { status } = useStatus()
   const client = useQueryClient()
   const [month, setMonth] = useState('')
@@ -99,21 +86,8 @@ export function CheckinPage() {
     mutate.mutate({ date })
   }
   const data = calendar.data
-  const dates = new Set(data?.activities.flatMap((a) => a.makeup_dates) ?? [])
-  const signed = [
-    ...new Set(
-      data?.activities.flatMap((a) => a.records.map((r) => r.date)) ?? []
-    ),
-  ]
-  const calendarLocale =
-    (
-      { 'zh-CN': zhCN, 'zh-TW': zhTW, fr, ja, ru, vi } as Record<
-        string,
-        typeof enUS
-      >
-    )[locale || 'en'] ?? enUS
   const dayLabel = (date: string) =>
-    new Intl.DateTimeFormat(locale, {
+    new Intl.DateTimeFormat(toIntlLocale(i18n.language), {
       year: 'numeric',
       month: 'long',
       day: 'numeric',
@@ -136,61 +110,24 @@ export function CheckinPage() {
         </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='mx-auto flex max-w-6xl flex-col gap-4'>
+        <div className='marketing-checkin mx-auto flex w-full max-w-5xl flex-col gap-5 pb-6'>
           {calendar.isPending && <LoadingState />}
           {calendar.isError && (
             <ErrorState onRetry={() => void calendar.refetch()} />
           )}
           {data && (
             <>
-              <Card className='gap-4 p-4'>
-                <div className='flex flex-wrap items-center justify-between gap-3'>
-                  <h3 className='font-semibold'>{dayLabel(data.today)}</h3>
-                  <Button
-                    disabled={
-                      !data.can_checkin ||
-                      mutate.isPending ||
-                      calendar.isFetching
-                    }
-                    onClick={() => begin('')}
-                  >
-                    {data.checked_in_today
-                      ? t('Checked in today')
-                      : t('Check in now')}
-                  </Button>
-                </div>
-                <p className='text-muted-foreground text-sm'>
-                  {t(
-                    'Rewards are granted automatically under the eligible activity rules. Choose an available past date to make up a missed check-in.'
-                  )}
-                </p>
-                <Calendar
-                  className='mx-auto max-w-full'
-                  mode='single'
-                  locale={calendarLocale}
-                  month={civilDate(`${data.month}-01`)}
-                  onMonthChange={(date) => setMonth(civilKey(date).slice(0, 7))}
-                  today={civilDate(data.today)}
-                  selected={makeup ? civilDate(makeup) : undefined}
-                  onSelect={(date) => {
-                    if (date && dates.has(civilKey(date))) {
-                      setMakeup(civilKey(date))
-                    }
-                  }}
-                  disabled={(date) =>
-                    mutate.isPending || !dates.has(civilKey(date))
-                  }
-                  modifiers={{ signed: signed.map(civilDate) }}
-                  modifiersClassNames={{
-                    signed: 'text-primary font-bold underline',
-                  }}
-                />
-                <p className='text-muted-foreground text-center text-xs'>
-                  {t(
-                    'Underlined dates have a check-in record. Available dates can be made up.'
-                  )}
-                </p>
-              </Card>
+              {data.activities.map((activity) => (
+                <CheckinRuleCard key={activity.id} activity={activity} />
+              ))}
+              <CheckinCalendarView
+                data={data}
+                busy={mutate.isPending || calendar.isFetching}
+                makeup={makeup}
+                onMonthChange={setMonth}
+                onCheckin={() => begin('')}
+                onMakeup={setMakeup}
+              />
               {data.activities.length === 0 && (
                 <EmptyState
                   title={t('No check-in activity for this period')}
@@ -199,9 +136,6 @@ export function CheckinPage() {
                   )}
                 />
               )}
-              {data.activities.map((a) => (
-                <CheckinRuleCard key={a.id} activity={a} />
-              ))}
             </>
           )}
         </div>
@@ -242,116 +176,5 @@ export function CheckinPage() {
         )}
       </SectionPageLayout.Content>
     </SectionPageLayout>
-  )
-}
-function CheckinRuleCard(props: { activity: CheckinActivity }) {
-  const { t, i18n } = useTranslation()
-  const a = props.activity
-  const locale = toIntlLocale(i18n.language)
-  let eligibility = t('No eligible check-in activity for this date')
-  if (a.today_eligibility === 'eligible') eligibility = t('Eligible today')
-  if (a.today_eligibility === 'already_signed') {
-    eligibility = t('Checked in today')
-  }
-  if (a.today_eligibility === 'payment_required') {
-    eligibility = t('Payment condition not met today')
-  }
-  if (a.today_eligibility === 'suppressed') {
-    eligibility = t(
-      'Another eligible activity in the same exclusive group takes priority.'
-    )
-  }
-  if (a.paused) eligibility = t('Paused')
-  if (a.state === 'ended') eligibility = t('Ended')
-  if (a.state === 'scheduled') eligibility = t('Upcoming')
-  return (
-    <Card className='gap-3 p-4'>
-      <div className='flex flex-wrap justify-between gap-2'>
-        <h3 className='font-semibold break-words'>{a.name}</h3>
-        <span className='text-muted-foreground text-sm'>{eligibility}</span>
-      </div>
-      <dl className='grid grid-cols-1 gap-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)] sm:gap-x-5'>
-        <dt>{t('Activity period')}</dt>
-        <dd>
-          {formatMarketingDate(a.starts_at, i18n.language)} —{' '}
-          {a.ends_at
-            ? formatMarketingDate(a.ends_at, i18n.language)
-            : t('Ongoing')}
-        </dd>
-        <dt>{t('Eligibility')}</dt>
-        <dd>
-          {a.condition === 'none' ? (
-            t('No recharge required')
-          ) : (
-            <>
-              {a.condition === 'today_paid'
-                ? t('Paid today')
-                : t('Paid on the previous day')}{' '}
-              ·{' '}
-              {formatMarketingMoney(
-                a.required_payment_cny,
-                'CNY',
-                i18n.language
-              )}
-            </>
-          )}
-        </dd>
-        <dt>{t('Daily rewards')}</dt>
-        <dd>
-          <RewardSummary rewards={a.daily_rewards} />
-        </dd>
-        {a.milestones.map((m) => (
-          <div className='contents' key={m.days}>
-            <dt>
-              {t('Extra reward after {{days}} consecutive days', {
-                days: m.days,
-              })}
-            </dt>
-            <dd>
-              <RewardSummary rewards={m.rewards} />
-            </dd>
-          </div>
-        ))}
-        {a.milestones.length > 0 && (
-          <>
-            <dt>{t('Current streak')}</dt>
-            <dd>
-              {t('{{days}} consecutive days', {
-                days: formatNumber(a.streak, locale),
-              })}{' '}
-              ·{' '}
-              {a.cycle_days
-                ? t('{{days}} days per cycle', { days: a.cycle_days })
-                : t('Once per milestone')}
-              <p>
-                {t(
-                  'Daily and extra streak rewards are added together on a milestone day.'
-                )}
-              </p>
-            </dd>
-          </>
-        )}
-        {a.makeup_limit > 0 && (
-          <>
-            <dt>{t('Make-up check-in')}</dt>
-            <dd>
-              {t(
-                'Previous {{days}} days; {{count}} make-ups per participant for this activity',
-                { days: a.makeup_days, count: a.makeup_limit }
-              )}
-              <p>
-                {t('{{count}} make-ups remaining in this activity', {
-                  count: a.makeup_remaining,
-                })}{' '}
-                ·{' '}
-                {a.makeup_daily
-                  ? t('Includes the missed daily reward')
-                  : t('Repairs the streak only')}
-              </p>
-            </dd>
-          </>
-        )}
-      </dl>
-    </Card>
   )
 }

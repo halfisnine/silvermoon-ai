@@ -123,7 +123,11 @@ test('activity center shows structured actual-payment rules and only associated 
     screen.getByText('Payments accumulate from the start of this activity.')
   ).toBeVisible()
   expect(screen.getByText(/20 remaining out of 100/)).toBeVisible()
-  expect(screen.getByText('This opportunity limit is shared by all linked activities.')).toBeVisible()
+  expect(
+    screen.getByText(
+      'This opportunity limit is shared by all linked activities.'
+    )
+  ).toBeVisible()
   expect(screen.getByText(/0.00012/)).toHaveTextContent('Validity: 3 days')
   expect(screen.getByRole('link', { name: 'Go to wallet' })).toHaveAttribute(
     'href',
@@ -224,6 +228,91 @@ test('check-in displays daily plus extra rewards and submits without selecting a
     screen.getByRole('link', { name: 'View check-in rewards' })
   ).toHaveAttribute('href', expect.stringContaining('/activities/rewards'))
 })
+test('calendar distinguishes signed, make-up, future and today cells and signs from today directly', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    envelope(url === '/api/user/checkin' ? checkin : {})
+  )
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue(
+      envelope({ date: checkin.today, rewards_pending: false })
+    )
+  await view(<CheckinPage />)
+  expect(
+    await screen.findByRole('button', { name: /November 21.*Checked in/ })
+  ).toBeDisabled()
+  expect(
+    screen.getByRole('button', { name: /November 22.*Make-up available/ })
+  ).toBeEnabled()
+  expect(
+    screen.getByRole('button', { name: /November 24.*Not yet available/ })
+  ).toBeDisabled()
+  const today = screen.getByRole('button', {
+    name: /November 23.*Check in now/,
+  })
+  expect(today).toHaveAttribute('aria-current', 'date')
+  expect(today).toBeEnabled()
+  await userEvent.setup().click(today)
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith('/api/user/checkin', {}, { params: {} })
+  )
+})
+
+test('calendar arrow keys move from today to a make-up date and Enter opens confirmation', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    envelope(url === '/api/user/checkin' ? checkin : {})
+  )
+  await view(<CheckinPage />)
+  const today = await screen.findByRole('button', {
+    name: /November 23.*Check in now/,
+  })
+  act(() => today.focus())
+  const user = userEvent.setup()
+  await user.keyboard('{ArrowLeft}')
+  expect(
+    screen.getByRole('button', { name: /November 22.*Make-up available/ })
+  ).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+    'Make up check-in for'
+  )
+})
+
+test('available actions take priority when another activity already recorded the same date', async () => {
+  const mixed = {
+    ...checkin,
+    checked_in_today: true,
+    activities: [
+      {
+        ...checkin.activities[0],
+        id: 1,
+        makeup_dates: [],
+        records: [
+          { date: '2026-11-22', makeup: false },
+          { date: checkin.today, makeup: false },
+        ],
+      },
+      { ...checkin.activities[0], id: 2, name: 'Second check-in', records: [] },
+    ],
+  }
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    envelope(url === '/api/user/checkin' ? mixed : {})
+  )
+  await view(<CheckinPage />)
+  const past = await screen.findByRole('button', {
+    name: /November 22.*Make-up available/,
+  })
+  expect(past).toBeEnabled()
+  expect(
+    screen.getByRole('button', { name: /November 23.*Check in now/ })
+  ).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Check in now' })).toBeEnabled()
+  fireEvent.click(past)
+  expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+    'Make up check-in for'
+  )
+})
+
 test('no check-in activity keeps reward history navigation and disables daily submission', async () => {
   vi.spyOn(api, 'get').mockImplementation(async (url) =>
     envelope(
