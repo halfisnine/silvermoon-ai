@@ -42,7 +42,11 @@ import { useAuthStore } from '@/stores/auth-store'
 import { userMarketingGet } from '../api'
 import type { Gift, MarketingPage, RewardRecord } from '../types'
 
-export function ActivityRewardsPage(props: { tab?: string; source?: string }) {
+export function ActivityRewardsPage(props: {
+  tab?: string
+  source?: string
+  friend?: string
+}) {
   const { t } = useTranslation()
   const [tab, setTab] = useState(props.tab === 'gifts' ? 'gifts' : 'records')
   return (
@@ -59,7 +63,7 @@ export function ActivityRewardsPage(props: { tab?: string; source?: string }) {
           {tab === 'gifts' ? (
             <GiftList />
           ) : (
-            <RewardList source={props.source} />
+            <RewardList source={props.source} friend={props.friend} />
           )}
         </div>
       </SectionPageLayout.Content>
@@ -92,12 +96,15 @@ function rewardResultLabel(state: string, t: (key: string) => string): string {
       return t('Delivery needs attention')
   }
 }
-function RewardList(props: { source?: string }) {
+function RewardList(props: { source?: string; friend?: string }) {
   const userId = useAuthStore((state) => state.auth.user?.id)
 
   const { t, i18n } = useTranslation()
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
   const [source, setSource] = useState(props.source || '')
+  const [friend, setFriend] = useState(
+    props.source === 'invitation' ? props.friend || '' : ''
+  )
   const [from, setFrom] = useState<Date>()
   const [until, setUntil] = useState<Date>()
   const [selected, setSelected] = useState<RewardRecord>()
@@ -105,6 +112,7 @@ function RewardList(props: { source?: string }) {
   const params = {
     kind: source === 'lottery' ? 'lottery' : 'activity',
     activity_kind: source === 'lottery' ? '' : source,
+    ...(friend ? { friend_username: friend } : {}),
     page: pagination.pageIndex + 1,
     page_size: pagination.pageSize,
     starts_at: from ? Math.floor(from.getTime() / 1000) : 0,
@@ -171,6 +179,23 @@ function RewardList(props: { source?: string }) {
   const reset = () => setPagination({ ...pagination, pageIndex: 0 })
   return (
     <>
+      {friend && (
+        <div className='flex flex-wrap items-center gap-2 text-sm'>
+          <span>
+            {t('Invited friend')}: <strong>{friend}</strong>
+          </span>
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={() => {
+              setFriend('')
+              reset()
+            }}
+          >
+            {t('Clear')}
+          </Button>
+        </div>
+      )}
       {query.isError ? (
         <ErrorState onRetry={() => void query.refetch()} />
       ) : (
@@ -189,6 +214,7 @@ function RewardList(props: { source?: string }) {
                   value={source}
                   onChange={(e) => {
                     setSource(e.target.value)
+                    setFriend('')
                     reset()
                   }}
                 >

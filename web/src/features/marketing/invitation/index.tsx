@@ -79,6 +79,75 @@ export function InvitationPage() {
       cell: ({ row }) =>
         formatMarketingDate(row.original.joined_at, i18n.language),
     },
+    {
+      id: 'rewards',
+      header: t('Activity rewards'),
+      cell: ({ row }) => {
+        const rewards = row.original.rewards
+        if (!rewards) return '—'
+        if (rewards.granted + rewards.pending + rewards.other === 0) {
+          return (
+            <span className='text-muted-foreground'>
+              {t('No invitation reward records yet')}
+            </span>
+          )
+        }
+        return (
+          <div className='flex flex-col items-start gap-1 whitespace-normal'>
+            {rewards.granted > 0 && (
+              <p>
+                {t('Granted reward items: {{amount}}', {
+                  amount: formatNumber(
+                    rewards.granted,
+                    toIntlLocale(i18n.language)
+                  ),
+                })}
+              </p>
+            )}
+            {rewards.pending > 0 && (
+              <p>
+                {t('Pending reward items: {{amount}}', {
+                  amount: formatNumber(
+                    rewards.pending,
+                    toIntlLocale(i18n.language)
+                  ),
+                })}
+              </p>
+            )}
+            {rewards.other > 0 && (
+              <p className='text-muted-foreground'>
+                {t('Other reward results: {{amount}}', {
+                  amount: formatNumber(
+                    rewards.other,
+                    toIntlLocale(i18n.language)
+                  ),
+                })}
+              </p>
+            )}
+            <Button
+              size='sm'
+              variant='link'
+              role='link'
+              aria-label={t('View rewards for {{name}}', {
+                name: row.original.username,
+              })}
+              render={
+                <Link
+                  to='/activities/rewards'
+                  search={{
+                    tab: 'records',
+                    source: 'invitation',
+                    friend: row.original.username,
+                  }}
+                />
+              }
+            >
+              {t('View invitation rewards')}
+            </Button>
+          </div>
+        )
+      },
+    },
   ]
   const { table } = useDataTable({
     data: query.data?.friends.items ?? [],

@@ -83,6 +83,9 @@ func ReadMarketingUserRewards(ctx context.Context, userID int, id int64, f Marke
 	if f.ActivityKind != "" && (!slices.Contains([]string{"registration", "recharge", "checkin", "invitation"}, f.ActivityKind) || f.Kind != "activity") {
 		return nil, model.ErrMarketingInput
 	}
+	if f.FriendUsername != "" && (f.Kind != "activity" || f.ActivityKind != "invitation") {
+		return nil, model.ErrMarketingInput
+	}
 	var result any
 	err := model.WithMarketingTransaction(ctx, func(tx *gorm.DB) error {
 		if err := model.AuthorizeMarketingUser(tx, userID); err != nil {
@@ -97,6 +100,11 @@ func ReadMarketingUserRewards(ctx context.Context, userID int, id int64, f Marke
 			}
 			if f.ActivityKind != "" {
 				q = q.Where("activity_id IN (?)", tx.Model(&model.MarketingActivity{}).Select("id").Where("kind = ?", f.ActivityKind))
+			}
+			if f.FriendUsername != "" {
+				friends := tx.Unscoped().Model(&model.User{}).Select("id").Where("username = ?", f.FriendUsername).
+					Where("id IN (?)", tx.Model(&model.MarketingInvitation{}).Select("user_id").Where("inviter_id = ?", userID))
+				q = q.Where("fact_id IN (?)", tx.Model(&model.MarketingActivityFact{}).Select("id").Where("user_id IN (?)", friends))
 			}
 			if f.StartsAt > 0 || f.EndsAt > 0 {
 				facts := tx.Model(&model.MarketingActivityFact{}).Select("id")

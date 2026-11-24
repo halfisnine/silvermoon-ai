@@ -15,11 +15,12 @@ import (
 type MarketingUserFilter struct {
 	Page, PageSize            int
 	Kind, State, ActivityKind string
+	FriendUsername            string
 	StartsAt, EndsAt          int64
 }
 
 func (f MarketingUserFilter) Validate() error {
-	if f.Page < 1 || f.Page > 1000000 || f.PageSize < 1 || f.PageSize > 100 || f.StartsAt < 0 || f.EndsAt < 0 || (f.EndsAt > 0 && f.StartsAt >= f.EndsAt) {
+	if len(f.FriendUsername) > 128 || f.Page < 1 || f.Page > 1000000 || f.PageSize < 1 || f.PageSize > 100 || f.StartsAt < 0 || f.EndsAt < 0 || (f.EndsAt > 0 && f.StartsAt >= f.EndsAt) {
 		return model.ErrMarketingInput
 	}
 	return nil
@@ -161,7 +162,7 @@ func ReadMarketingUserActivities(ctx context.Context, userID int, id int64, f Ma
 }
 
 // Invitation relationships are factual and retained when activities end. Only
-// the owner's link and friend names/dates cross the console boundary.
+// the owner's link, friend names/dates and own reward counts cross the console boundary.
 func ReadMarketingUserInvitation(ctx context.Context, userID int, f MarketingUserFilter) (any, error) {
 	if err := f.Validate(); err != nil {
 		return nil, err
@@ -184,6 +185,11 @@ func ReadMarketingUserInvitation(ctx context.Context, userID int, f MarketingUse
 		type friend struct {
 			Username string `json:"username"`
 			JoinedAt int64  `json:"joined_at"`
+			Rewards  struct {
+				Granted int64 `json:"granted"`
+				Pending int64 `json:"pending"`
+				Other   int64 `json:"other"`
+			} `json:"rewards"`
 		}
 		friends := []friend{}
 		var total int64
@@ -195,12 +201,48 @@ func ReadMarketingUserInvitation(ctx context.Context, userID int, f MarketingUse
 		if err := q.Order("established_at DESC, user_id DESC").Offset((f.Page - 1) * f.PageSize).Limit(f.PageSize).Find(&rows).Error; err != nil {
 			return err
 		}
+		friendIDs := make([]int, 0, len(rows))
 		for _, row := range rows {
-			var u model.User
-			if err := tx.Unscoped().Select("id", "username").First(&u, row.UserID).Error; err != nil {
+			friendIDs = append(friendIDs, row.UserID)
+		}
+		if len(friendIDs) > 0 {
+			var users []model.User
+			if err := tx.Unscoped().Select("id", "username").Where("id IN ?", friendIDs).Find(&users).Error; err != nil {
 				return err
 			}
-			friends = append(friends, friend{u.Username, row.EstablishedAt})
+			names := make(map[int]string, len(users))
+			for _, u := range users {
+				names[u.Id] = u.Username
+			}
+			var counts []struct {
+				FriendID int
+				State    string
+				Count    int64
+			}
+			if err := tx.Model(&model.MarketingActivityReward{}).
+				Select("marketing_v2_activity_facts.user_id AS friend_id, marketing_v2_activity_rewards.state, COUNT(*) AS count").
+				Joins("JOIN marketing_v2_activity_facts ON marketing_v2_activity_facts.id = marketing_v2_activity_rewards.fact_id").
+				Joins("JOIN marketing_v2_activities ON marketing_v2_activities.id = marketing_v2_activity_rewards.activity_id").
+				Where("marketing_v2_activity_rewards.user_id = ? AND marketing_v2_activity_facts.user_id IN ? AND marketing_v2_activities.kind = ?", userID, friendIDs, "invitation").
+				Group("marketing_v2_activity_facts.user_id, marketing_v2_activity_rewards.state").Scan(&counts).Error; err != nil {
+				return err
+			}
+			positions := make(map[int]int, len(rows))
+			for _, row := range rows {
+				positions[row.UserID] = len(friends)
+				friends = append(friends, friend{Username: names[row.UserID], JoinedAt: row.EstablishedAt})
+			}
+			for _, count := range counts {
+				summary := &friends[positions[count.FriendID]].Rewards
+				switch count.State {
+				case "credited", "issued":
+					summary.Granted += count.Count
+				case "pending":
+					summary.Pending += count.Count
+				default:
+					summary.Other += count.Count
+				}
+			}
 		}
 		result = map[string]any{"invitation_code": user.AffCode, "invitation_path": "/sign-up?aff=" + url.QueryEscape(user.AffCode), "friend_count": total, "friends": MarketingAdminPage{Items: friends, Total: total, Page: f.Page, PageSize: f.PageSize}}
 		return nil

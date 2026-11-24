@@ -104,3 +104,12 @@
 - 活动卡片底部按钮与结束说明改为垂直居中，水平/换行间距分设，继续复用共享Card、Button和路由链接；手机自然换行。无后端、数据库或资金规则变更。
 - `.dev/run bun run test src/features/marketing/__tests__/participation.test.tsx`：22项通过；修复前5项失败17项通过。新增四状态邀请活动规则/奖励/状态/请求过滤回归，保留无活动、好友分页等行为。浏览器修复前复现底部文字与按钮中心不一致；修复后真实预览邀请活动规则和奖励可见，另用只读拦截样本验证四种活动状态、1440/1100/768/390/320px无溢出或卡片裁切、桌面底部文字实际文本框与按钮中心对齐、窄屏自然换行、两主题及中英文。未写业务数据；脚本截图位于忽略目录 build/dev/invitation-activities/，运行日志 build/dev/invitation-activities-*.log。
 - typecheck：1494文件2项目无错误，受影响文件oxlint/oxfmt和git diff --check通过，前端及预览二进制构建通过。预览数据库和旧二进制已备份，仅更新46015独立开发预览。独立sub agent集中验收整体范围通过，不改变H01–H11人工验收状态。
+
+### 2026-11-25 补充：每位邀请好友的实际奖励记录
+
+- 用户澄清此前是指右侧好友表格无法知道是否有邀请奖励，前次仅调整左侧活动可见范围未解决该需求。右侧新增“活动奖励”列：按实际奖励条目区分已发放（credited/issued）、待发放（pending）、其他结果，以及暂无奖励记录；有记录的好友可点击“查看邀请奖励”进入原活动奖励列表，自动按该好友筛选，列表展示对应活动、实际奖励和结果，原详情仍显示好友来源。筛选可清空，切换奖励来源也清空；friend路由参数可选，兼容原签到/钱包等链接。暂无记录不推断为未达标，不按活动配置伪造到账金额。
+- 后端在当前页好友范围批量查询用户名与状态数量，汇总同时限定当前邀请人受益人、事实所属好友、邀请类活动；历史记录不受当前活动公开/结束状态影响。详情friend_username筛选限定当前用户的邀请关系，并继承自身奖励过滤与已有私密字段剥离；不展示好友充值金额、订单、余额或内部计价单位。共享数据库直接读取，无新增缓存、中间件、schema或资金写入。继续复用共享DataTablePage、原奖励列表/详情、Button和路由Link，新增5键完成7语言脚本写入及sync。
+- 既有controller/marketing_user_test.go新增真实邀请注册触发的赠金与名额不足结果、活动隐藏后历史仍可见、待发放单列、零记录好友、单人分页隔离、跨用户与非好友过滤、参数长度及禁止透露支付字段；前端新增行内状态和按好友链接/筛选/清空回归。前端修复前2项失败22项通过，修复后24项全通过。typecheck1494文件2项目无错误，受影响文件oxlint/oxfmt及git diff --check通过，前端构建与预览二进制构建通过。
+- 数据库验证：`.dev/run go test -c -o /artifacts/marketing-v2-013-controller.test ./controller`，随后`python3 .dev/marketing-v2-requirements/validation/user_http_matrix.py`，真实SQLite3.50.4、MySQL8.4.13、PostgreSQL17.11均通过TestMarketingUserHTTP与TestMarketingCheckinHTTP，无跳过。此变更仅查询现有表，不涉及迁移。矩阵日志副本为build/dev/invitation-rewards/{sqlite,mysql,postgres}-http.log。
+- 实际Chromium先读取真实开发接口验证每好友summary与过滤来源，再用网络拦截样本验证已发/待发/其他/零记录、21好友翻页、按好友跳转/详情/清空、中文英文和两主题、1100/768/390/320px无横向溢出。未创建测试好友、未补发奖励、未改用户活动。脚本截图在忽略目录build/dev/invitation-rewards/，专用账号运行时读取且不含凭据常量。预览数据库及旧二进制备份后，仅更新46015独立开发预览。
+- 独立sub agent首次及最终全链路复验通过，不修改H01–H11人工验收状态。

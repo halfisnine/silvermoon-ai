@@ -645,3 +645,64 @@ test.each([
     ).not.toBeInTheDocument()
   }
 )
+
+test('invitation rows distinguish granted, pending, other and absent rewards and link to that friend only', async () => {
+  vi.spyOn(api, 'get').mockImplementation(async (url) =>
+    envelope(
+      url === '/api/marketing/user/invitation'
+        ? {
+            invitation_path: '/sign-up?aff=alice',
+            friend_count: 2,
+            friends: page([
+              {
+                username: 'friend',
+                joined_at: 1795132800,
+                rewards: { granted: 2, pending: 1, other: 1 },
+              },
+              {
+                username: 'new-friend',
+                joined_at: 1795132800,
+                rewards: { granted: 0, pending: 0, other: 0 },
+              },
+            ]),
+          }
+        : page([])
+    )
+  )
+  await view(<InvitationPage />)
+  expect(await screen.findByText('Granted reward items: 2')).toBeVisible()
+  expect(screen.getByText('Pending reward items: 1')).toBeVisible()
+  expect(screen.getByText('Other reward results: 1')).toBeVisible()
+  expect(screen.getByText('No invitation reward records yet')).toBeVisible()
+  const href =
+    screen
+      .getByRole('link', { name: 'View rewards for friend' })
+      .getAttribute('href') ?? ''
+  const target = new URL(href, window.location.origin)
+  expect(target.pathname).toBe('/activities/rewards')
+  expect(target.searchParams.get('source')).toBe('invitation')
+  expect(target.searchParams.get('friend')).toBe('friend')
+  expect(
+    screen.queryByRole('link', { name: 'View rewards for new-friend' })
+  ).not.toBeInTheDocument()
+})
+
+test('friend reward view requests only invitation records for that friend and can clear the filter', async () => {
+  const get = vi.spyOn(api, 'get').mockResolvedValue(envelope(page([])))
+  await view(<ActivityRewardsPage source='invitation' friend='friend' />)
+  await screen.findByText('No reward records found')
+  expect(get).toHaveBeenLastCalledWith('/api/marketing/user/rewards', {
+    params: expect.objectContaining({
+      kind: 'activity',
+      activity_kind: 'invitation',
+      friend_username: 'friend',
+    }),
+  })
+  expect(screen.getByText('friend', { exact: true })).toBeVisible()
+  await userEvent.click(screen.getByRole('button', { name: 'Clear' }))
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith('/api/marketing/user/rewards', {
+      params: expect.not.objectContaining({ friend_username: 'friend' }),
+    })
+  )
+})

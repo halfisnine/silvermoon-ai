@@ -29,7 +29,7 @@ func MarketingUserRead(c *gin.Context) {
 		marketingUserFailure(c, model.ErrMarketingInput)
 		return
 	}
-	f := service.MarketingUserFilter{Page: 1, PageSize: 20, Kind: c.Query("kind"), State: c.Query("state"), ActivityKind: c.Query("activity_kind")}
+	f := service.MarketingUserFilter{Page: 1, PageSize: 20, Kind: c.Query("kind"), State: c.Query("state"), ActivityKind: c.Query("activity_kind"), FriendUsername: c.Query("friend_username")}
 	var err error
 	for key, target := range map[string]*int{"page": &f.Page, "page_size": &f.PageSize} {
 		if raw, ok := c.GetQuery(key); ok {

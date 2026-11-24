@@ -23,6 +23,7 @@ import { ActivityRewardsPage } from '@/features/marketing/rewards'
 
 export const Route = createFileRoute('/_authenticated/activities/rewards')({
   validateSearch: z.object({
+    friend: z.string().max(128).optional().catch(undefined),
     tab: z.enum(['records', 'gifts']).catch('records'),
     source: z
       .enum([
@@ -41,9 +42,10 @@ function RewardsRoute() {
   const search = Route.useSearch()
   return (
     <ActivityRewardsPage
-      key={`${search.tab}-${search.source}`}
+      key={`${search.tab}-${search.source}-${search.friend}`}
       tab={search.tab}
       source={search.source}
+      friend={search.friend}
     />
   )
 }

@@ -85,7 +85,11 @@ export type Invitation = {
   invitation_code: string
   invitation_path: string
   friend_count: number
-  friends: MarketingPage<{ username: string; joined_at: number }>
+  friends: MarketingPage<{
+    username: string
+    joined_at: number
+    rewards: { granted: number; pending: number; other: number }
+  }>
 }
 export type CheckinActivity = {
   id: number

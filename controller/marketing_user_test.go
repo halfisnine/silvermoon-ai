@@ -96,6 +96,7 @@ func TestMarketingUserHTTP(t *testing.T) {
 				spec.Checkin = &model.MarketingActivityCheckinSpec{Condition: "none"}
 			case "invitation":
 				condition = "friend_registration"
+				spec.Rewards[1].Count = 2
 			}
 			spec.Condition, spec.Frequency = condition, frequency
 			a, e := model.CreateMarketingActivity(tx, admin.Id, fmt.Sprintf("user-http-create-%d", i), spec, now-100)
@@ -245,6 +246,77 @@ func TestMarketingUserHTTP(t *testing.T) {
 	decode(request("GET", "/invitation", nil, bundle.AccessToken), &invitation)
 	assert.EqualValues(t, 1, invitation.FriendCount)
 	assert.Contains(t, invitation.InvitationPath, "aff=")
+
+	// Invitation summaries belong to the inviter and correlate through the
+	// friend's durable event, rather than current activity visibility.
+	require.NoError(t, model.WithMarketingTransaction(context.Background(), func(tx *gorm.DB) error {
+		if err := tx.Model(&model.MarketingActivity{}).Where("kind = ?", "invitation").Update("ends_at", now+1800).Error; err != nil {
+			return err
+		}
+		_, err := model.CaptureMarketingRegistrationFact(tx, other.Id, "invited-friend-register", now)
+		return err
+	}))
+	_, err = service.ProcessMarketingActivityFacts(context.Background(), other.Id)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.Model(&model.MarketingActivity{}).Where("kind = ?", "invitation").Updates(map[string]any{"ends_at": now - 72*3600, "published": false}).Error)
+	var friendRewards struct {
+		Friends struct {
+			Items []struct {
+				Username string
+				Rewards  struct{ Granted, Pending, Other int64 }
+			}
+			Total int64
+		}
+	}
+	invitationResponse := request("GET", "/invitation", nil, bundle.AccessToken)
+	decode(invitationResponse, &friendRewards)
+	require.Len(t, friendRewards.Friends.Items, 1)
+	assert.Equal(t, other.Username, friendRewards.Friends.Items[0].Username)
+	assert.EqualValues(t, 1, friendRewards.Friends.Items[0].Rewards.Granted)
+	assert.EqualValues(t, 0, friendRewards.Friends.Items[0].Rewards.Pending)
+	assert.EqualValues(t, 1, friendRewards.Friends.Items[0].Rewards.Other)
+	filtered := "/rewards?kind=activity&activity_kind=invitation&friend_username=" + other.Username
+	invitationRewardResponse := request("GET", filtered, nil, bundle.AccessToken)
+	decode(invitationRewardResponse, &rewardPage)
+	require.EqualValues(t, 2, rewardPage.Total)
+	for _, item := range rewardPage.Items {
+		assert.Equal(t, "invitation", item.SourceName)
+		assert.Equal(t, other.Username, item.Source["friend_username"])
+	}
+	for _, hidden := range []string{"paid_cny", "payment_reference", "sales_evidence", "quota", "user_id"} {
+		assert.NotContains(t, invitationRewardResponse.Body.String(), hidden)
+		assert.NotContains(t, invitationResponse.Body.String(), hidden)
+	}
+	decode(request("GET", filtered, nil, otherBundle.AccessToken), &rewardPage)
+	assert.Zero(t, rewardPage.Total)
+	decode(request("GET", "/rewards?kind=activity&activity_kind=invitation&friend_username="+user.Username, nil, bundle.AccessToken), &rewardPage)
+	assert.Zero(t, rewardPage.Total)
+	assert.Equal(t, http.StatusBadRequest, request("GET", "/rewards?kind=lottery&friend_username="+other.Username, nil, bundle.AccessToken).Code)
+	assert.Equal(t, http.StatusBadRequest, request("GET", "/rewards?kind=activity&activity_kind=invitation&friend_username="+strings.Repeat("x", 129), nil, bundle.AccessToken).Code)
+	var invitationGift model.MarketingActivityReward
+	require.NoError(t, model.DB.Where("user_id = ? AND kind = ? AND state = ?", user.Id, "gift", "credited").Order("id DESC").First(&invitationGift).Error)
+	require.NoError(t, model.DB.Model(&invitationGift).Update("state", "pending").Error)
+	decode(request("GET", "/invitation", nil, bundle.AccessToken), &friendRewards)
+	assert.EqualValues(t, 0, friendRewards.Friends.Items[0].Rewards.Granted)
+	assert.EqualValues(t, 1, friendRewards.Friends.Items[0].Rewards.Pending)
+	require.NoError(t, model.DB.Model(&invitationGift).Update("state", "credited").Error)
+	quietFriend := model.User{Username: "quiet-invited-friend", AffCode: "quiet-invited-friend", CreatedAt: now, InviterId: user.Id, Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	require.NoError(t, model.DB.Create(&quietFriend).Error)
+	require.NoError(t, model.WithMarketingTransaction(context.Background(), func(tx *gorm.DB) error {
+		_, err := model.RecordMarketingInvitation(tx, quietFriend.Id, user.Id, "quiet-friend", now)
+		return err
+	}))
+	decode(request("GET", "/invitation?page=1&page_size=1", nil, bundle.AccessToken), &friendRewards)
+	require.Len(t, friendRewards.Friends.Items, 1)
+	assert.EqualValues(t, 2, friendRewards.Friends.Total)
+	assert.Equal(t, quietFriend.Username, friendRewards.Friends.Items[0].Username)
+	assert.Zero(t, friendRewards.Friends.Items[0].Rewards.Granted)
+	assert.Zero(t, friendRewards.Friends.Items[0].Rewards.Pending)
+	assert.Zero(t, friendRewards.Friends.Items[0].Rewards.Other)
+	decode(request("GET", "/invitation?page=2&page_size=1", nil, bundle.AccessToken), &friendRewards)
+	require.Len(t, friendRewards.Friends.Items, 1)
+	assert.Equal(t, other.Username, friendRewards.Friends.Items[0].Username)
+	assert.EqualValues(t, 1, friendRewards.Friends.Items[0].Rewards.Granted)
 
 	// Reservation is a subset of RemainingQuota, not an additional balance.
 	// A historical round retains only its committed hold after expiry; settlement
