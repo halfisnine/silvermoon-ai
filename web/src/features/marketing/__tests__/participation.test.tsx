@@ -330,7 +330,7 @@ test('no check-in activity keeps reward history navigation and disables daily su
     screen.getByRole('link', { name: 'View check-in rewards' })
   ).toBeVisible()
 })
-test('invitation without an active campaign preserves link and friends but offers no balance transfer', async () => {
+test('invitation without public campaigns preserves link and friends but offers no balance transfer', async () => {
   vi.spyOn(api, 'get').mockImplementation(async (url) =>
     envelope(
       url === '/api/marketing/user/invitation'
@@ -344,7 +344,9 @@ test('invitation without an active campaign preserves link and friends but offer
     )
   )
   await view(<InvitationPage />)
-  expect(await screen.findByText('No active invitation activity')).toBeVisible()
+  expect(
+    await screen.findByText('No invitation activities to display')
+  ).toBeVisible()
   expect(await screen.findByText('friend')).toBeVisible()
   expect(
     screen.getByRole('textbox', { name: 'Your invitation link' })
@@ -590,3 +592,56 @@ test('invitation with no friends shows a table empty state without redundant pag
     screen.getByRole('textbox', { name: 'Your invitation link' })
   ).toBeVisible()
 })
+
+test.each([
+  ['active', 'Ongoing'],
+  ['paused', 'Paused'],
+  ['scheduled', 'Upcoming'],
+  ['ended', 'Ended'],
+])(
+  'invitation shows %s campaign rules and rewards without claiming it is active',
+  async (state, label) => {
+    const invitationActivity = {
+      ...activity,
+      state,
+      activity: {
+        ...activity.activity,
+        name: 'Invite a friend',
+        kind: 'invitation',
+        condition: 'friend_registration',
+        frequency: 'once',
+      },
+    }
+    const get = vi.spyOn(api, 'get').mockImplementation(async (url, config) => {
+      if (url === '/api/marketing/user/invitation') {
+        return envelope({
+          invitation_path: '/sign-up?aff=alice',
+          friend_count: 1,
+          friends: page([{ username: 'friend', joined_at: 1795132800 }]),
+        })
+      }
+      const filter = config?.params as { state?: string } | undefined
+      return envelope(
+        page(
+          filter?.state && filter.state !== state ? [] : [invitationActivity]
+        )
+      )
+    })
+    await view(<InvitationPage />)
+    expect(
+      await screen.findByRole('heading', { name: 'Invite a friend' })
+    ).toBeVisible()
+    expect(screen.getByText(label, { exact: true })).toBeVisible()
+    expect(
+      screen.getByText('A friend registers during this activity.')
+    ).toBeVisible()
+    expect(screen.getByText(/0.00012/)).toHaveTextContent('Validity: 3 days')
+    expect(screen.getByText('friend', { exact: true })).toBeVisible()
+    expect(get).toHaveBeenCalledWith('/api/marketing/user/activities', {
+      params: { page: 1, page_size: 20, kind: 'invitation', state: '' },
+    })
+    expect(
+      screen.queryByText('No invitation activities to display')
+    ).not.toBeInTheDocument()
+  }
+)

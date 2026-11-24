@@ -62,7 +62,7 @@ export function InvitationPage() {
   })
   const rules = useQuery({
     queryKey: ['marketing-user', userId, 'invitation-rules', rulePage],
-    queryFn: () => getUserActivities(rulePage, 'invitation', 'active'),
+    queryFn: () => getUserActivities(rulePage, 'invitation'),
     refetchInterval: 30000,
     enabled: userId != null,
   })
@@ -143,7 +143,7 @@ export function InvitationPage() {
                 <Card className='marketing-invitation-empty min-h-72 flex-1 justify-center p-4'>
                   <EmptyState
                     className='min-h-0'
-                    title={t('No active invitation activity')}
+                    title={t('No invitation activities to display')}
                     description={t(
                       'Your invitation link, existing friends and reward history remain available.'
                     )}

@@ -149,7 +149,7 @@ export function ActivityCard(props: { item: PublicActivity }) {
         <Badge variant='outline'>{state}</Badge>
       </div>
       <ActivityRules item={item} />
-      <div className='flex flex-wrap gap-2 border-t pt-3'>
+      <div className='flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-3'>
         {active && item.activity.kind === 'checkin' && (
           <Button role='link' render={<Link to='/activities/checkin' />}>
             {t('Go to check-in')}
