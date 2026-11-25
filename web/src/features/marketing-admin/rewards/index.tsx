@@ -29,8 +29,8 @@ import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { toIntlLocale } from '@/i18n/languages'
 
@@ -143,73 +143,93 @@ export function MarketingRewardsPage() {
               isFetching={query.isFetching}
               emptyTitle={t('No reward records found')}
               toolbar={
-                <div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-3'>
-                  <NativeSelect
-                    aria-label={t('Reward source')}
-                    value={kind}
-                    onChange={(e) => {
-                      setKind(e.target.value)
-                      setActivityID(0)
-                      resetPage()
-                    }}
-                  >
-                    <NativeSelectOption value='activity'>
-                      {t('Activity rewards')}
-                    </NativeSelectOption>
-                    <NativeSelectOption value='lottery'>
-                      {t('Lottery results')}
-                    </NativeSelectOption>
-                  </NativeSelect>
-                  <Input
-                    aria-label={t('Username')}
-                    placeholder={t('Username')}
-                    value={username}
-                    onChange={(e) => {
-                      setUsername(e.target.value)
-                      resetPage()
-                    }}
-                  />
-                  {kind === 'activity' && (
-                    <ActivityFilter
-                      value={activityID}
-                      onChange={(id) => {
-                        setActivityID(id)
-                        resetPage()
-                      }}
-                    />
-                  )}
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor='rewards-start'>{t('From')}</Label>
-                    <DateTimePicker
-                      id='rewards-start'
-                      timeZone='Asia/Shanghai'
-                      value={startsAt}
-                      onChange={(d) => {
-                        setStartsAt(d)
-                        resetPage()
-                      }}
-                    />
-                  </div>
-                  <div className='flex flex-col gap-2'>
-                    <Label htmlFor='rewards-end'>
-                      {t('Until (exclusive)')}
-                    </Label>
-                    <DateTimePicker
-                      id='rewards-end'
-                      timeZone='Asia/Shanghai'
-                      value={endsAt}
-                      onChange={(d) => {
-                        setEndsAt(d)
-                        resetPage()
-                      }}
-                      aria-invalid={!validRange}
-                    />
-                    {!validRange && (
-                      <p role='alert' className='text-destructive text-sm'>
-                        {t('End date must be after start date')}
-                      </p>
+                <div className='flex flex-col gap-3'>
+                  <FieldGroup className='grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-4'>
+                    <Field className='min-w-0'>
+                      <FieldLabel htmlFor='rewards-source'>
+                        {t('Reward source')}
+                      </FieldLabel>
+                      <NativeSelect
+                        id='rewards-source'
+                        aria-label={t('Reward source')}
+                        value={kind}
+                        onChange={(e) => {
+                          setKind(e.target.value)
+                          setActivityID(0)
+                          resetPage()
+                        }}
+                      >
+                        <NativeSelectOption value='activity'>
+                          {t('Activity rewards')}
+                        </NativeSelectOption>
+                        <NativeSelectOption value='lottery'>
+                          {t('Lottery results')}
+                        </NativeSelectOption>
+                      </NativeSelect>
+                    </Field>
+                    <Field className='min-w-0'>
+                      <FieldLabel htmlFor='rewards-username'>
+                        {t('Username')}
+                      </FieldLabel>
+                      <Input
+                        id='rewards-username'
+                        aria-label={t('Username')}
+                        placeholder={t('Username')}
+                        value={username}
+                        onChange={(e) => {
+                          setUsername(e.target.value)
+                          resetPage()
+                        }}
+                      />
+                    </Field>
+                    {kind === 'activity' && (
+                      <ActivityFilter
+                        value={activityID}
+                        onChange={(id) => {
+                          setActivityID(id)
+                          resetPage()
+                        }}
+                      />
                     )}
-                  </div>
+                  </FieldGroup>
+                  <FieldGroup className='grid items-start gap-3 sm:grid-cols-2'>
+                    <Field className='min-w-0'>
+                      <FieldLabel htmlFor='rewards-start'>
+                        {t('From')}
+                      </FieldLabel>
+                      <DateTimePicker
+                        id='rewards-start'
+                        timeZone='Asia/Shanghai'
+                        className='min-w-0 flex-wrap [&>button:first-child]:min-w-40'
+                        value={startsAt}
+                        onChange={(d) => {
+                          setStartsAt(d)
+                          resetPage()
+                        }}
+                      />
+                    </Field>
+                    <Field className='min-w-0'>
+                      <FieldLabel htmlFor='rewards-end'>
+                        {t('Until (exclusive)')}
+                      </FieldLabel>
+                      <DateTimePicker
+                        id='rewards-end'
+                        timeZone='Asia/Shanghai'
+                        className='min-w-0 flex-wrap [&>button:first-child]:min-w-40'
+                        value={endsAt}
+                        onChange={(d) => {
+                          setEndsAt(d)
+                          resetPage()
+                        }}
+                        aria-invalid={!validRange}
+                      />
+                      {!validRange && (
+                        <p role='alert' className='text-destructive text-sm'>
+                          {t('End date must be after start date')}
+                        </p>
+                      )}
+                    </Field>
+                  </FieldGroup>
                 </div>
               }
             />
@@ -236,36 +256,46 @@ function ActivityFilter(props: {
     queryFn: () => getAllActivityOptions(keyword),
   })
   return (
-    <div className='flex flex-col gap-2'>
-      <Input
-        aria-label={t('Search activities')}
-        placeholder={t('Search activities')}
-        value={keyword}
-        onChange={(e) => {
-          setKeyword(e.target.value)
-          props.onChange(0)
-        }}
-      />
-      {query.isError ? (
-        <ErrorState onRetry={() => void query.refetch()} />
-      ) : (
-        <NativeSelect
-          aria-label={t('Activity')}
-          disabled={query.isPending}
-          value={props.value}
-          onChange={(e) => props.onChange(Number(e.target.value))}
-        >
-          <NativeSelectOption value={0}>
-            {t('All activities')}
-          </NativeSelectOption>
-          {query.data?.map((a) => (
-            <NativeSelectOption key={a.id} value={a.id}>
-              {a.activity.name}
+    <FieldGroup className='grid min-w-0 items-start gap-3 sm:col-span-2 sm:grid-cols-2'>
+      <Field className='min-w-0'>
+        <FieldLabel htmlFor='rewards-activity-search'>
+          {t('Search activities')}
+        </FieldLabel>
+        <Input
+          id='rewards-activity-search'
+          aria-label={t('Search activities')}
+          placeholder={t('Search activities')}
+          value={keyword}
+          onChange={(e) => {
+            setKeyword(e.target.value)
+            props.onChange(0)
+          }}
+        />
+      </Field>
+      <Field className='min-w-0'>
+        <FieldLabel htmlFor='rewards-activity'>{t('Activity')}</FieldLabel>
+        {query.isError ? (
+          <ErrorState onRetry={() => void query.refetch()} />
+        ) : (
+          <NativeSelect
+            id='rewards-activity'
+            aria-label={t('Activity')}
+            disabled={query.isPending}
+            value={props.value}
+            onChange={(e) => props.onChange(Number(e.target.value))}
+          >
+            <NativeSelectOption value={0}>
+              {t('All activities')}
             </NativeSelectOption>
-          ))}
-        </NativeSelect>
-      )}
-    </div>
+            {query.data?.map((a) => (
+              <NativeSelectOption key={a.id} value={a.id}>
+                {a.activity.name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        )}
+      </Field>
+    </FieldGroup>
   )
 }
 function RecordRewards(props: { record: RewardRecord }) {

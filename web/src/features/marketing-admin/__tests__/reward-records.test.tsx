@@ -173,3 +173,89 @@ test('activity filter includes all pages, selects a later activity and keeps rec
     })
   )
 })
+
+test('reward filters show visible labels for source, username, activity search and activity selection', async () => {
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: { items: [], total: 0, page: 1, page_size: 20 },
+    },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingRewardsPage />
+    </QueryClientProvider>
+  )
+  await screen.findByText('No reward records found')
+  for (const label of [
+    'Reward source',
+    'Username',
+    'Search activities',
+    'Activity',
+    'From',
+    'Until (exclusive)',
+  ]) {
+    expect(screen.getByText(label, { selector: 'label' })).toBeVisible()
+    expect(screen.getByLabelText(label)).toBeVisible()
+  }
+})
+
+test('switching reward source clears activity filtering and preserves the username filter', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: {
+        items:
+          url === '/api/marketing/admin/activities'
+            ? [{ id: 7, activity: { name: 'Welcome rewards' } }]
+            : [],
+        total: url === '/api/marketing/admin/activities' ? 1 : 0,
+        page: 1,
+        page_size: 20,
+      },
+    },
+  }))
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingRewardsPage />
+    </QueryClientProvider>
+  )
+  await screen.findByRole('option', { name: 'Welcome rewards' })
+  fireEvent.change(screen.getByLabelText('Username'), {
+    target: { value: 'alice' },
+  })
+  fireEvent.change(screen.getByLabelText('Activity'), {
+    target: { value: '7' },
+  })
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/marketing/admin/rewards', {
+      params: expect.objectContaining({
+        kind: 'activity',
+        username: 'alice',
+        activity_id: 7,
+      }),
+    })
+  )
+  fireEvent.change(screen.getByLabelText('Reward source'), {
+    target: { value: 'lottery' },
+  })
+  await waitFor(() =>
+    expect(get).toHaveBeenCalledWith('/api/marketing/admin/rewards', {
+      params: expect.objectContaining({
+        kind: 'lottery',
+        username: 'alice',
+        activity_id: 0,
+        page: 1,
+      }),
+    })
+  )
+  expect(screen.queryByLabelText('Activity')).not.toBeInTheDocument()
+  expect(screen.queryByLabelText('Search activities')).not.toBeInTheDocument()
+  expect(screen.getByLabelText('From')).toBeVisible()
+  expect(screen.getByLabelText('Until (exclusive)')).toBeVisible()
+  fireEvent.change(screen.getByLabelText('Reward source'), {
+    target: { value: 'activity' },
+  })
+  expect(await screen.findByLabelText('Activity')).toHaveValue('0')
+  expect(screen.getByLabelText('Username')).toHaveValue('alice')
+})
