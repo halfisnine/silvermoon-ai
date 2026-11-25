@@ -18,18 +18,23 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '@tanstack/react-table'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
-import { DataTablePage, useDataTable } from '@/components/data-table'
+import {
+  DataTablePage,
+  DataTableRowActionMenu,
+  useDataTable,
+} from '@/components/data-table'
 import { Dialog } from '@/components/dialog'
 import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 
@@ -39,7 +44,12 @@ import {
   getMarketingMetadata,
   marketingWrite,
 } from '../api'
+import { ArchiveFilter, type ArchiveScope } from '../ArchiveFilter'
 import { formatMarketingDate } from '../format'
+import {
+  OrganizationActionDialog,
+  type OrganizationAction,
+} from '../OrganizationActionDialog'
 import type { ActivityDetail } from '../types'
 import { ActivityEditor } from './editor'
 import { activityKindLabel, activityStateLabel } from './labels'
@@ -55,17 +65,45 @@ export function MarketingActivitiesPage() {
   const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 })
   const [keyword, setKeyword] = useState('')
   const [kind, setKind] = useState('')
+  const [archive, setArchive] = useState<ArchiveScope>('active')
+  const [organization, setOrganization] = useState<{
+    record: ActivityDetail
+    action: OrganizationAction
+  }>()
   const [selection, setSelection] = useState<Selection>()
   const query = useQuery({
-    queryKey: ['marketing-admin', 'activities', pagination, keyword, kind],
+    queryKey: [
+      'marketing-admin',
+      'activities',
+      pagination,
+      keyword,
+      kind,
+      archive,
+    ],
     queryFn: () =>
       getActivities(
         pagination.pageIndex + 1,
         pagination.pageSize,
         keyword,
-        kind
+        kind,
+        archive
       ),
   })
+  useEffect(() => {
+    if (
+      query.data &&
+      pagination.pageIndex > 0 &&
+      pagination.pageIndex * pagination.pageSize >= query.data.total
+    ) {
+      setPagination((previous) => ({
+        ...previous,
+        pageIndex: Math.max(
+          0,
+          Math.ceil(query.data.total / previous.pageSize) - 1
+        ),
+      }))
+    }
+  }, [query.data, pagination.pageIndex, pagination.pageSize])
   const select = (mode: Selection['mode'], id?: number) =>
     setSelection({ mode, id, session: crypto.randomUUID() })
   const columns: ColumnDef<ActivityDetail>[] = [
@@ -120,23 +158,39 @@ export function MarketingActivitiesPage() {
       id: 'actions',
       header: t('Actions'),
       cell: ({ row }) => (
-        <div className='flex w-max items-center gap-2'>
-          <Button
-            variant='outline'
-            size='sm'
+        <DataTableRowActionMenu
+          ariaLabel={t('Actions for {{name}}', {
+            name: row.original.activity.name,
+          })}
+        >
+          <DropdownMenuItem
             disabled={!row.original.editable}
             onClick={() => select('edit', row.original.id)}
           >
             {t('Edit')}
-          </Button>
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={() => select('copy', row.original.id)}
-          >
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => select('copy', row.original.id)}>
             {t('Copy')}
-          </Button>
-        </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              setOrganization({
+                record: row.original,
+                action: row.original.archived ? 'unarchive' : 'archive',
+              })
+            }
+          >
+            {row.original.archived ? t('Restore from archive') : t('Archive')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!row.original.deletable}
+            onClick={() =>
+              setOrganization({ record: row.original, action: 'delete' })
+            }
+          >
+            {t('Delete')}
+          </DropdownMenuItem>
+        </DataTableRowActionMenu>
       ),
     },
   ]
@@ -172,6 +226,16 @@ export function MarketingActivitiesPage() {
               isFetching={query.isFetching}
               toolbar={
                 <div className='flex flex-wrap gap-2'>
+                  <ArchiveFilter
+                    value={archive}
+                    onChange={(value) => {
+                      setArchive(value)
+                      setPagination((previous) => ({
+                        ...previous,
+                        pageIndex: 0,
+                      }))
+                    }}
+                  />
                   <Input
                     aria-label={t('Search activities')}
                     placeholder={t('Search activities')}
@@ -208,6 +272,14 @@ export function MarketingActivitiesPage() {
           )}
         </SectionPageLayout.Content>
       </SectionPageLayout>
+      {organization && (
+        <OrganizationActionDialog
+          resource='activities'
+          record={organization.record}
+          action={organization.action}
+          onClose={() => setOrganization(undefined)}
+        />
+      )}
       {selection && (
         <ActivityPanel
           key={selection.session}

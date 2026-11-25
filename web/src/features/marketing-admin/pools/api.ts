@@ -20,8 +20,18 @@ import { marketingGet, marketingWrite } from '../api'
 import type { PoolAction, PoolPage, PoolRecord, PoolSpec } from './types'
 
 export const poolQueryKey = ['marketing-admin', 'pools'] as const
-export const getPools = (page: number, pageSize: number, keyword: string) =>
-  marketingGet<PoolPage>('/pools', { page, page_size: pageSize, keyword })
+export const getPools = (
+  page: number,
+  pageSize: number,
+  keyword: string,
+  archive: 'active' | 'archived' | 'all' = 'active'
+) =>
+  marketingGet<PoolPage>('/pools', {
+    page,
+    page_size: pageSize,
+    keyword,
+    archive,
+  })
 export const getPool = (id: number) => marketingGet<PoolRecord>(`/pools/${id}`)
 export const savePool = (
   input: {

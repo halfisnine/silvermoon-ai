@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var marketingAdminOperationKey = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
@@ -27,6 +28,16 @@ func ApplyMarketingAdminRequest(tx *gorm.DB, actorID int, pool bool, reference, 
 		return 0, ErrMarketingInput
 	}
 	if err := AuthorizeMarketingAdmin(tx, actorID); err != nil {
+		return 0, err
+	}
+	// Serialize configuration writes across administrators/instances. This lock
+	// is never acquired by user participation or billing. In particular, deleting
+	// an unused pool cannot race an activity being configured to reference it.
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&MarketingAdminCatalog{ID: 1}).Error; err != nil {
+		return 0, err
+	}
+	var catalog MarketingAdminCatalog
+	if err := lockForUpdate(tx).First(&catalog, 1).Error; err != nil {
 		return 0, err
 	}
 	key := fmt.Sprintf("http:%d:%s", actorID, reference)
@@ -86,12 +97,13 @@ func ApplyMarketingAdminRequest(tx *gorm.DB, actorID int, pool bool, reference, 
 type MarketingAdminFilter struct {
 	Page, PageSize                          int
 	Keyword, Kind, ExclusiveGroup, Username string
+	Archive                                 string
 	UserID                                  int
 	ActivityID, StartsAt, EndsAt            int64
 }
 
 func (f MarketingAdminFilter) Validate() error {
-	if f.Page < 1 || f.Page > 1000000 || f.PageSize < 1 || f.PageSize > 100 || len(f.Username) > 64 || len(f.Keyword) > 160 || len(f.ExclusiveGroup) > 64 || f.UserID < 0 || f.ActivityID < 0 || f.StartsAt < 0 || f.EndsAt < 0 || (f.EndsAt > 0 && f.EndsAt < f.StartsAt) {
+	if (f.Archive != "" && f.Archive != "active" && f.Archive != "archived" && f.Archive != "all") || f.Page < 1 || f.Page > 1000000 || f.PageSize < 1 || f.PageSize > 100 || len(f.Username) > 64 || len(f.Keyword) > 160 || len(f.ExclusiveGroup) > 64 || f.UserID < 0 || f.ActivityID < 0 || f.StartsAt < 0 || f.EndsAt < 0 || (f.EndsAt > 0 && f.EndsAt < f.StartsAt) {
 		return ErrMarketingInput
 	}
 	return nil
@@ -101,6 +113,12 @@ func ListMarketingAdminActivities(tx *gorm.DB, f MarketingAdminFilter) ([]Market
 		return nil, 0, err
 	}
 	q := tx.Model(&MarketingActivity{})
+	if f.Archive == "" || f.Archive == "active" {
+		q = q.Where("admin_archived_at = ?", 0)
+	}
+	if f.Archive == "archived" {
+		q = q.Where("admin_archived_at > ?", 0)
+	}
 	if f.ExclusiveGroup != "" {
 		q = q.Where("exclusive_group = ?", f.ExclusiveGroup)
 		// Keep the indexed equality prefilter, then apply the same byte-exact
@@ -128,6 +146,12 @@ func ListMarketingAdminPools(tx *gorm.DB, f MarketingAdminFilter) ([]MarketingLo
 		return nil, 0, err
 	}
 	q := tx.Model(&MarketingLotteryPool{})
+	if f.Archive == "" || f.Archive == "active" {
+		q = q.Where("admin_archived_at = ?", 0)
+	}
+	if f.Archive == "archived" {
+		q = q.Where("admin_archived_at > ?", 0)
+	}
 	if f.Keyword != "" {
 		q = q.Where("name LIKE ?", "%"+strings.ReplaceAll(f.Keyword, "%", "\\%")+"%")
 	}

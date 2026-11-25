@@ -56,6 +56,8 @@ export type MarketingActivity = {
   checkin: MarketingCheckin | null
 }
 export type ActivityDetail = {
+  archived: boolean
+  deletable: boolean
   id: number
   revision: number
   state: string

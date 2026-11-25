@@ -37,6 +37,8 @@ export type PoolSpec = {
   prizes: PoolPrize[]
 }
 export type PoolRecord = {
+  archived: boolean
+  deletable: boolean
   money_revision: string
   id: number
   revision: number

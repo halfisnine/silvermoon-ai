@@ -52,13 +52,15 @@ export const getActivities = (
   page: number,
   pageSize: number,
   keyword: string,
-  kind: string
+  kind: string,
+  archive: 'active' | 'archived' | 'all' = 'active'
 ) =>
   marketingGet<MarketingPage<ActivityDetail>>('/activities', {
     page,
     page_size: pageSize,
     keyword,
     kind,
+    archive,
   })
 export async function getActivity(id: number): Promise<ActivityDetail> {
   const detail = await marketingGet<ActivityDetail>(`/activities/${id}`)
@@ -67,12 +69,13 @@ export async function getActivity(id: number): Promise<ActivityDetail> {
   return detail
 }
 export const getAllActivityOptions = (keyword: string) =>
-  loadAllOptions((page) => getActivities(page, 100, keyword, ''))
+  loadAllOptions((page) => getActivities(page, 100, keyword, '', 'all'))
 export const getPoolOptions = (page: number, keyword: string) =>
   marketingGet<MarketingPage<PoolOption>>('/pools', {
     page,
     page_size: 20,
     keyword,
+    archive: 'all',
   })
 export const saveActivity = (
   activity: MarketingActivity,

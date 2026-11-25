@@ -23,19 +23,20 @@ import (
 // Activity records never own a second wallet. Facts freeze existing rules;
 // decisions commit qualification and chance allocation before gift delivery.
 type MarketingActivity struct {
-	ExclusiveGroup string `gorm:"size:64;not null;default:'';index"`
-	EnabledAt      int64  `gorm:"not null"`
-	Published      bool   `gorm:"not null"`
-	ID             int64  `gorm:"primaryKey"`
-	Name           string `gorm:"size:160;not null"`
-	Kind           string `gorm:"size:24;not null;index"`
-	StartsAt       int64  `gorm:"not null"`
-	EndsAt         int64  `gorm:"not null"`
-	CreatedAt      int64  `gorm:"not null"`
-	Revision       int64  `gorm:"not null"`
-	Spec           string `gorm:"type:text;not null"`
-	Pauses         string `gorm:"type:text;not null"`
-	Paused         bool   `gorm:"not null"`
+	AdminArchivedAt int64  `gorm:"not null;default:0;index"`
+	ExclusiveGroup  string `gorm:"size:64;not null;default:'';index"`
+	EnabledAt       int64  `gorm:"not null"`
+	Published       bool   `gorm:"not null"`
+	ID              int64  `gorm:"primaryKey"`
+	Name            string `gorm:"size:160;not null"`
+	Kind            string `gorm:"size:24;not null;index"`
+	StartsAt        int64  `gorm:"not null"`
+	EndsAt          int64  `gorm:"not null"`
+	CreatedAt       int64  `gorm:"not null"`
+	Revision        int64  `gorm:"not null"`
+	Spec            string `gorm:"type:text;not null"`
+	Pauses          string `gorm:"type:text;not null"`
+	Paused          bool   `gorm:"not null"`
 }
 
 func (MarketingActivity) TableName() string { return "marketing_v2_activities" }

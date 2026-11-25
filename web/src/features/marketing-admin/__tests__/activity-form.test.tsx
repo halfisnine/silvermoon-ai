@@ -28,6 +28,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 
+import { MarketingActivitiesPage } from '../activities'
 import { ActivityEditor } from '../activities/editor'
 import {
   activitySchema,
@@ -37,6 +38,8 @@ import {
 import type { ActivityDetail } from '../types'
 
 const initial: ActivityDetail = {
+  archived: false,
+  deletable: true,
   id: 1,
   revision: 2,
   money_revision: 'rate-a',
@@ -363,5 +366,115 @@ test('an open activity form retains its original amount and conversion revision 
     money_revision: 'rate-a',
     revision: 2,
     activity: { rewards: [{ amount: '0.000002', currency: 'CNY' }] },
+  })
+})
+
+test('activity list keeps search when switching archives and restores an archived record through confirmation', async () => {
+  const archived = { ...initial, archived: true, deletable: false }
+  const get = vi.mocked(api.get).mockResolvedValue({
+    data: {
+      success: true,
+      data: { items: [archived], total: 1, page: 1, page_size: 20 },
+    },
+  })
+  const post = vi
+    .spyOn(api, 'post')
+    .mockResolvedValue({ data: { success: true, data: initial } })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  clients.push(client)
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingActivitiesPage />
+    </QueryClientProvider>
+  )
+  await screen.findByRole('button', { name: 'Registration welcome' })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Search activities' }), {
+    target: { value: 'welcome' },
+  })
+  fireEvent.change(screen.getByRole('combobox', { name: 'Archive status' }), {
+    target: { value: 'archived' },
+  })
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith('/api/marketing/admin/activities', {
+      params: expect.objectContaining({
+        archive: 'archived',
+        keyword: 'welcome',
+        page: 1,
+      }),
+    })
+  )
+  fireEvent.click(
+    await screen.findByRole('button', {
+      name: 'Actions for Registration welcome',
+    })
+  )
+  fireEvent.click(
+    await screen.findByRole('menuitem', { name: 'Restore from archive' })
+  )
+  expect(
+    screen.getByRole('alertdialog', { name: 'Restore from archive' })
+  ).toBeVisible()
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      '/api/marketing/admin/activities/1/unarchive',
+      expect.objectContaining({
+        revision: 2,
+        operation_key: expect.any(String),
+      })
+    )
+  )
+  await waitFor(() =>
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+  )
+})
+
+test('exclusive group members include archived activities that still affect participation', async () => {
+  const archived = {
+    ...initial,
+    id: 9,
+    archived: true,
+    state: 'active',
+    activity: {
+      ...initial.activity,
+      name: 'Archived group member',
+      exclusive_group: 'welcome',
+    },
+  }
+  const get = vi.mocked(api.get).mockImplementation(async (url, config) => {
+    if (String(url).endsWith('/activities')) {
+      const params = config?.params as { archive?: string }
+      return {
+        data: {
+          success: true,
+          data: {
+            items: params.archive === 'all' ? [archived] : [],
+            total: 1,
+            page: 1,
+            page_size: 20,
+          },
+        },
+      }
+    }
+    return {
+      data: {
+        success: true,
+        data: { items: [], total: 0, page: 1, page_size: 20 },
+      },
+    }
+  })
+  show({
+    ...initial,
+    activity: { ...initial.activity, exclusive_group: 'welcome' },
+  })
+  fireEvent.click(screen.getByText('Stacking and priority'))
+  expect(await screen.findByText(/Archived group member/)).toBeVisible()
+  expect(get).toHaveBeenCalledWith('/api/marketing/admin/activities', {
+    params: expect.objectContaining({
+      exclusive_group: 'welcome',
+      archive: 'all',
+    }),
   })
 })

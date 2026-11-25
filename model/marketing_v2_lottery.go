@@ -15,15 +15,16 @@ import (
 // Pool issuance is monotone. Unused opportunities and pending awards are durable
 // obligations; Redis is never the authority for stock, randomness, or recovery.
 type MarketingLotteryPool struct {
-	ID       int64  `gorm:"primaryKey"`
-	Name     string `gorm:"size:160;not null"`
-	Style    string `gorm:"size:16;not null"`
-	StartsAt int64  `gorm:"not null"`
-	EndsAt   int64  `gorm:"not null"`
-	Capacity int64  `gorm:"not null"`
-	Issued   int64  `gorm:"not null"`
-	Paused   bool   `gorm:"not null"`
-	Revision int64  `gorm:"not null"`
+	AdminArchivedAt int64  `gorm:"not null;default:0;index"`
+	ID              int64  `gorm:"primaryKey"`
+	Name            string `gorm:"size:160;not null"`
+	Style           string `gorm:"size:16;not null"`
+	StartsAt        int64  `gorm:"not null"`
+	EndsAt          int64  `gorm:"not null"`
+	Capacity        int64  `gorm:"not null"`
+	Issued          int64  `gorm:"not null"`
+	Paused          bool   `gorm:"not null"`
+	Revision        int64  `gorm:"not null"`
 }
 
 func (MarketingLotteryPool) TableName() string { return "marketing_v2_lottery_pools" }

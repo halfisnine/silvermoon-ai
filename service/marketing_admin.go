@@ -62,6 +62,8 @@ type MarketingAdminActivityForm struct {
 	Checkin        *MarketingAdminCheckin `json:"checkin"`
 }
 type MarketingAdminActivityView struct {
+	Archived      bool                       `json:"archived"`
+	Deletable     bool                       `json:"deletable"`
 	MoneyRevision string                     `json:"money_revision"`
 	ID            int64                      `json:"id"`
 	Revision      int64                      `json:"revision"`
@@ -91,6 +93,8 @@ type MarketingAdminPoolForm struct {
 	Prizes   []MarketingAdminPrize `json:"prizes"`
 }
 type MarketingAdminPoolView struct {
+	Archived           bool                   `json:"archived"`
+	Deletable          bool                   `json:"deletable"`
 	MoneyRevision      string                 `json:"money_revision"`
 	ID                 int64                  `json:"id"`
 	Revision           int64                  `json:"revision"`
@@ -320,8 +324,8 @@ func marketingAdminRewardsView(tx *gorm.DB, rows []model.MarketingActivityReward
 	}
 	return result, nil
 }
-func marketingAdminActivityView(tx *gorm.DB, row model.MarketingActivity, now int64) (MarketingAdminActivityView, error) {
-	view := MarketingAdminActivityView{ID: row.ID, Revision: row.Revision, EnabledAt: row.EnabledAt, Editable: row.EnabledAt == 0 || now < row.StartsAt, State: "draft"}
+func marketingAdminActivityView(tx *gorm.DB, row model.MarketingActivity, now int64, deletable bool) (MarketingAdminActivityView, error) {
+	view := MarketingAdminActivityView{Archived: row.AdminArchivedAt > 0, Deletable: deletable, ID: row.ID, Revision: row.Revision, EnabledAt: row.EnabledAt, Editable: row.EnabledAt == 0 || now < row.StartsAt, State: "draft"}
 	configuration, err := CurrentMarketingMoneyContext()
 	if err != nil {
 		return view, err
@@ -371,8 +375,8 @@ func marketingAdminActivityView(tx *gorm.DB, row model.MarketingActivity, now in
 	}
 	return view, nil
 }
-func marketingAdminPoolView(tx *gorm.DB, row model.MarketingLotteryPool, now int64) (MarketingAdminPoolView, error) {
-	view := MarketingAdminPoolView{ID: row.ID, Revision: row.Revision, State: "active", Editable: now < row.StartsAt && row.Issued == 0, Issued: row.Issued, RemainingCapacity: row.Capacity - row.Issued, Pool: MarketingAdminPoolForm{Name: row.Name, Style: row.Style, StartsAt: row.StartsAt, EndsAt: row.EndsAt, Capacity: row.Capacity, Prizes: []MarketingAdminPrize{}}}
+func marketingAdminPoolView(tx *gorm.DB, row model.MarketingLotteryPool, now int64, deletable bool) (MarketingAdminPoolView, error) {
+	view := MarketingAdminPoolView{Archived: row.AdminArchivedAt > 0, Deletable: deletable, ID: row.ID, Revision: row.Revision, State: "active", Editable: now < row.StartsAt && row.Issued == 0, Issued: row.Issued, RemainingCapacity: row.Capacity - row.Issued, Pool: MarketingAdminPoolForm{Name: row.Name, Style: row.Style, StartsAt: row.StartsAt, EndsAt: row.EndsAt, Capacity: row.Capacity, Prizes: []MarketingAdminPrize{}}}
 	configuration, err := CurrentMarketingMoneyContext()
 	if err != nil {
 		return view, err
@@ -463,7 +467,11 @@ func ReadMarketingAdmin(ctx context.Context, actorID int, resource string, id in
 				if err := tx.First(&row, id).Error; err != nil {
 					return err
 				}
-				v, err := marketingAdminActivityView(tx, row, now)
+				allowed, err := model.MarketingAdminDeletableActivities(tx, []model.MarketingActivity{row})
+				if err != nil {
+					return err
+				}
+				v, err := marketingAdminActivityView(tx, row, now, allowed[row.ID])
 				result = v
 				return err
 			}
@@ -471,9 +479,13 @@ func ReadMarketingAdmin(ctx context.Context, actorID int, resource string, id in
 			if err != nil {
 				return err
 			}
+			allowed, err := model.MarketingAdminDeletableActivities(tx, rows)
+			if err != nil {
+				return err
+			}
 			views := make([]MarketingAdminActivityView, 0, len(rows))
 			for _, row := range rows {
-				v, err := marketingAdminActivityView(tx, row, now)
+				v, err := marketingAdminActivityView(tx, row, now, allowed[row.ID])
 				if err != nil {
 					return err
 				}
@@ -488,7 +500,11 @@ func ReadMarketingAdmin(ctx context.Context, actorID int, resource string, id in
 				if err := tx.First(&row, id).Error; err != nil {
 					return err
 				}
-				v, err := marketingAdminPoolView(tx, row, now)
+				allowed, err := model.MarketingAdminDeletablePools(tx, []model.MarketingLotteryPool{row}, now)
+				if err != nil {
+					return err
+				}
+				v, err := marketingAdminPoolView(tx, row, now, allowed[row.ID])
 				result = v
 				return err
 			}
@@ -496,9 +512,13 @@ func ReadMarketingAdmin(ctx context.Context, actorID int, resource string, id in
 			if err != nil {
 				return err
 			}
+			allowed, err := model.MarketingAdminDeletablePools(tx, rows, now)
+			if err != nil {
+				return err
+			}
 			views := make([]MarketingAdminPoolView, 0, len(rows))
 			for _, row := range rows {
-				v, err := marketingAdminPoolView(tx, row, now)
+				v, err := marketingAdminPoolView(tx, row, now, allowed[row.ID])
 				if err != nil {
 					return err
 				}
@@ -529,6 +549,15 @@ func WriteMarketingAdmin(ctx context.Context, actorID int, resource, action stri
 	err := model.WithMarketingTransaction(ctx, func(tx *gorm.DB) error {
 		now := time.Now().Unix()
 		resultID, err := model.ApplyMarketingAdminRequest(tx, actorID, resource == "pools", input.OperationKey, action, id, revision, input, now, func(reference string) (int64, error) {
+			if action == "archive" || action == "unarchive" || action == "delete" {
+				if id <= 0 || input.Activity != nil || input.Pool != nil || input.Amount != 0 || input.PrizeID != 0 || input.EndsAt != 0 {
+					return 0, model.ErrMarketingInput
+				}
+				if err := model.OrganizeMarketingAdmin(tx, resource, id, action, now); err != nil {
+					return 0, err
+				}
+				return id, nil
+			}
 			configuration, err := CurrentMarketingMoneyContext()
 			if err != nil {
 				return 0, err
@@ -628,12 +657,20 @@ func WriteMarketingAdmin(ctx context.Context, actorID int, resource, action stri
 		if err != nil {
 			return err
 		}
+		if action == "delete" {
+			result = map[string]any{"id": resultID, "deleted": true}
+			return nil
+		}
 		if resource == "activities" {
 			var row model.MarketingActivity
 			if err := tx.First(&row, resultID).Error; err != nil {
 				return err
 			}
-			view, err := marketingAdminActivityView(tx, row, now)
+			allowed, err := model.MarketingAdminDeletableActivities(tx, []model.MarketingActivity{row})
+			if err != nil {
+				return err
+			}
+			view, err := marketingAdminActivityView(tx, row, now, allowed[row.ID])
 			result = view
 			return err
 		}
@@ -641,7 +678,11 @@ func WriteMarketingAdmin(ctx context.Context, actorID int, resource, action stri
 		if err := tx.First(&row, resultID).Error; err != nil {
 			return err
 		}
-		view, err := marketingAdminPoolView(tx, row, now)
+		allowed, err := model.MarketingAdminDeletablePools(tx, []model.MarketingLotteryPool{row}, now)
+		if err != nil {
+			return err
+		}
+		view, err := marketingAdminPoolView(tx, row, now, allowed[row.ID])
 		result = view
 		return err
 	})

@@ -41,7 +41,7 @@ func MarketingAdminRead(c *gin.Context) {
 			return
 		}
 	}
-	f := model.MarketingAdminFilter{Page: 1, PageSize: 20, Kind: c.Query("kind"), Keyword: c.Query("keyword"), ExclusiveGroup: c.Query("exclusive_group"), Username: c.Query("username")}
+	f := model.MarketingAdminFilter{Page: 1, PageSize: 20, Kind: c.Query("kind"), Keyword: c.Query("keyword"), ExclusiveGroup: c.Query("exclusive_group"), Username: c.Query("username"), Archive: c.Query("archive")}
 	for key, target := range map[string]*int{"page": &f.Page, "page_size": &f.PageSize, "user_id": &f.UserID} {
 		if value, exists := c.GetQuery(key); exists {
 			*target, err = strconv.Atoi(value)

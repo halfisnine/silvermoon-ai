@@ -27,7 +27,7 @@ func TestMarketingAdminHTTP(t *testing.T) {
 	admin, _ := setupSecurityEnrollmentTest(t)
 	require.NoError(t, model.DB.Model(admin).Update("role", common.RoleAdminUser).Error)
 	require.NoError(t, model.PublishUserAuthCache(admin.Id))
-	models := append(marketingRegistrationFixtureModels(), &model.Redemption{}, &model.TopUp{})
+	models := append(marketingRegistrationFixtureModels(), &model.Redemption{}, &model.TopUp{}, &model.MarketingAdminCatalog{}, &model.MarketingCheckinDay{}, &model.MarketingCheckinClaim{})
 	require.NoError(t, model.DB.AutoMigrate(models...))
 	require.NoError(t, model.DB.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 	oldUnits, oldExchange := common.QuotaPerUnit, operation_setting.USDExchangeRate
@@ -286,6 +286,151 @@ func TestMarketingAdminHTTP(t *testing.T) {
 	assert.Equal(t, detail.Rewards[0].CreditedAt+3600, *detail.Rewards[0].ExpiresAt)
 	assert.Zero(t, *detail.Rewards[1].ExpiresAt)
 	assert.Equal(t, "Two gifts", detail.Source["prize_name"])
+	t.Run("organize administrator lists without changing user availability", func(t *testing.T) {
+		var freshPool model.MarketingLotteryPool
+		require.NoError(t, model.DB.First(&freshPool, activePool.ID).Error)
+		activePool.Revision = freshPool.Revision
+		userFilter := service.MarketingUserFilter{Page: 1, PageSize: 100}
+		rewardsBefore, err := service.ReadMarketingUserRewards(context.Background(), target.Id, 0, userFilter)
+		require.NoError(t, err)
+		giftsBefore, err := service.ReadMarketingUserGifts(context.Background(), target.Id, 0, userFilter)
+		require.NoError(t, err)
+		var publicBefore []model.MarketingActivity
+		require.NoError(t, model.PublicMarketingActivities(model.DB, now).Order("id").Find(&publicBefore).Error)
+		for _, item := range []struct {
+			path     string
+			revision int64
+		}{{activityPath, activity.Revision}, {poolPath, pool.Revision}, {fmt.Sprintf("/pools/%d", activePool.ID), activePool.Revision}} {
+			input := service.MarketingAdminRequest{OperationKey: fmt.Sprintf("archive-%d", item.revision) + strings.ReplaceAll(item.path, "/", "-"), Revision: &item.revision}
+			var archived struct {
+				ID       int64 `json:"id"`
+				Revision int64 `json:"revision"`
+				Archived bool  `json:"archived"`
+			}
+			decode(request("POST", item.path+"/archive", input, bundle.AccessToken), &archived)
+			assert.True(t, archived.Archived)
+			var publicArchived []model.MarketingActivity
+			require.NoError(t, model.PublicMarketingActivities(model.DB, now).Order("id").Find(&publicArchived).Error)
+			require.Len(t, publicArchived, len(publicBefore))
+			for i := range publicArchived {
+				assert.Equal(t, publicBefore[i].ID, publicArchived[i].ID)
+				assert.Equal(t, publicBefore[i].Spec, publicArchived[i].Spec)
+				assert.Equal(t, publicBefore[i].EnabledAt, publicArchived[i].EnabledAt)
+			}
+			rewardsAfter, err := service.ReadMarketingUserRewards(context.Background(), target.Id, 0, userFilter)
+			require.NoError(t, err)
+			assert.Equal(t, rewardsBefore, rewardsAfter)
+			giftsAfter, err := service.ReadMarketingUserGifts(context.Background(), target.Id, 0, userFilter)
+			require.NoError(t, err)
+			assert.Equal(t, giftsBefore, giftsAfter)
+			if item.path == fmt.Sprintf("/pools/%d", activePool.ID) {
+				_, err := service.ReadMarketingUserPools(context.Background(), target.Id, activePool.ID, userFilter)
+				require.NoError(t, err, "archived pool remains visible to its participant")
+				_, err = service.ReadMarketingUserDraw(context.Background(), target.Id, draw.Draw.ID, "")
+				require.NoError(t, err, "archived pool retains past results")
+			}
+			var replayed struct {
+				Archived bool `json:"archived"`
+			}
+			decode(request("POST", item.path+"/archive", input, bundle.AccessToken), &replayed)
+			assert.True(t, replayed.Archived, "stable retries preserve the result")
+			assert.Equal(t, http.StatusConflict, request("POST", item.path+"/unarchive", service.MarketingAdminRequest{OperationKey: "stale-unarchive" + strings.ReplaceAll(item.path, "/", "-"), Revision: &item.revision}, bundle.AccessToken).Code)
+			var listed struct {
+				Items []struct {
+					ID int64 `json:"id"`
+				} `json:"items"`
+			}
+			resource := "/" + strings.Split(item.path, "/")[1]
+			decode(request("GET", resource, nil, bundle.AccessToken), &listed)
+			for _, row := range listed.Items {
+				assert.NotEqual(t, archived.ID, row.ID)
+			}
+			decode(request("GET", resource+"?archive=archived", nil, bundle.AccessToken), &listed)
+			require.Len(t, listed.Items, 1)
+			assert.Equal(t, archived.ID, listed.Items[0].ID)
+			decode(request("GET", resource+"?archive=all", nil, bundle.AccessToken), &listed)
+			assert.NotEmpty(t, listed.Items)
+			assert.Equal(t, http.StatusConflict, request("POST", item.path+"/delete", service.MarketingAdminRequest{OperationKey: "used-delete" + strings.ReplaceAll(item.path, "/", "-"), Revision: &archived.Revision}, bundle.AccessToken).Code)
+			decode(request("POST", item.path+"/unarchive", service.MarketingAdminRequest{OperationKey: "restore" + strings.ReplaceAll(item.path, "/", "-"), Revision: &archived.Revision}, bundle.AccessToken), &archived)
+			assert.False(t, archived.Archived)
+			if resource == "/activities" {
+				activity.Revision = archived.Revision
+			} else if item.path == poolPath {
+				pool.Revision = archived.Revision
+			} else {
+				activePool.Revision = archived.Revision
+			}
+		}
+		var publicAfter []model.MarketingActivity
+		require.NoError(t, model.PublicMarketingActivities(model.DB, now).Order("id").Find(&publicAfter).Error)
+		require.Len(t, publicAfter, len(publicBefore))
+		for i := range publicBefore {
+			publicBefore[i].Revision = publicAfter[i].Revision
+		}
+		assert.Equal(t, publicBefore, publicAfter, "only administrator organization changed")
+		assert.Equal(t, http.StatusBadRequest, request("GET", "/activities?archive=invalid", nil, bundle.AccessToken).Code)
+		assert.Equal(t, http.StatusBadRequest, request("GET", "/pools?archive=invalid", nil, bundle.AccessToken).Code)
+		// Both records are unused: delete a draft first, then its now-unreferenced pool.
+		poolInput.OperationKey = "unused-pool"
+		var unusedPool service.MarketingAdminPoolView
+		decode(request("POST", "/pools", poolInput, bundle.AccessToken), &unusedPool)
+		unusedActivity := activityInput
+		unusedActivity.OperationKey = "unused-activity"
+		form := *activityInput.Activity
+		form.Rewards = []service.MarketingAdminReward{{Kind: "chance", PoolID: unusedPool.ID, Count: 1, ChanceMode: "direct"}}
+		unusedActivity.Activity = &form
+		var draft service.MarketingAdminActivityView
+		decode(request("POST", "/activities", unusedActivity, bundle.AccessToken), &draft)
+		unusedPoolPath := fmt.Sprintf("/pools/%d", unusedPool.ID)
+		assert.Equal(t, http.StatusConflict, request("POST", unusedPoolPath+"/delete", service.MarketingAdminRequest{OperationKey: "referenced-delete", Revision: &unusedPool.Revision}, bundle.AccessToken).Code)
+		for _, item := range []struct {
+			path     string
+			revision int64
+		}{{fmt.Sprintf("/activities/%d", draft.ID), draft.Revision}, {unusedPoolPath, unusedPool.Revision}} {
+			input := service.MarketingAdminRequest{OperationKey: "unused-delete" + strings.ReplaceAll(item.path, "/", "-"), Revision: &item.revision}
+			var deleted struct {
+				Deleted bool `json:"deleted"`
+			}
+			decode(request("POST", item.path+"/delete", input, bundle.AccessToken), &deleted)
+			assert.True(t, deleted.Deleted)
+			decode(request("POST", item.path+"/delete", input, bundle.AccessToken), &deleted)
+			assert.Equal(t, http.StatusNotFound, request("GET", item.path, nil, bundle.AccessToken).Code)
+		}
+		// Competing administrators use different actor row locks and database
+		// connections; either the reference commits or deletion wins, never both.
+		secondAdmin := model.User{Username: "marketing-organizer", AffCode: "marketing-organizer", Status: common.UserStatusEnabled, Role: common.RoleAdminUser}
+		require.NoError(t, model.DB.Create(&secondAdmin).Error)
+		poolInput.OperationKey = "concurrent-pool"
+		var concurrentPool service.MarketingAdminPoolView
+		decode(request("POST", "/pools", poolInput, bundle.AccessToken), &concurrentPool)
+		concurrentForm := *unusedActivity.Activity
+		concurrentForm.Name = "Concurrent reference"
+		concurrentForm.Rewards = []service.MarketingAdminReward{{Kind: "chance", PoolID: concurrentPool.ID, Count: 1, ChanceMode: "direct"}}
+		ready := make(chan struct{})
+		outcomes := make(chan error, 2)
+		go func() {
+			<-ready
+			_, err := service.WriteMarketingAdmin(context.Background(), admin.Id, "activities", "create", 0, service.MarketingAdminRequest{OperationKey: "concurrent-reference", MoneyRevision: metadata.Revision, Activity: &concurrentForm})
+			outcomes <- err
+		}()
+		go func() {
+			<-ready
+			_, err := service.WriteMarketingAdmin(context.Background(), secondAdmin.Id, "pools", "delete", concurrentPool.ID, service.MarketingAdminRequest{OperationKey: "concurrent-delete", Revision: &concurrentPool.Revision})
+			outcomes <- err
+		}()
+		close(ready)
+		first, second := <-outcomes, <-outcomes
+		assert.NotEqual(t, first == nil, second == nil, "reference creation and deletion cannot both commit")
+		var surviving []model.MarketingActivity
+		require.NoError(t, model.DB.Where("name = ?", concurrentForm.Name).Find(&surviving).Error)
+		var remainingPool model.MarketingLotteryPool
+		err = model.DB.First(&remainingPool, concurrentPool.ID).Error
+		if len(surviving) > 0 {
+			assert.NoError(t, err, "committed reference retains pool")
+		} else {
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+		}
+	})
 	// Exercise an existing new-system activity table that predates the indexed
 	// projection. Restart migration twice without changing authoritative specs.
 	var beforeMigration model.MarketingActivity
@@ -297,12 +442,23 @@ func TestMarketingAdminHTTP(t *testing.T) {
 	connection.SetMaxIdleConns(0)
 	require.NoError(t, model.DB.Migrator().DropIndex(&model.MarketingActivity{}, "idx_marketing_v2_activities_exclusive_group"))
 	require.NoError(t, model.DB.Migrator().DropColumn(&model.MarketingActivity{}, "ExclusiveGroup"))
+	require.NoError(t, model.DB.Migrator().DropColumn(&model.MarketingActivity{}, "AdminArchivedAt"))
+	require.NoError(t, model.DB.Migrator().DropColumn(&model.MarketingLotteryPool{}, "AdminArchivedAt"))
+	require.NoError(t, model.DB.Migrator().DropTable(&model.MarketingAdminCatalog{}))
+	var poolBefore model.MarketingLotteryPool
+	require.NoError(t, model.DB.First(&poolBefore, pool.ID).Error)
 	for range 2 {
-		require.NoError(t, model.DB.AutoMigrate(&model.MarketingActivity{}))
+		require.NoError(t, model.DB.AutoMigrate(&model.MarketingAdminCatalog{}, &model.MarketingActivity{}, &model.MarketingLotteryPool{}))
 		require.NoError(t, model.BackfillMarketingAdminGroups(model.DB))
 	}
 	var afterMigration model.MarketingActivity
 	require.NoError(t, model.DB.First(&afterMigration, activity.ID).Error)
+	var poolAfter model.MarketingLotteryPool
+	require.NoError(t, model.DB.First(&poolAfter, pool.ID).Error)
+	assert.Equal(t, poolBefore, poolAfter)
+	assert.Zero(t, afterMigration.AdminArchivedAt)
+	assert.True(t, model.DB.Migrator().HasIndex(&model.MarketingActivity{}, "idx_marketing_v2_activities_admin_archived_at"))
+	assert.True(t, model.DB.Migrator().HasIndex(&model.MarketingLotteryPool{}, "idx_marketing_v2_lottery_pools_admin_archived_at"))
 	assert.Equal(t, beforeMigration.Spec, afterMigration.Spec)
 	assert.Equal(t, "shared", afterMigration.ExclusiveGroup)
 	assert.True(t, model.DB.Migrator().HasIndex(&model.MarketingActivity{}, "idx_marketing_v2_activities_exclusive_group"))

@@ -68,7 +68,7 @@ func marketingUserPoolSummary(pool model.MarketingLotteryPool, now int64) Market
 	return MarketingUserPoolSummary{pool.ID, pool.Name, state, pool.StartsAt, pool.EndsAt, pool.Capacity, max(int64(0), pool.Capacity-pool.Issued)}
 }
 func marketingUserActivityView(tx *gorm.DB, row model.MarketingActivity, now int64) (MarketingUserActivity, error) {
-	v, err := marketingAdminActivityView(tx, row, now)
+	v, err := marketingAdminActivityView(tx, row, now, false)
 	if err != nil {
 		return MarketingUserActivity{}, err
 	}

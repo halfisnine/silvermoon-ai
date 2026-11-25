@@ -59,6 +59,7 @@ export function ExclusiveGroupField() {
         page: memberPage,
         page_size: 20,
         exclusive_group: group,
+        archive: 'all',
       }),
     enabled: !!group,
   })
