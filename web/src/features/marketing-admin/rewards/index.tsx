@@ -29,6 +29,7 @@ import { ErrorState } from '@/components/error-state'
 import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
@@ -192,15 +193,16 @@ export function MarketingRewardsPage() {
                       />
                     )}
                   </FieldGroup>
-                  <FieldGroup className='grid items-start gap-3 sm:grid-cols-2'>
+                  <FieldGroup className='grid max-w-3xl items-start gap-3 sm:grid-cols-2'>
                     <Field className='min-w-0'>
                       <FieldLabel htmlFor='rewards-start'>
                         {t('From')}
                       </FieldLabel>
                       <DateTimePicker
+                        compact
                         id='rewards-start'
                         timeZone='Asia/Shanghai'
-                        className='min-w-0 flex-wrap [&>button:first-child]:min-w-40'
+                        className='min-w-0'
                         value={startsAt}
                         onChange={(d) => {
                           setStartsAt(d)
@@ -213,9 +215,10 @@ export function MarketingRewardsPage() {
                         {t('Until (exclusive)')}
                       </FieldLabel>
                       <DateTimePicker
+                        compact
                         id='rewards-end'
                         timeZone='Asia/Shanghai'
-                        className='min-w-0 flex-wrap [&>button:first-child]:min-w-40'
+                        className='min-w-0'
                         value={endsAt}
                         onChange={(d) => {
                           setEndsAt(d)
@@ -250,52 +253,35 @@ function ActivityFilter(props: {
   onChange: (value: number) => void
 }) {
   const { t } = useTranslation()
-  const [keyword, setKeyword] = useState('')
   const query = useQuery({
-    queryKey: ['marketing-admin', 'activity-options', 'all', keyword],
-    queryFn: () => getAllActivityOptions(keyword),
+    queryKey: ['marketing-admin', 'activity-options', 'all', ''],
+    queryFn: () => getAllActivityOptions(''),
   })
   return (
-    <FieldGroup className='grid min-w-0 items-start gap-3 sm:col-span-2 sm:grid-cols-2'>
-      <Field className='min-w-0'>
-        <FieldLabel htmlFor='rewards-activity-search'>
-          {t('Search activities')}
-        </FieldLabel>
-        <Input
-          id='rewards-activity-search'
-          aria-label={t('Search activities')}
-          placeholder={t('Search activities')}
-          value={keyword}
-          onChange={(e) => {
-            setKeyword(e.target.value)
-            props.onChange(0)
-          }}
+    <Field className='min-w-0 sm:col-span-2'>
+      <FieldLabel htmlFor='rewards-activity'>{t('Activity')}</FieldLabel>
+      {query.isError ? (
+        <ErrorState onRetry={() => void query.refetch()} />
+      ) : (
+        <Combobox
+          id='rewards-activity'
+          className='h-8'
+          aria-label={t('Activity')}
+          disabled={query.isPending}
+          value={String(props.value)}
+          onValueChange={(value) => props.onChange(Number(value || 0))}
+          searchPlaceholder={t('Search activities')}
+          emptyText={t('No results found')}
+          options={[
+            { value: '0', label: t('All activities') },
+            ...(query.data ?? []).map((a) => ({
+              value: String(a.id),
+              label: a.activity.name,
+            })),
+          ]}
         />
-      </Field>
-      <Field className='min-w-0'>
-        <FieldLabel htmlFor='rewards-activity'>{t('Activity')}</FieldLabel>
-        {query.isError ? (
-          <ErrorState onRetry={() => void query.refetch()} />
-        ) : (
-          <NativeSelect
-            id='rewards-activity'
-            aria-label={t('Activity')}
-            disabled={query.isPending}
-            value={props.value}
-            onChange={(e) => props.onChange(Number(e.target.value))}
-          >
-            <NativeSelectOption value={0}>
-              {t('All activities')}
-            </NativeSelectOption>
-            {query.data?.map((a) => (
-              <NativeSelectOption key={a.id} value={a.id}>
-                {a.activity.name}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        )}
-      </Field>
-    </FieldGroup>
+      )}
+    </Field>
   )
 }
 function RecordRewards(props: { record: RewardRecord }) {

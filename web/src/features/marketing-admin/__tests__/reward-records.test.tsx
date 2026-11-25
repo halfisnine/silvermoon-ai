@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
@@ -157,16 +158,22 @@ test('activity filter includes all pages, selects a later activity and keeps rec
       <MarketingRewardsPage />
     </QueryClientProvider>
   )
+  const user = userEvent.setup()
+  const activity = await screen.findByRole('combobox', { name: 'Activity' })
+  await waitFor(() => expect(activity).toBeEnabled())
+  await user.click(activity)
+  await user.type(activity, 'Final')
   expect(
     await screen.findByRole('option', { name: 'Final activity' })
-  ).toBeInTheDocument()
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('option', { name: 'Activity 1' })
+  ).not.toBeInTheDocument()
   expect(
     screen.queryByRole('button', { name: 'Previous' })
   ).not.toBeInTheDocument()
   expect(screen.queryByRole('button', { name: 'Next' })).not.toBeInTheDocument()
-  fireEvent.change(screen.getByLabelText('Activity'), {
-    target: { value: '101' },
-  })
+  await user.click(screen.getByRole('option', { name: 'Final activity' }))
   await waitFor(() =>
     expect(get).toHaveBeenCalledWith('/api/marketing/admin/rewards', {
       params: expect.objectContaining({ activity_id: 101, page: 1 }),
@@ -174,7 +181,7 @@ test('activity filter includes all pages, selects a later activity and keeps rec
   )
 })
 
-test('reward filters show visible labels for source, username, activity search and activity selection', async () => {
+test('reward filters have visible labels and a single searchable activity selector', async () => {
   vi.spyOn(api, 'get').mockResolvedValue({
     data: {
       success: true,
@@ -190,13 +197,16 @@ test('reward filters show visible labels for source, username, activity search a
   for (const label of [
     'Reward source',
     'Username',
-    'Search activities',
     'Activity',
     'From',
     'Until (exclusive)',
   ]) {
     expect(screen.getByText(label, { selector: 'label' })).toBeVisible()
-    expect(screen.getByLabelText(label)).toBeVisible()
+    expect(
+      screen.getByLabelText(label, {
+        selector: label === 'Activity' ? 'input' : '*',
+      })
+    ).toBeVisible()
   }
 })
 
@@ -220,13 +230,16 @@ test('switching reward source clears activity filtering and preserves the userna
       <MarketingRewardsPage />
     </QueryClientProvider>
   )
-  await screen.findByRole('option', { name: 'Welcome rewards' })
+  const user = userEvent.setup()
+  const activity = await screen.findByRole('combobox', { name: 'Activity' })
+  await waitFor(() => expect(activity).toBeEnabled())
+  await user.click(activity)
   fireEvent.change(screen.getByLabelText('Username'), {
     target: { value: 'alice' },
   })
-  fireEvent.change(screen.getByLabelText('Activity'), {
-    target: { value: '7' },
-  })
+  await user.click(
+    await screen.findByRole('option', { name: 'Welcome rewards' })
+  )
   await waitFor(() =>
     expect(get).toHaveBeenCalledWith('/api/marketing/admin/rewards', {
       params: expect.objectContaining({
@@ -256,6 +269,97 @@ test('switching reward source clears activity filtering and preserves the userna
   fireEvent.change(screen.getByLabelText('Reward source'), {
     target: { value: 'activity' },
   })
-  expect(await screen.findByLabelText('Activity')).toHaveValue('0')
+  expect(await screen.findByRole('combobox', { name: 'Activity' })).toHaveValue(
+    'All activities'
+  )
   expect(screen.getByLabelText('Username')).toHaveValue('alice')
+})
+
+test('activity search shows no matches, restores choices and clears the selected record filter', async () => {
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: {
+        items:
+          url === '/api/marketing/admin/activities'
+            ? [{ id: 7, activity: { name: 'Welcome rewards' } }]
+            : [],
+        total: url === '/api/marketing/admin/activities' ? 1 : 0,
+        page: 1,
+        page_size: 100,
+      },
+    },
+  }))
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingRewardsPage />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  const activity = await screen.findByRole('combobox', { name: 'Activity' })
+  await waitFor(() => expect(activity).toBeEnabled())
+  await user.click(activity)
+  await user.type(activity, 'Missing activity')
+  expect(await screen.findByText('No results found')).toBeVisible()
+  await user.clear(activity)
+  await user.click(
+    await screen.findByRole('option', { name: 'Welcome rewards' })
+  )
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith('/api/marketing/admin/rewards', {
+      params: expect.objectContaining({ activity_id: 7 }),
+    })
+  )
+  expect(activity).toHaveValue('Welcome rewards')
+  await user.click(activity)
+  await user.click(
+    await screen.findByRole('option', { name: 'All activities' })
+  )
+  await waitFor(() =>
+    expect(get).toHaveBeenLastCalledWith('/api/marketing/admin/rewards', {
+      params: expect.objectContaining({ activity_id: 0, page: 1 }),
+    })
+  )
+  expect(activity).toHaveValue('All activities')
+})
+
+test('failed activity choices offer a retry instead of silently displaying incomplete options', async () => {
+  let unavailable = true
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    if (url === '/api/marketing/admin/activities' && unavailable) {
+      throw new Error('network unavailable')
+    }
+    return {
+      data: {
+        success: true,
+        data: {
+          items:
+            url === '/api/marketing/admin/activities'
+              ? [{ id: 7, activity: { name: 'Welcome rewards' } }]
+              : [],
+          total: url === '/api/marketing/admin/activities' ? 1 : 0,
+          page: 1,
+          page_size: 100,
+        },
+      },
+    }
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <MarketingRewardsPage />
+    </QueryClientProvider>
+  )
+  const user = userEvent.setup()
+  await screen.findByRole('button', { name: 'Retry' })
+  expect(
+    screen.queryByRole('combobox', { name: 'Activity' })
+  ).not.toBeInTheDocument()
+  unavailable = false
+  await user.click(screen.getByRole('button', { name: 'Retry' }))
+  const activity = await screen.findByRole('combobox', { name: 'Activity' })
+  await waitFor(() => expect(activity).toBeEnabled())
+  await user.click(activity)
+  expect(
+    await screen.findByRole('option', { name: 'Welcome rewards' })
+  ).toBeVisible()
 })
