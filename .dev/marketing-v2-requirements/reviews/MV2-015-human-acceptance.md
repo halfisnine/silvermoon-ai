@@ -147,3 +147,10 @@
 - 既有reward-records和datetime-picker-time测试先复现5失败10通过；修复后连同共享Combobox/date-picker-locale共29项通过。补充秒级时区、清空、日期选择后继续编辑时间、101项取齐及搜索、无匹配恢复、全部活动重置、错误重试与来源切换。实际浏览器又发现Combobox高于相邻输入，页面局部固定统一高度后7项记录测试再通过。typecheck1494文件2项目无错，受影响4文件oxlint零警告零错误、oxfmt与git diff --check通过；前端及预览二进制构建通过。
 - Chromium实际预览验证中文银月梦境／英文绯云，1704/1440/1100/768/390/320px无横向溢出，顶排控件统一32px并对齐，日期按钮宽度不超过378px。取齐101活动、搜索无结果及匹配、选中末页活动提交activity_id=101、全部活动清除、切换来源保留用户名与日期均通过；在纽约浏览器时区验证上海日期时间对应正确秒级时间戳，非法范围报错及修正、日期清空恢复通过；1440/390/320px日期弹层与选项列表均在屏幕内，无页面脚本错误。只拦截读取活动选项提供样本，营销写请求全部abort，未修改真实活动、奖励或账号资产。脚本、截图和results.json在忽略目录build/dev/reward-search，日志build/dev/reward-search-*.log。
 - 数据库及旧二进制先备份到build/dev/mv2-015-preview/ui-fix-backups/reward-search-*，仅更新46015独立开发预览。独立sub agent对完整代码范围及高度修正复验通过，并实际查看1440px筛选及320px日期弹层截图；原Issue标准和H01–H11人工验收状态未改。
+
+
+### 2026-11-25 补充：日期筛选与上排共用列宽
+
+- 用户确认开始日期应与奖励来源同列同宽、结束日期与用户名同列同宽。日期FieldGroup移除独立max-w-3xl，使用与顶排一致的四列／两列／单列响应式网格及gap-3；继续复用已有Field和紧凑DateTimePicker，未改日期、搜索或筛选交互，无新增文本。
+- Chromium布局回归修改前失败：1704px来源宽349px、日期宽378px，用户名x597、结束日期x626。修复后中文银月梦境／英文绯云在1704/1440/1100/768/390/320px全部左右边缘和宽度一致、控件32px高、无页面横向溢出；手机自然堆叠，切换抽奖来源后仍对齐，无脚本错误。仅读取实际预览数据，营销写请求全部禁止。脚本、前后截图和results.json在忽略目录build/dev/reward-columns，日志build/dev/reward-columns-*.log。
+- 既有reward-records测试7项通过；typecheck1494文件2项目无错，单文件oxlint零警告零错误、oxfmt与git diff --check通过，前端及预览二进制构建通过。数据库与旧二进制备份到build/dev/mv2-015-preview/ui-fix-backups/reward-columns-*后仅更新46015独立预览。独立sub agent复核唯一源码差异、结果文件及1440/320px截图通过；原Issue标准和H01–H11人工验收状态未改。

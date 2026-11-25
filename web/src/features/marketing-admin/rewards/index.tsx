@@ -193,7 +193,7 @@ export function MarketingRewardsPage() {
                       />
                     )}
                   </FieldGroup>
-                  <FieldGroup className='grid max-w-3xl items-start gap-3 sm:grid-cols-2'>
+                  <FieldGroup className='grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-4'>
                     <Field className='min-w-0'>
                       <FieldLabel htmlFor='rewards-start'>
                         {t('From')}
