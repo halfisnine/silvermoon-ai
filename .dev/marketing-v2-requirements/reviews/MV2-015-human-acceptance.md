@@ -164,3 +164,11 @@
 - 前端营销后台初版整体6文件59项通过；最终补充互斥组归档成员和资源专属删除文案后，两相关文件24项通过；typecheck1496文件2项目无错误，营销后台oxlint零警告零错误，git diff --check通过。最新`.dev/run bun run build`、`.dev/run go build -o /artifacts/mv2-015-preview/gateway.next .`均通过。只更新46015独立开发预览，更新前使用SQLite备份API保存数据库并备份旧二进制，最终备份目录为build/dev/mv2-015-preview/ui-fix-backups/admin-organization-final-20261125-103307；未编辑已有业务数据、推送、创建PR或部署线上。原Issue标准与H01–H11人工验收状态保持原记录。
 - Chromium最终验证中文银月梦境／英文绯云下，两张管理列表的默认未归档、归档后隐藏、切换已归档、恢复、全部范围及合法删除完整流程，已使用活动的删除菜单禁用；1440/1100/768/390/320px布局稳定后无页面横向溢出，桌面及320px截图已保存。活动中心／签到／抽奖／活动奖励四页没有后台归档控件，未出现页面脚本错误。为避免反复页面刷新触发既有登录限流，最终浏览器运行在同一构建及SQLite备份的临时隔离预览46016，营销组织操作全部由网络拦截在内存模拟，未修改46015业务记录。结果、脚本和截图在忽略目录build/dev/marketing-organization/，运行日志为build/dev/marketing-organization-browser.log；临时浏览器容器验证后移除。受影响11个前端文件oxfmt检查通过；整个目录另有2个未修改文件的既有格式差异，本次不顺带调整。
 - 独立sub agent分阶段只读验收：首次代码与数据库行为通过，浏览器项保留待验；最终读取完整结果、日志及桌面/手机截图后，整体全部通过，无待修复项。未改原验收项或人工状态。
+
+### 2026-11-25 补充：邀请有礼左侧仅展示进行中活动
+
+- 用户最新要求覆盖此前该页展示四状态的决定：仅邀请页左侧活动查询显式传state=active，复用既有服务端已开始、未暂停、未结束条件；活动中心仍沿用自己的范围。右侧好友请求、分页、实际奖励汇总及历史奖励链接未改，不依赖左侧活动是否存在。未改后端、数据库、发奖逻辑或翻译文案。
+- 既有participation.test.tsx四状态用例按新要求调整，分别验证进行中规则可见、其他状态为空，且每种状态好友、已发奖励、按好友查看奖励链接与右侧page/page_size请求均保留；好友翻页等既有用例保留。`.dev/run bun run test src/features/marketing/__tests__/participation.test.tsx`26项通过；typecheck1496文件2项目无错，涉及2文件oxlint零警告零错误、oxfmt和git diff --check通过。前端构建及嵌入页面的预览二进制构建通过。日志为build/dev/invitation-active-{test,typecheck,lint,build,gateway}.log。
+- 更新前备份SQLite和旧二进制到build/dev/mv2-015-preview/ui-fix-backups/invitation-active-20261125-114444，仅更新46015独立预览，不改已有活动、用户或奖励数据。原Issue验收项与H01–H11人工验收状态保持原记录。
+- Chromium在已更新的46015预览通过中英文验证：四状态样本仅进行中显示；右侧21好友、已发奖励入口和翻页保持；左侧无活动时右侧好友与奖励仍可查。记录请求确认左侧state=active，右侧未附加state/activity_id，页面无脚本错误。仅读取接口拦截提供样本，营销写请求全部禁止，未创建或修改真实好友/活动/奖励。脚本、截图及results.json在build/dev/invitation-active/，运行日志build/dev/invitation-active-browser.log。
+- 独立sub agent对本轮范围、测试期望变更及最终浏览器证据整体只读验收通过，无待修复项；本轮范围不改变原Issue标准及人工状态。

@@ -662,7 +662,7 @@ test.each([
   ['scheduled', 'Upcoming'],
   ['ended', 'Ended'],
 ])(
-  'invitation shows %s campaign rules and rewards without claiming it is active',
+  'invitation only shows ongoing rules while preserving friend history for %s campaigns',
   async (state, label) => {
     const invitationActivity = {
       ...activity,
@@ -680,7 +680,13 @@ test.each([
         return envelope({
           invitation_path: '/sign-up?aff=alice',
           friend_count: 1,
-          friends: page([{ username: 'friend', joined_at: 1795132800 }]),
+          friends: page([
+            {
+              username: 'friend',
+              joined_at: 1795132800,
+              rewards: { granted: 1, pending: 0, other: 0 },
+            },
+          ]),
         })
       }
       const filter = config?.params as { state?: string } | undefined
@@ -691,21 +697,37 @@ test.each([
       )
     })
     await view(<InvitationPage />)
-    expect(
-      await screen.findByRole('heading', { name: 'Invite a friend' })
-    ).toBeVisible()
-    expect(screen.getByText(label, { exact: true })).toBeVisible()
-    expect(
-      screen.getByText('A friend registers during this activity.')
-    ).toBeVisible()
-    expect(screen.getByText(/0.00012/)).toHaveTextContent('Validity: 3 days')
+    if (state === 'active') {
+      expect(
+        await screen.findByRole('heading', { name: 'Invite a friend' })
+      ).toBeVisible()
+      expect(screen.getByText(label, { exact: true })).toBeVisible()
+      expect(
+        screen.getByText('A friend registers during this activity.')
+      ).toBeVisible()
+      expect(screen.getByText(/0.00012/)).toHaveTextContent('Validity: 3 days')
+    } else {
+      expect(
+        await screen.findByText('No invitation activities to display')
+      ).toBeVisible()
+      expect(
+        screen.queryByRole('heading', { name: 'Invite a friend' })
+      ).not.toBeInTheDocument()
+    }
     expect(screen.getByText('friend', { exact: true })).toBeVisible()
-    expect(get).toHaveBeenCalledWith('/api/marketing/user/activities', {
-      params: { page: 1, page_size: 20, kind: 'invitation', state: '' },
-    })
+    expect(screen.getByText('Granted reward items: 1')).toBeVisible()
     expect(
-      screen.queryByText('No invitation activities to display')
-    ).not.toBeInTheDocument()
+      screen.getByRole('link', { name: 'View rewards for friend' })
+    ).toHaveAttribute(
+      'href',
+      '/activities/rewards?tab=records&source=invitation&friend=friend'
+    )
+    expect(get).toHaveBeenCalledWith('/api/marketing/user/invitation', {
+      params: { page: 1, page_size: 20 },
+    })
+    expect(get).toHaveBeenCalledWith('/api/marketing/user/activities', {
+      params: { page: 1, page_size: 20, kind: 'invitation', state: 'active' },
+    })
   }
 )
 

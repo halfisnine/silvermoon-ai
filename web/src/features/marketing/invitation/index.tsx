@@ -62,7 +62,7 @@ export function InvitationPage() {
   })
   const rules = useQuery({
     queryKey: ['marketing-user', userId, 'invitation-rules', rulePage],
-    queryFn: () => getUserActivities(rulePage, 'invitation'),
+    queryFn: () => getUserActivities(rulePage, 'invitation', 'active'),
     refetchInterval: 30000,
     enabled: userId != null,
   })
