@@ -102,7 +102,7 @@ export function LotteryPage() {
   }
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Lottery')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>{t('Lucky draw')}</SectionPageLayout.Title>
       <SectionPageLayout.Content>{content}</SectionPageLayout.Content>
     </SectionPageLayout>
   )

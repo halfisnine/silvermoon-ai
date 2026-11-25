@@ -121,3 +121,12 @@
 - `.dev/run bun run typecheck`：1494文件2项目无类型错误；受影响4文件oxlint零警告零错误，oxfmt检查、git diff --check通过。`.dev/run bun run build`与`.dev/run go build -o /artifacts/mv2-015-preview/gateway.next .`通过。没有后端或数据库逻辑变更，没有新增翻译键，复用现有七语言文本和组件。
 - 实际Chromium修改前确认单位文字空间12px小于“小时”约28px、编辑和复制分两行；修改后中文／英文、绯云／银月梦境、1440/1100/768/390/320px，三种单位完整可读，操作同一行且复制按钮可滚动到可见位置，无页面横向溢出。活动中心25条及筛选后21条均读取第二页，最后一条可滚动到，滚动条隐藏，键盘End有效，1440/390/320px无页面溢出，无脚本错误。
 - 浏览器仅拦截只读列表与详情提供样本，禁止营销写操作，没有新建或修改真实活动、奖励或账号资产。脚本／截图／测量在忽略目录build/dev/activity-layout/，日志为build/dev/activity-layout-*.log。预览数据库与旧二进制已备份到build/dev/mv2-015-preview/ui-fix-backups/activity-layout-*，仅更新46015独立开发预览。独立sub agent集中验收三项范围通过；原H01–H11人工验收状态和Issue验收标准不变。
+
+### 2026-11-25 补充：用户活动命名与系统设置营销菜单
+
+- 用户活动侧栏“签到”改为“签到有礼”，“抽奖”改为“幸运抽奖”；对应页面标题与个人资料签到快捷卡同步，签到动作按钮保留原动作语义。新增Check-in for rewards、Lucky draw，Marketing简体中文改为“营销”，通过临时add-missing-keys.mjs写入七语言并i18n:sync，临时脚本已删除；所有七语言均有对应名称。
+- 原管理员根侧栏三个入口移入系统设置独立侧栏的“营销”可展开父菜单：营销活动／奖池／活动奖励记录，复用NavGroup、现有折叠菜单及路径匹配。原/marketing-admin/*页面地址不改，侧栏匹配范围增加marketing-admin，切页或刷新仍在系统设置内，营销父菜单自动展开并高亮子项。
+- 保留普通ADMIN原营销访问：根系统设置入口对其指向营销活动；SUPER_ADMIN保持原系统设置首页，营销父菜单要求ADMIN，原八类高级设置父菜单要求SUPER_ADMIN。嵌套菜单同样应用现有模块配置与角色过滤，禁用营销隐藏该父菜单及子项，普通管理员营销专用入口同时隐藏。没有修改路由guard、接口权限、营销业务、账务或数据库。
+- 既有sidebar-config.test.tsx增加导航角色、三个原直达地址、模块开关及普通用户不可见回归；修改前6失败22通过，修改后sidebar28、marketing参与26、lottery参与15，共69项通过。typecheck1494文件2项目无错误，受影响7文件oxlint零警告零错误、oxfmt及git diff --check通过。前端build和预览二进制build通过。
+- 实际Chromium使用只读真实开发页面：中文绯云／英文银月梦境，根菜单新名称、无原三个独立管理入口，从系统设置展开营销并逐页跳转、当前项激活、刷新后展开状态、390px移动侧栏跳转及重新展开无页面溢出、新用户页标题均通过，无脚本错误。营销写请求全部abort，未创建或调整实际活动和用户资产。脚本、截图及results.json保留在忽略目录build/dev/marketing-menu，日志为build/dev/marketing-menu-*.log。
+- 开发数据库及旧二进制先备份到build/dev/mv2-015-preview/ui-fix-backups/marketing-menu-*，仅更新独立46015开发预览。独立sub agent代码及最终证据验收均通过，原Issue验收标准与H01–H11人工验收状态不变。

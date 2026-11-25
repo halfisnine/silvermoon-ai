@@ -43,6 +43,7 @@ import { useTranslation } from 'react-i18next'
 import type { SidebarBadges, SidebarData } from '@/components/layout/types'
 import { getModuleAccessFromStatus } from '@/lib/nav-modules'
 import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useStatus } from './use-status'
 
@@ -55,6 +56,8 @@ import { useStatus } from './use-status'
 export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
   const { t } = useTranslation()
   const { status } = useStatus()
+  const role = useAuthStore((state) => state.auth.user?.role)
+  const marketingOnly = role === ROLE.ADMIN
   const showModelSquare = getModuleAccessFromStatus(status, 'pricing').enabled
 
   return {
@@ -126,11 +129,11 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             icon: Activity,
           },
           {
-            title: t('Check-in'),
+            title: t('Check-in for rewards'),
             url: '/activities/checkin',
             icon: ClipboardList,
           },
-          { title: t('Lottery'), url: '/activities/lottery', icon: Ticket },
+          { title: t('Lucky draw'), url: '/activities/lottery', icon: Ticket },
           {
             title: t('Invite for rewards'),
             url: '/activities/invitation',
@@ -184,24 +187,6 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             icon: Users,
           },
           {
-            title: t('Marketing activities'),
-            url: '/marketing-admin/activities',
-            icon: Activity,
-            requiredRole: ROLE.ADMIN,
-          },
-          {
-            title: t('Prize pools'),
-            url: '/marketing-admin/pools',
-            icon: Box,
-            requiredRole: ROLE.ADMIN,
-          },
-          {
-            title: t('Marketing reward records'),
-            url: '/marketing-admin/rewards',
-            icon: ClipboardList,
-            requiredRole: ROLE.ADMIN,
-          },
-          {
             title: t('Redemption Codes'),
             url: '/redemption-codes',
             icon: Ticket,
@@ -225,10 +210,15 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
           },
           {
             title: t('System Settings'),
-            url: '/system-settings/site',
-            activeUrls: ['/system-settings'],
+            url: marketingOnly
+              ? '/marketing-admin/activities'
+              : '/system-settings/site',
+            activeUrls: ['/system-settings', '/marketing-admin'],
+            configUrls: marketingOnly
+              ? ['/marketing-admin/activities']
+              : ['/system-settings', '/marketing-admin/activities'],
             icon: Settings,
-            requiredRole: ROLE.SUPER_ADMIN,
+            requiredRole: ROLE.ADMIN,
             // Model pricing lives in System Settings.
             badge: badges.modelPricing,
           },

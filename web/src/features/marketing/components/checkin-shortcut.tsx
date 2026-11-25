@@ -26,7 +26,7 @@ export function CheckinShortcut() {
   const { t } = useTranslation()
   return (
     <Card className='gap-3 p-4'>
-      <h3 className='font-semibold'>{t('Check-in')}</h3>
+      <h3 className='font-semibold'>{t('Check-in for rewards')}</h3>
       <p className='text-muted-foreground text-sm'>
         {t(
           'Check-in activities and make-up dates are now available in Activities.'

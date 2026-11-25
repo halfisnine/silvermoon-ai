@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
 import {
+  Activity,
+  ClipboardList,
   Box,
   Route,
   CreditCard,
@@ -36,6 +38,7 @@ import { getOperationsSectionNavItems } from '@/features/system-settings/operati
 import { getPolicySectionNavItems } from '@/features/system-settings/request-policies/section-registry'
 import { getSecuritySectionNavItems } from '@/features/system-settings/security/section-registry.tsx'
 import { getSiteSectionNavItems } from '@/features/system-settings/site/section-registry.tsx'
+import { ROLE } from '@/lib/roles'
 
 import type { NavGroup, SidebarBadges, SidebarView } from '../types'
 
@@ -57,16 +60,19 @@ function getSystemSettingsNavGroups(
       items: [
         {
           title: t('Site & Branding'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Settings,
           items: getSiteSectionNavItems(t),
         },
         {
           title: t('Authentication'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Shield,
           items: getAuthSectionNavItems(t),
         },
         {
           title: t('Billing & Payment'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: CreditCard,
           badge: badges.modelPricing,
           items: getBillingSectionNavItems(t, {
@@ -74,27 +80,54 @@ function getSystemSettingsNavGroups(
           }),
         },
         {
+          title: t('Marketing'),
+          icon: Activity,
+          requiredRole: ROLE.ADMIN,
+          items: [
+            {
+              title: t('Marketing activities'),
+              url: '/marketing-admin/activities',
+              icon: Activity,
+            },
+            {
+              title: t('Prize pools'),
+              url: '/marketing-admin/pools',
+              icon: Box,
+            },
+            {
+              title: t('Marketing reward records'),
+              url: '/marketing-admin/rewards',
+              icon: ClipboardList,
+            },
+          ],
+        },
+        {
           title: t('Models'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Box,
           items: getModelsSectionNavItems(t),
         },
         {
           title: t('Request policies'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Route,
           items: getPolicySectionNavItems(t),
         },
         {
           title: t('Security & Limits'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: ShieldAlert,
           items: getSecuritySectionNavItems(t),
         },
         {
           title: t('Console Content'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Layout,
           items: getContentSectionNavItems(t),
         },
         {
           title: t('Operations'),
+          requiredRole: ROLE.SUPER_ADMIN,
           icon: Wrench,
           items: getOperationsSectionNavItems(t),
         },
@@ -104,7 +137,7 @@ function getSystemSettingsNavGroups(
 }
 
 /**
- * Nested sidebar view for `/system-settings/*`.
+ * Nested sidebar view for system settings and marketing administration.
  *
  * Activates the Vercel / Cloudflare-style drill-in sidebar:
  * the root navigation is replaced by the system administration
@@ -112,7 +145,7 @@ function getSystemSettingsNavGroups(
  */
 export const SYSTEM_SETTINGS_VIEW: SidebarView = {
   id: 'system-settings',
-  pathPattern: /^\/system-settings(\/|$)/,
+  pathPattern: /^\/(system-settings|marketing-admin)(\/|$)/,
   parent: {
     to: '/dashboard/overview',
     label: 'Back to Dashboard',

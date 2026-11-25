@@ -94,7 +94,9 @@ export function CheckinPage() {
     }).format(civilDate(date))
   return (
     <SectionPageLayout>
-      <SectionPageLayout.Title>{t('Check-in')}</SectionPageLayout.Title>
+      <SectionPageLayout.Title>
+        {t('Check-in for rewards')}
+      </SectionPageLayout.Title>
       <SectionPageLayout.Actions>
         <Button
           role='link'
