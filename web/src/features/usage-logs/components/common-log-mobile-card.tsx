@@ -27,6 +27,7 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
+import { formatMarketingMoney } from '@/features/marketing-admin/format'
 import { getUserAvatarFallback, getUserAvatarStyle } from '@/lib/avatar'
 import dayjs from '@/lib/dayjs'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
@@ -62,7 +63,7 @@ export function CommonLogMobileCard<TData>(props: {
   log: UsageLog
   cells: Map<string, Cell<TData, unknown>>
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const context = useUsageLogsContext()
   const [selectedField, setSelectedField] = useState<FieldName | null>(null)
   const log = props.log
@@ -76,6 +77,13 @@ export function CommonLogMobileCard<TData>(props: {
     other?.user_group_ratio != null && other.user_group_ratio !== -1
       ? other.user_group_ratio
       : other?.group_ratio
+  let cost = formatLogQuota(log.quota)
+  if (other?.accounting) {
+    const money = other.accounting.total
+    cost = money
+      ? formatMarketingMoney(money.amount, money.currency, i18n.language)
+      : t('Amount unavailable')
+  }
   const fields: Record<FieldName, LogField> = {
     model: {
       label: t('Model'),
@@ -84,7 +92,7 @@ export function CommonLogMobileCard<TData>(props: {
     },
     cost: {
       label: t('Cost'),
-      value: formatLogQuota(log.quota),
+      value: cost,
       visible: displayable && props.cells.has('quota'),
     },
     time: {

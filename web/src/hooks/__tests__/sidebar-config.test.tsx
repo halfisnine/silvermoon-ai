@@ -386,3 +386,152 @@ describe('model square sidebar entry', () => {
     )
   })
 })
+
+describe('marketing navigation', () => {
+  async function navigation(path: string, role: number, marketing = true) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    client.setQueryData(['status'], {
+      SidebarModulesAdmin: JSON.stringify({
+        admin: { enabled: true, marketing },
+      }),
+    })
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: { success: true, data: [] },
+    })
+    useAuthStore.getState().auth.setUser({ id: 1, username: 'review', role })
+    function Navigation() {
+      const current = useSidebarView()
+      return (
+        <div>
+          <output aria-label='Navigation view'>{current.key}</output>
+          {current.navGroups
+            .flatMap((group) => group.items)
+            .map((item) => (
+              <section key={item.title} aria-label={item.title}>
+                {item.url && <a href={item.url}>{item.title}</a>}
+                {item.items?.map((child) => (
+                  <a key={child.url} href={child.url}>
+                    {child.title}
+                  </a>
+                ))}
+              </section>
+            ))}
+        </div>
+      )
+    }
+    const router = createRouter({
+      routeTree: createRootRoute({ component: Navigation }),
+      history: createMemoryHistory({ initialEntries: [path] }),
+    })
+    await router.load()
+    render(
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>
+    )
+    await screen.findByLabelText('Navigation view')
+    return client
+  }
+
+  it('root navigation uses the new user labels and moves administrator marketing links into settings', async () => {
+    const client = await navigation('/dashboard/overview', ROLE.SUPER_ADMIN)
+    expect(
+      screen.getByRole('link', { name: 'Check-in for rewards' })
+    ).toHaveAttribute('href', '/activities/checkin')
+    expect(screen.getByRole('link', { name: 'Lucky draw' })).toHaveAttribute(
+      'href',
+      '/activities/lottery'
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Marketing activities' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'System Settings' })
+    ).toHaveAttribute('href', '/system-settings/site')
+    client.clear()
+  })
+
+  it.each([
+    '/marketing-admin/activities',
+    '/marketing-admin/pools',
+    '/marketing-admin/rewards',
+  ])(
+    'direct access to %s keeps all three links under Marketing in the settings sidebar',
+    async (path) => {
+      const client = await navigation(path, ROLE.SUPER_ADMIN)
+      expect(screen.getByLabelText('Navigation view')).toHaveTextContent(
+        'system-settings'
+      )
+      const marketing = screen.getByRole('region', { name: 'Marketing' })
+      expect(marketing.querySelectorAll('a')).toHaveLength(3)
+      expect(
+        screen.getByRole('link', { name: 'Marketing activities' })
+      ).toHaveAttribute('href', '/marketing-admin/activities')
+      expect(screen.getByRole('link', { name: 'Prize pools' })).toHaveAttribute(
+        'href',
+        '/marketing-admin/pools'
+      )
+      expect(
+        screen.getByRole('link', { name: 'Marketing reward records' })
+      ).toHaveAttribute('href', '/marketing-admin/rewards')
+      expect(
+        screen.getByRole('region', { name: 'Site & Branding' })
+      ).toBeInTheDocument()
+      client.clear()
+    }
+  )
+
+  it('ordinary administrators enter settings through marketing without seeing super administrator settings', async () => {
+    const client = await navigation('/dashboard/overview', ROLE.ADMIN)
+    expect(
+      screen.getByRole('link', { name: 'System Settings' })
+    ).toHaveAttribute('href', '/marketing-admin/activities')
+    client.clear()
+    cleanup()
+    const nestedClient = await navigation('/marketing-admin/pools', ROLE.ADMIN)
+    expect(
+      screen.getByRole('region', { name: 'Marketing' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', { name: 'Site & Branding' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', { name: 'Billing & Payment' })
+    ).not.toBeInTheDocument()
+    nestedClient.clear()
+  })
+
+  it('hiding the marketing module removes its nested entries and the marketing-only settings entrance', async () => {
+    const client = await navigation('/dashboard/overview', ROLE.ADMIN, false)
+    expect(
+      screen.queryByRole('link', { name: 'System Settings' })
+    ).not.toBeInTheDocument()
+    client.clear()
+    cleanup()
+    const nestedClient = await navigation(
+      '/marketing-admin/pools',
+      ROLE.SUPER_ADMIN,
+      false
+    )
+    expect(
+      screen.queryByRole('region', { name: 'Marketing' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: 'Site & Branding' })
+    ).toBeInTheDocument()
+    nestedClient.clear()
+  })
+
+  it('regular users cannot see administrator marketing or settings navigation', async () => {
+    const client = await navigation('/dashboard/overview', ROLE.USER)
+    expect(
+      screen.queryByRole('link', { name: 'System Settings' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Marketing activities' })
+    ).not.toBeInTheDocument()
+    client.clear()
+  })
+})

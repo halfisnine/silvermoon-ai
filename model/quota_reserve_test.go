@@ -113,7 +113,7 @@ func TestRedisBatchReserveNeverFallsBackToStaleDatabaseBalance(t *testing.T) {
 	reserved, err := TryReserveUserQuota(user.Id, 8)
 	require.NoError(t, err)
 	assert.True(t, reserved)
-	assert.Equal(t, 10, getUserQuotaFromDB(t, user.Id), "batch delta is not flushed yet")
+	assert.Equal(t, 2, getUserQuotaFromDB(t, user.Id), "legacy user writes are synchronous before source review")
 
 	reserved, err = TryReserveUserQuota(user.Id, 3)
 	require.NoError(t, err)
@@ -258,4 +258,32 @@ func TestTokenCacheInitPreservesLiveQuotaAndFenceBlocksStaleSnapshot(t *testing.
 	cached, err = cacheGetTokenByKey(token.Key)
 	require.NoError(t, err)
 	assert.Equal(t, 100, cached.RemainQuota)
+}
+
+// Source-managed accounts cannot be revived or spent through any former wallet
+// writer, including a batch delta queued by a process before cutover.
+func TestLegacyWalletWritersCannotBypassMarketingSourceLedger(t *testing.T) {
+	truncateTables(t)
+	resetBatchUpdateTestState(t)
+	useUserCacheMiniRedis(t)
+	for _, origin := range []string{"unverified", "verified"} {
+		user := createReserveTestUser(t, 100)
+		require.NoError(t, DB.Create(&MarketingAccount{UserID: user.Id, OriginState: origin, OpeningQuota: 100}).Error)
+		require.NoError(t, populateUserCache(user))
+		for _, batch := range []bool{false, true} {
+			common.BatchUpdateEnabled = batch
+			require.ErrorIs(t, IncreaseUserQuota(user.Id, 10, false), ErrMarketingBalanceEdit)
+			require.ErrorIs(t, DecreaseUserQuota(user.Id, 10, false), ErrMarketingBalanceEdit)
+			require.ErrorIs(t, persistUserQuotaDelta(user.Id, 10), ErrMarketingBalanceEdit)
+			reserved, err := TryReserveUserQuota(user.Id, 10)
+			assert.False(t, reserved)
+			require.ErrorIs(t, err, ErrMarketingBalanceEdit)
+		}
+		addNewRecord(BatchUpdateTypeUserQuota, user.Id, 50)
+		batchUpdate()
+		assert.Equal(t, 100, getUserQuotaFromDB(t, user.Id))
+		cached, err := cacheGetUserBase(user.Id)
+		require.NoError(t, err)
+		assert.Equal(t, 100, cached.Quota)
+	}
 }

@@ -82,6 +82,16 @@ beforeEach(() => {
         return { data: { success: true, data: ['gpt-4o-mini'] } }
       case '/api/data/self':
         return { data: { success: true, data: [] } }
+      case '/api/marketing/user/wallet':
+        return {
+          data: {
+            success: true,
+            data: {
+              paid: { amount: '2', currency: 'USD' },
+              gift: { amount: '0', currency: 'USD' },
+            },
+          },
+        }
       default:
         throw new Error(`Unexpected dashboard request: ${url}`)
     }

@@ -21,22 +21,16 @@ import { useTranslation } from 'react-i18next'
 
 import { MaskedValueDisplay } from '@/components/masked-value-display'
 import { StatusBadge } from '@/components/status-badge'
-import { TableId } from '@/components/table-id'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import { formatQuota, formatTimestampToDate } from '@/lib/format'
 
 import { REDEMPTION_FILTER_EXPIRED, REDEMPTION_STATUSES } from '../constants'
 import { isRedemptionExpired, isTimestampExpired } from '../lib'
+import { formatRedemptionMoney, formatRedemptionDate } from '../lib/display'
 import type { Redemption } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 
 export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   return [
     {
       id: 'select',
@@ -60,17 +54,6 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
       enableSorting: false,
       enableHiding: false,
       size: 40,
-    },
-    {
-      accessorKey: 'id',
-      header: t('ID'),
-      meta: { mobileHidden: true },
-      cell: ({ row }) => {
-        return (
-          <TableId value={row.getValue('id') as number} className='w-[60px]' />
-        )
-      },
-      size: 80,
     },
     {
       accessorKey: 'name',
@@ -155,21 +138,35 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
       size: 320,
     },
     {
-      accessorKey: 'quota',
-      header: t('Quota'),
-      cell: ({ row }) => {
-        const quota = row.getValue('quota') as number
-        return (
-          <StatusBadge
-            label={formatQuota(quota)}
-            variant='neutral'
-            copyable={false}
-            className='-ml-1.5'
-          />
-        )
-      },
-      size: 120,
+      accessorKey: 'paid_amount_cny',
+      header: t('Actual payment (CNY)'),
+      cell: ({ row }) => (
+        <span className='tabular-nums'>
+          {formatRedemptionMoney(
+            row.original.paid_amount_cny,
+            'CNY',
+            i18n.language
+          )}
+        </span>
+      ),
+      size: 150,
     },
+    {
+      accessorKey: 'credit_amount',
+      header: t('Credited paid amount'),
+      cell: ({ row }) => (
+        <span className='tabular-nums'>
+          {formatRedemptionMoney(
+            row.original.credit_amount,
+            row.original.credit_currency,
+            i18n.language
+          )}
+        </span>
+      ),
+      size: 150,
+    },
+    { accessorKey: 'sales_channel', header: t('Sales channel'), size: 150 },
+    { accessorKey: 'sales_batch', header: t('Sales batch'), size: 150 },
     {
       accessorKey: 'created_time',
       header: t('Created'),
@@ -177,7 +174,7 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
       cell: ({ row }) => {
         return (
           <div className='min-w-[160px] font-mono text-sm'>
-            {formatTimestampToDate(row.getValue('created_time'))}
+            {formatRedemptionDate(row.original.created_time, i18n.language)}
           </div>
         )
       },
@@ -204,52 +201,23 @@ export function useRedemptionsColumns(): ColumnDef<Redemption>[] {
           <div
             className={`min-w-[160px] font-mono text-sm ${isExpired ? 'text-destructive' : ''}`}
           >
-            {formatTimestampToDate(expiredTime)}
+            {formatRedemptionDate(expiredTime, i18n.language)}
           </div>
         )
       },
       size: 180,
     },
     {
-      accessorKey: 'used_user_id',
+      accessorKey: 'used_user_name',
       header: t('Redeemed By'),
       meta: { mobileHidden: true },
-      cell: ({ row }) => {
-        const userId = row.getValue('used_user_id') as number
-        const redemption = row.original
-
-        if (userId === 0) {
-          return <span className='text-muted-foreground text-sm'>-</span>
-        }
-
-        return (
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <StatusBadge
-                  label={t('User {{id}}', { id: userId })}
-                  variant='neutral'
-                  copyable={false}
-                  className='cursor-help'
-                />
-              }
-            ></TooltipTrigger>
-            <TooltipContent>
-              <div className='space-y-1 text-xs'>
-                <div>
-                  {t('User ID:')} {userId}
-                </div>
-                {redemption.redeemed_time > 0 && (
-                  <div>
-                    {t('Redeemed:')}{' '}
-                    {formatTimestampToDate(redemption.redeemed_time)}
-                  </div>
-                )}
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        )
-      },
+      cell: ({ row }) => (
+        <span>
+          {row.original.redeemed
+            ? row.original.used_user_name || t('Deleted user')
+            : '—'}
+        </span>
+      ),
       size: 140,
     },
     {

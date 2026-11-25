@@ -17,7 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { type FormEvent, useEffect, useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -30,6 +31,8 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
+import { ErrorState } from '@/components/error-state'
+import { LoadingState } from '@/components/loading-state'
 import { Button } from '@/components/ui/button'
 import {
   Form,
@@ -50,20 +53,20 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
-import {
-  formatQuotaWithCurrency,
-  getCurrencyDisplay,
-  getCurrencyLabel,
-} from '@/lib/currency'
-import {
-  formatQuota,
-  getEditableQuotaStep,
-  parseQuotaFromDollars,
-} from '@/lib/format'
+import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
+import {
+  createServerError,
+  getServerErrorMessage,
+} from '@/lib/server-error-message'
 import { addTimeToDate } from '@/lib/time'
 
-import { createRedemption, updateRedemption, getRedemption } from '../api'
+import {
+  createRedemption,
+  updateRedemption,
+  getRedemption,
+  getRedemptionMoneyContext,
+} from '../api'
 import { SUCCESS_MESSAGES } from '../constants'
 import {
   getRedemptionFormSchema,
@@ -72,6 +75,7 @@ import {
   transformFormDataToPayload,
   transformRedemptionToFormDefaults,
 } from '../lib'
+import { formatRedemptionMoney } from '../lib/display'
 import type { Redemption } from '../types'
 import {
   RedemptionsExportDialog,
@@ -85,182 +89,198 @@ type RedemptionsMutateDrawerProps = {
   currentRow?: Redemption
 }
 
-export function RedemptionsMutateDrawer({
-  open,
-  onOpenChange,
-  currentRow,
-}: RedemptionsMutateDrawerProps) {
-  const { t } = useTranslation()
-  const isUpdate = !!currentRow
-  const redemptionId = currentRow?.id
+export function RedemptionsMutateDrawer(props: RedemptionsMutateDrawerProps) {
+  const { t, i18n } = useTranslation()
+  const redemptionId = props.currentRow?.id
+  const isUpdate = redemptionId !== undefined
   const { triggerRefresh } = useRedemptions()
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [createdCodes, setCreatedCodes] = useState<RedemptionExportData | null>(
     null
   )
-  const [redemptionLoadState, setRedemptionLoadState] = useState<
-    'idle' | 'loading' | 'ready' | 'error'
-  >('idle')
-  const [loadedRedemption, setLoadedRedemption] = useState<Redemption | null>(
-    null
-  )
-
   const form = useForm<RedemptionFormValues>({
     resolver: zodResolver(getRedemptionFormSchema(t)),
     defaultValues: REDEMPTION_FORM_DEFAULT_VALUES,
   })
-
-  // Load existing data when updating
+  const [snapshot, setSnapshot] = useState<{
+    target: number | 'create'
+    currency: string
+    moneyRevision: string
+  } | null>(null)
+  const target = redemptionId ?? 'create'
+  const detail = useQuery({
+    queryKey: ['redemption-detail', redemptionId],
+    enabled: props.open && isUpdate,
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    meta: { errorToast: false },
+    queryFn: async () => {
+      if (redemptionId === undefined) throw new Error('Missing redemption code')
+      const response = await getRedemption(redemptionId)
+      if (
+        !response.success ||
+        !response.data ||
+        response.data.id !== redemptionId
+      ) {
+        throw createServerError(response, t('Failed to load'))
+      }
+      return response.data
+    },
+  })
+  const moneyContext = useQuery({
+    queryKey: ['marketing-admin-metadata'],
+    enabled: props.open && !isUpdate,
+    retry: false,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    meta: { errorToast: false },
+    queryFn: async () => {
+      const response = await getRedemptionMoneyContext()
+      if (!response.success || !response.data) {
+        throw createServerError(response, t('Failed to load'))
+      }
+      return response.data
+    },
+  })
   useEffect(() => {
-    if (!open) {
+    if (!props.open) {
+      setSnapshot(null)
       form.reset(REDEMPTION_FORM_DEFAULT_VALUES)
-      setRedemptionLoadState('idle')
-      setLoadedRedemption(null)
       return
     }
-
-    if (!isUpdate || redemptionId === undefined) {
+    // Keep input amounts tied to the conversion shown when editing began.
+    if (snapshot?.target === target) return
+    if (isUpdate) {
+      if (!detail.isSuccess || detail.isFetching || !detail.data) return
+      setSnapshot({
+        target,
+        currency: detail.data.credit_currency,
+        moneyRevision: detail.data.money_revision,
+      })
+      form.reset(transformRedemptionToFormDefaults(detail.data))
+    } else {
+      if (
+        !moneyContext.isSuccess ||
+        moneyContext.isFetching ||
+        !moneyContext.data
+      ) {
+        return
+      }
+      setSnapshot({
+        target,
+        currency: moneyContext.data.currency,
+        moneyRevision: moneyContext.data.money_revision,
+      })
       form.reset(REDEMPTION_FORM_DEFAULT_VALUES)
-      setRedemptionLoadState('ready')
-      setLoadedRedemption(null)
-      return
     }
-
-    let ignoreResult = false
-
-    form.reset(REDEMPTION_FORM_DEFAULT_VALUES)
-    setRedemptionLoadState('loading')
-    setLoadedRedemption(null)
-
-    void getRedemption(redemptionId)
-      .then((result) => {
-        if (ignoreResult) return
-
-        if (
-          !result.success ||
-          !result.data ||
-          result.data.id !== redemptionId
-        ) {
-          setRedemptionLoadState('error')
-          handleServerError(result, t('Failed to load'))
-          return
-        }
-
-        form.reset(transformRedemptionToFormDefaults(result.data))
-        setLoadedRedemption(result.data)
-        setRedemptionLoadState('ready')
-      })
-      .catch((error: unknown) => {
-        if (ignoreResult) return
-
-        setRedemptionLoadState('error')
-        handleServerError(error)
-      })
-
-    return () => {
-      ignoreResult = true
-    }
-  }, [open, isUpdate, redemptionId, form, t])
-
-  const isUpdateReady =
-    !isUpdate ||
-    (redemptionLoadState === 'ready' && loadedRedemption?.id === redemptionId)
-  const isLoadingRedemption = redemptionLoadState === 'loading'
-
-  const onSubmit = async (data: RedemptionFormValues) => {
-    if (isUpdate && (!currentRow || !loadedRedemption || !isUpdateReady)) {
-      return
-    }
-
-    setIsSubmitting(true)
-    try {
-      const basePayload = transformFormDataToPayload(data)
-
-      if (isUpdate && currentRow && loadedRedemption) {
-        const quota = form.getFieldState('quota_dollars').isDirty
-          ? basePayload.quota
-          : loadedRedemption.quota
-        const result = await updateRedemption({
-          ...basePayload,
-          quota,
-          id: currentRow.id,
+  }, [
+    props.open,
+    target,
+    snapshot,
+    isUpdate,
+    detail.isSuccess,
+    detail.isFetching,
+    detail.data,
+    moneyContext.isSuccess,
+    moneyContext.isFetching,
+    moneyContext.data,
+    form,
+  ])
+  const currency = snapshot?.target === target ? snapshot.currency : ''
+  const moneyRevision =
+    snapshot?.target === target ? snapshot.moneyRevision : ''
+  const ready =
+    props.open &&
+    snapshot?.target === target &&
+    (isUpdate
+      ? detail.isSuccess && !detail.isFetching && !detail.data?.redeemed
+      : moneyContext.isSuccess && !moneyContext.isFetching)
+  const save = useMutation({
+    mutationFn: async (data: RedemptionFormValues) => {
+      const payload = transformFormDataToPayload(data, currency, moneyRevision)
+      const response = isUpdate
+        ? await updateRedemption({ ...payload, id: redemptionId })
+        : await createRedemption(payload)
+      if (!response.success) throw createServerError(response)
+      return { response, payload }
+    },
+    onSuccess: ({ response, payload }) => {
+      toast.success(
+        t(
+          isUpdate
+            ? SUCCESS_MESSAGES.REDEMPTION_UPDATED
+            : SUCCESS_MESSAGES.REDEMPTION_CREATED
+        )
+      )
+      if (!isUpdate && Array.isArray(response.data) && response.data.length) {
+        setCreatedCodes({
+          keys: response.data,
+          name: payload.name,
+          credit: formatRedemptionMoney(
+            payload.credit_amount,
+            payload.credit_currency,
+            i18n.language
+          ),
+          paid: formatRedemptionMoney(
+            payload.paid_amount_cny,
+            'CNY',
+            i18n.language
+          ),
+          salesChannel: payload.sales_channel,
+          salesBatch: payload.sales_batch,
         })
-        if (result.success) {
-          toast.success(t(SUCCESS_MESSAGES.REDEMPTION_UPDATED))
-          onOpenChange(false)
-          triggerRefresh()
-        } else {
-          handleServerError(result)
-        }
-      } else {
-        // Create mode
-        const result = await createRedemption(basePayload)
-        if (result.success) {
-          const count = result.data?.length || 0
-          toast.success(
-            count > 1
-              ? t('Successfully created {{count}} redemption codes', {
-                  count,
-                })
-              : t(SUCCESS_MESSAGES.REDEMPTION_CREATED)
-          )
-          if (result.data?.length) {
-            setCreatedCodes({
-              keys: result.data,
-              name: basePayload.name,
-              quota: formatQuotaWithCurrency(basePayload.quota, {
-                abbreviate: false,
-              }),
-            })
-          }
-          onOpenChange(false)
-          triggerRefresh()
-        } else {
-          handleServerError(result)
-        }
       }
-    } catch (error) {
+      props.onOpenChange(false)
+      triggerRefresh()
+    },
+    onError: (error) => {
+      form.setError('root.server', {
+        message: getServerErrorMessage(
+          error,
+          t('Could not save. Review the details and try again.')
+        ),
+      })
       handleServerError(error)
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    if (!isUpdate) {
-      const name = form.getValues('name')
-      if (!name?.trim()) {
-        const quota = parseQuotaFromDollars(form.getValues('quota_dollars'))
-        form.setValue('name', formatQuota(quota), { shouldValidate: true })
-      }
-    }
-
-    void form.handleSubmit(onSubmit)(event)
-  }
-
-  const handleSetExpiry = (months: number, days: number, hours: number) => {
-    const newDate = addTimeToDate(months, days, hours)
-    form.setValue('expired_time', newDate ?? null)
-  }
-
-  const { meta: currencyMeta } = getCurrencyDisplay()
-  const currencyLabel = getCurrencyLabel()
-  const tokensOnly = currencyMeta.kind === 'tokens'
-  const quotaStep = getEditableQuotaStep()
-  const quotaLabel = t('Quota ({{currency}})', { currency: currencyLabel })
-  const quotaPlaceholder = tokensOnly
-    ? t('Enter quota in tokens')
-    : t('Enter quota in {{currency}}', { currency: currencyLabel })
-  let submitButtonLabel = t('Save changes')
-  if (isLoadingRedemption) {
-    submitButtonLabel = t('Loading...')
-  } else if (isSubmitting) {
-    submitButtonLabel = t('Saving...')
-  }
-
+    },
+  })
+  const submit = form.handleSubmit((data) => {
+    if (!ready || save.isPending) return
+    form.clearErrors('root')
+    save.mutate(data)
+  })
+  const textFields = [
+    { name: 'name', label: t('Name'), placeholder: t('Enter a name') },
+    {
+      name: 'paid_amount_cny',
+      label: t('Actual payment (CNY)'),
+      placeholder: t('Enter the actual sale price in CNY'),
+    },
+    {
+      name: 'credit_amount',
+      label: t('Credited paid amount ({{currency}})', { currency }),
+      placeholder: t('Enter the amount credited to the wallet'),
+    },
+    {
+      name: 'sales_channel',
+      label: t('Sales channel'),
+      placeholder: t('For example, your card shop'),
+    },
+    {
+      name: 'sales_batch',
+      label: t('Sales batch'),
+      placeholder: t('A batch name for tracing sales'),
+    },
+  ] as const
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet
+        open={props.open}
+        onOpenChange={(open) => {
+          if (!save.isPending) props.onOpenChange(open)
+        }}
+      >
         <SheetContent
           className={sideDrawerContentClassName('sm:max-w-[600px]')}
         >
@@ -271,131 +291,173 @@ export function RedemptionsMutateDrawer({
                 : t('Create Redemption Code')}
             </SheetTitle>
             <SheetDescription>
-              {isUpdate
-                ? t('Update the redemption code by providing necessary info.')
-                : t(
-                    'Add new redemption code(s) by providing necessary info.'
-                  )}{' '}
-              {t('Click save when you&apos;re done.')}
+              {t(
+                'Paid codes credit the wallet as a payment. Activity gifts are issued separately.'
+              )}
             </SheetDescription>
           </SheetHeader>
           <Form {...form}>
             <form
               id='redemption-form'
-              onSubmit={handleSubmit}
+              onSubmit={submit}
               className={sideDrawerFormClassName()}
-              aria-busy={isLoadingRedemption}
+              aria-busy={detail.isFetching || save.isPending}
+              noValidate
             >
+              {((isUpdate && detail.isLoading) ||
+                (!isUpdate && moneyContext.isLoading)) && <LoadingState />}
+              {!isUpdate && moneyContext.isError && (
+                <ErrorState
+                  title={t('Failed to load')}
+                  onRetry={() => {
+                    void moneyContext.refetch()
+                  }}
+                />
+              )}
+              {isUpdate && detail.isError && (
+                <ErrorState
+                  title={t('Failed to load')}
+                  description={getServerErrorMessage(
+                    detail.error,
+                    t('Failed to load')
+                  )}
+                  onRetry={() => {
+                    void detail.refetch()
+                  }}
+                />
+              )}
+              {isUpdate && detail.data?.redeemed && (
+                <p role='alert'>
+                  {t('Used redemption codes cannot be changed')}
+                </p>
+              )}
               <fieldset
-                disabled={!isUpdateReady || isSubmitting}
+                disabled={!ready || save.isPending}
                 className='contents'
               >
                 <SideDrawerSection>
+                  {textFields.map((item) => (
+                    <FormField
+                      key={item.name}
+                      control={form.control}
+                      name={item.name}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{item.label}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder={item.placeholder}
+                              inputMode={
+                                item.name.includes('amount')
+                                  ? 'decimal'
+                                  : 'text'
+                              }
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ))}
+                  {currency === 'CNY' && (
+                    <Button
+                      type='button'
+                      variant='outline'
+                      onClick={() =>
+                        form.setValue(
+                          'credit_amount',
+                          form.getValues('paid_amount_cny'),
+                          { shouldValidate: true, shouldDirty: true }
+                        )
+                      }
+                    >
+                      {t('Use payment amount as wallet credit')}
+                    </Button>
+                  )}
                   <FormField
                     control={form.control}
-                    name='name'
+                    name='sales_evidence'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Name')}</FormLabel>
+                        <FormLabel>{t('Sales evidence (optional)')}</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder={t('Enter a name')} />
+                          <Textarea {...field} rows={3} />
                         </FormControl>
                         <FormDescription>
-                          {t('Name for this redemption code (1-20 characters)')}
+                          {t(
+                            'Record the sale reference or receipt details. Do not paste redemption codes here.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
-                  <FormField
-                    control={form.control}
-                    name='quota_dollars'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{quotaLabel}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            step={quotaStep}
-                            placeholder={quotaPlaceholder}
-                            onChange={(e) =>
-                              field.onChange(
-                                Number.parseFloat(e.target.value) || 0
-                              )
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {tokensOnly
-                            ? t('Enter the quota amount in tokens')
-                            : t('Enter the quota amount in {{currency}}', {
-                                currency: currencyLabel,
-                              })}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
                   <FormField
                     control={form.control}
                     name='expired_time'
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>{t('Expiration Time')}</FormLabel>
-                        <div className='flex flex-col gap-2'>
-                          <FormControl>
-                            <DateTimePicker
-                              value={field.value ?? undefined}
-                              onChange={(date) => field.onChange(date ?? null)}
-                              placeholder={t('Never expires')}
-                            />
-                          </FormControl>
-                          <div className='grid grid-cols-4 gap-1.5 sm:flex sm:gap-2'>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              onClick={() => handleSetExpiry(0, 0, 0)}
-                            >
-                              {t('Never')}
-                            </Button>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              onClick={() => handleSetExpiry(1, 0, 0)}
-                            >
-                              {t('1M')}
-                            </Button>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              onClick={() => handleSetExpiry(0, 7, 0)}
-                            >
-                              {t('1W')}
-                            </Button>
-                            <Button
-                              type='button'
-                              variant='outline'
-                              size='sm'
-                              onClick={() => handleSetExpiry(0, 1, 0)}
-                            >
-                              {t('1 Day')}
-                            </Button>
-                          </div>
+                        <FormLabel>{t('Code validity')}</FormLabel>
+                        <FormControl>
+                          <DateTimePicker
+                            timeZone='Asia/Shanghai'
+                            value={field.value ?? undefined}
+                            onChange={(date) => field.onChange(date ?? null)}
+                            placeholder={t('Never expires')}
+                          />
+                        </FormControl>
+                        <div className='flex flex-wrap gap-2'>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              form.setValue('expired_time', null, {
+                                shouldValidate: true,
+                              })
+                            }
+                          >
+                            {t('Never')}
+                          </Button>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              form.setValue(
+                                'expired_time',
+                                addTimeToDate(0, 7, 0) ?? null,
+                                { shouldValidate: true }
+                              )
+                            }
+                          >
+                            {t('7 days')}
+                          </Button>
+                          <Button
+                            type='button'
+                            variant='outline'
+                            size='sm'
+                            onClick={() =>
+                              form.setValue(
+                                'expired_time',
+                                addTimeToDate(1, 0, 0) ?? null,
+                                { shouldValidate: true }
+                              )
+                            }
+                          >
+                            {t('1 month')}
+                          </Button>
                         </div>
                         <FormDescription>
-                          {t('Leave empty for never expires')}
+                          {t(
+                            'The code must be redeemed before this time. Credited paid funds do not expire.'
+                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-
                   {!isUpdate && (
                     <FormField
                       control={form.control}
@@ -407,12 +469,14 @@ export function RedemptionsMutateDrawer({
                             <Input
                               {...field}
                               type='number'
-                              min='1'
-                              max='100'
-                              placeholder={t('Number of codes to create')}
-                              onChange={(e) =>
+                              min={1}
+                              max={100}
+                              step={1}
+                              onChange={(event) =>
                                 field.onChange(
-                                  Number.parseInt(e.target.value, 10) || 1
+                                  event.target.value === ''
+                                    ? 0
+                                    : Number(event.target.value)
                                 )
                               }
                             />
@@ -427,20 +491,42 @@ export function RedemptionsMutateDrawer({
                       )}
                     />
                   )}
+                  {form.formState.errors.root?.server?.message && (
+                    <div className='space-y-2'>
+                      <p role='alert' className='text-destructive text-sm'>
+                        {form.formState.errors.root.server.message}
+                      </p>
+                      <Button
+                        type='button'
+                        variant='outline'
+                        onClick={() => {
+                          form.clearErrors('root')
+                          setSnapshot(null)
+                          void (isUpdate
+                            ? detail.refetch()
+                            : moneyContext.refetch())
+                        }}
+                      >
+                        {t('Refresh')}
+                      </Button>
+                    </div>
+                  )}
                 </SideDrawerSection>
               </fieldset>
             </form>
           </Form>
           <SheetFooter className={sideDrawerFooterClassName()}>
-            <SheetClose render={<Button variant='outline' />}>
+            <SheetClose
+              render={<Button variant='outline' disabled={save.isPending} />}
+            >
               {t('Close')}
             </SheetClose>
             <Button
               form='redemption-form'
               type='submit'
-              disabled={isSubmitting || !isUpdateReady}
+              disabled={save.isPending || !ready}
             >
-              {submitButtonLabel}
+              {save.isPending ? t('Saving...') : t('Save changes')}
             </Button>
           </SheetFooter>
         </SheetContent>

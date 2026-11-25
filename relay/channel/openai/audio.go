@@ -25,6 +25,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	// the subsequent failure of the response body should be regarded as a non-recoverable error,
 	// and can be terminated directly.
 	defer service.CloseResponseBodyGracefully(resp)
+	common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
 	usage := &dto.Usage{}
 	usage.PromptTokens = info.GetEstimatePromptTokens()
 	usage.TotalTokens = info.GetEstimatePromptTokens()
@@ -44,6 +45,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 					logger.LogError(c, err.Error())
 					sr.Error(err)
 				} else if simpleResponse.Usage.TotalTokens != 0 {
+					common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, false)
 					usage.PromptTokens = simpleResponse.Usage.InputTokens
 					usage.CompletionTokens = simpleResponse.OutputTokens
 					usage.TotalTokens = simpleResponse.TotalTokens
@@ -109,6 +111,9 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 			usage.CompletionTokenDetails.AudioTokens = completionTokens
 		}
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+		if info.RequestUsageMeasured && durationErr == nil && duration > 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, false)
+		}
 	}
 
 	return usage
@@ -140,6 +145,7 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		}
 	}
 
+	common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, !info.RequestUsageMeasured)
 	usage := &dto.Usage{}
 	usage.PromptTokens = info.GetEstimatePromptTokens()
 	usage.CompletionTokens = 0

@@ -22,6 +22,9 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 	}
 
 	info.IsStream = true
+	if _, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		return openaiManagedRealtimeHandler(c, info)
+	}
 	clientConn := info.ClientWs
 	targetConn := info.TargetWs
 

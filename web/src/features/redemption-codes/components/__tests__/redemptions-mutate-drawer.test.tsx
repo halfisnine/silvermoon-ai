@@ -16,7 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -52,6 +54,7 @@ await i18n.use(initReactI18next).init({
 type ApiMethod = (url: string, data?: unknown) => Promise<{ data: unknown }>
 type MockableApi = {
   get: ApiMethod
+  post: ApiMethod
   put: ApiMethod
 }
 type RenderedDrawer = {
@@ -65,21 +68,32 @@ type CurrencyFixture = {
 const apiClient = api as unknown as MockableApi
 const originalGet = apiClient.get
 const originalPut = apiClient.put
+const originalPost = apiClient.post
 const originalConsoleLog = Reflect.get(console, 'log')
+let queryClient: QueryClient
 let renderedDrawer: RenderedDrawer | null = null
 
-function redemption(id: number, quota = 500001): Redemption {
+function redemption(id: number, amount = '1.000002'): Redemption {
   return {
     id,
-    user_id: 1,
     name: `code-${id}`,
     key: `key-${id}`,
     status: 1,
-    quota,
+    money_revision: 'display-v1',
+    paid_amount_cny: '10',
+    credit_amount: amount,
+    credit_currency: 'USD',
+    original_credit_amount: amount,
+    original_credit_currency: 'USD',
+    sales_channel: 'card shop',
+    sales_batch: 'launch',
+    sales_evidence: '',
+    sale_registered: true,
     created_time: 1,
     redeemed_time: 0,
     expired_time: 0,
-    used_user_id: 0,
+    redeemed: false,
+    used_user_name: '',
   }
 }
 
@@ -93,28 +107,33 @@ function deferred<T>() {
   return { promise, reject, resolve }
 }
 
-function drawerTree(currentRow: Redemption, open = true) {
+function drawerTree(currentRow: Redemption | undefined, open = true) {
   return (
-    <I18nextProvider i18n={i18n}>
-      <RedemptionsProvider>
-        <RedemptionsMutateDrawer
-          open={open}
-          currentRow={currentRow}
-          onOpenChange={() => undefined}
-        />
-      </RedemptionsProvider>
-      <Toaster duration={60_000} />
-    </I18nextProvider>
+    <QueryClientProvider client={queryClient}>
+      <I18nextProvider i18n={i18n}>
+        <RedemptionsProvider>
+          <RedemptionsMutateDrawer
+            open={open}
+            currentRow={currentRow}
+            onOpenChange={() => undefined}
+          />
+        </RedemptionsProvider>
+        <Toaster duration={60_000} />
+      </I18nextProvider>
+    </QueryClientProvider>
   )
 }
 
 async function renderDrawer(
-  currentRow: Redemption,
+  currentRow: Redemption | undefined,
   currency: CurrencyFixture = {
     quotaDisplayType: 'USD',
     usdExchangeRate: 1,
   }
 ): Promise<void> {
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
   useSystemConfigStore.getState().setConfig({
     currency: {
       displayInCurrency: true,
@@ -130,7 +149,7 @@ async function renderDrawer(
 }
 
 async function rerenderDrawer(
-  currentRow: Redemption,
+  currentRow: Redemption | undefined,
   open = true
 ): Promise<void> {
   if (!renderedDrawer) {
@@ -144,8 +163,12 @@ function getSaveButton(): HTMLButtonElement {
 }
 
 function getControlByLabel(labelText: 'Name'): HTMLInputElement
-function getControlByLabel(labelText: 'Quota (CNY)'): HTMLInputElement
-function getControlByLabel(labelText: 'Quota (USD)'): HTMLInputElement
+function getControlByLabel(
+  labelText: 'Credited paid amount (CNY)'
+): HTMLInputElement
+function getControlByLabel(
+  labelText: 'Credited paid amount (USD)'
+): HTMLInputElement
 function getControlByLabel(labelText: string): HTMLElement {
   const label = [...document.querySelectorAll<HTMLLabelElement>('label')].find(
     (candidate) => candidate.textContent?.trim() === labelText
@@ -183,15 +206,17 @@ async function waitForLoadedForm(): Promise<void> {
 afterEach(() => {
   apiClient.get = originalGet
   apiClient.put = originalPut
+  apiClient.post = originalPost
   Reflect.set(console, 'log', originalConsoleLog)
   toast.dismiss()
   localStorage.clear()
+  queryClient?.clear()
   renderedDrawer = null
 })
 
 describe('redemption drawer', () => {
   test('shows the reported CNY quota without floating-point noise', async () => {
-    const original = redemption(1, 13888889)
+    const original = { ...redemption(1, '200'), credit_currency: 'CNY' }
     apiClient.get = async () => ({ data: { success: true, data: original } })
 
     await renderDrawer(original, {
@@ -200,7 +225,7 @@ describe('redemption drawer', () => {
     })
     await waitForLoadedForm()
 
-    expect(getControlByLabel('Quota (CNY)').value).toBe('200')
+    expect(getControlByLabel('Credited paid amount (CNY)').value).toBe('200')
   })
 
   test('blocks updates and reports an error when loading rejects', async () => {
@@ -254,14 +279,19 @@ describe('redemption drawer', () => {
 
     await renderDrawer(original)
     await waitForLoadedForm()
-    expect(getControlByLabel('Quota (USD)').value).toBe('1')
+    expect(getControlByLabel('Credited paid amount (USD)').value).toBe(
+      '1.000002'
+    )
 
     changeInput(getControlByLabel('Name'), 'renamed')
     submitForm()
     await waitFor(() => expect(updates).toHaveLength(1))
 
     expect(updates[0]?.name).toBe('renamed')
-    expect(updates[0]?.quota).toBe(500001)
+    expect(updates[0]?.credit_amount).toBe('1.000002')
+    expect(updates[0]).not.toHaveProperty('quota')
+    expect(updates[0]?.paid_amount_cny).toBe('10')
+    expect(updates[0]?.money_revision).toBe('display-v1')
   })
 
   test('recalculates quota when the quota field changes', async () => {
@@ -276,11 +306,11 @@ describe('redemption drawer', () => {
 
     await renderDrawer(original)
     await waitForLoadedForm()
-    changeInput(getControlByLabel('Quota (USD)'), '2')
+    changeInput(getControlByLabel('Credited paid amount (USD)'), '2')
     submitForm()
     await waitFor(() => expect(updates).toHaveLength(1))
 
-    expect(updates[0]?.quota).toBe(1000000)
+    expect(updates[0]?.credit_amount).toBe('2')
   })
 
   test('keeps a non-expiring code unchanged after closing an expiring code', async () => {
@@ -305,10 +335,10 @@ describe('redemption drawer', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     )
     await rerenderDrawer(second)
-    expect(screen.getByRole('button', { name: 'Loading...' })).toBeDisabled()
+    expect(getSaveButton()).toBeDisabled()
     detail.resolve({ data: { success: true, data: second } })
     await waitForLoadedForm()
-    expect(screen.getByRole('button', { name: 'Never expires' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Code validity' })).toBeVisible()
     expect(screen.getByLabelText('Time')).toBeDisabled()
     fireEvent.click(getSaveButton())
     await waitFor(() =>
@@ -333,7 +363,7 @@ describe('redemption drawer', () => {
       await waitFor(() => expect(screen.getByLabelText('Time')).toBeEnabled())
       fireEvent.click(screen.getByRole('button', { name: action }))
       expect(
-        screen.getByRole('button', { name: 'Never expires' })
+        screen.getByRole('button', { name: 'Code validity' })
       ).toBeVisible()
       expect(screen.getByLabelText('Time')).toBeDisabled()
       fireEvent.click(getSaveButton())
@@ -346,8 +376,8 @@ describe('redemption drawer', () => {
   )
 
   test('ignores an older response after switching records', async () => {
-    const first = redemption(1, 500001)
-    const second = redemption(2, 1000001)
+    const first = redemption(1, '1.000002')
+    const second = redemption(2, '2.000002')
     const firstRequest = deferred<{ data: unknown }>()
     const secondRequest = deferred<{ data: unknown }>()
     const requestedUrls: string[] = []
@@ -378,6 +408,232 @@ describe('redemption drawer', () => {
     await waitFor(() => expect(updates).toHaveLength(1))
 
     expect(updates[0]?.id).toBe(2)
-    expect(updates[0]?.quota).toBe(1000001)
+    expect(updates[0]?.credit_amount).toBe('2.000002')
+  })
+})
+
+test('correcting an invalid sale price clears validation and permits saving', async () => {
+  const original = redemption(1)
+  const updates: unknown[] = []
+  apiClient.get = async () => ({ data: { success: true, data: original } })
+  apiClient.put = async (_url, data) => {
+    updates.push(data)
+    return { data: { success: true, data: original } }
+  }
+  await renderDrawer(original)
+  await waitForLoadedForm()
+  const price = screen.getByLabelText('Actual payment (CNY)')
+  fireEvent.change(price, { target: { value: '0.001' } })
+  fireEvent.click(getSaveButton())
+  await waitFor(() => expect(price).toHaveAttribute('aria-invalid', 'true'))
+  expect(updates).toHaveLength(0)
+  fireEvent.change(price, { target: { value: '0.01' } })
+  fireEvent.click(getSaveButton())
+  await waitFor(() => expect(updates).toHaveLength(1))
+  expect(updates[0]).toEqual(
+    expect.objectContaining({
+      paid_amount_cny: '0.01',
+      credit_amount: '1.000002',
+      money_revision: 'display-v1',
+    })
+  )
+})
+
+test('a rejected save retains the form and permits a corrected retry', async () => {
+  const original = redemption(1)
+  let attempts = 0
+  apiClient.get = async () => ({ data: { success: true, data: original } })
+  apiClient.put = async () => ({
+    data:
+      ++attempts === 1
+        ? { success: false, message: 'Sale reference unavailable' }
+        : { success: true, data: original },
+  })
+  await renderDrawer(original)
+  await waitForLoadedForm()
+  fireEvent.click(getSaveButton())
+  await screen.findByRole('alert')
+  fireEvent.change(screen.getByLabelText('Sales batch'), {
+    target: { value: 'corrected' },
+  })
+  fireEvent.click(getSaveButton())
+  await waitFor(() => expect(attempts).toBe(2))
+})
+
+test('failed detail loading exposes Retry and re-enables editing after recovery', async () => {
+  let attempts = 0
+  apiClient.get = async () => ({
+    data:
+      ++attempts === 1
+        ? { success: false, message: 'Temporary problem' }
+        : { success: true, data: redemption(1) },
+  })
+  await renderDrawer(redemption(1))
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry' }))
+  await waitForLoadedForm()
+  expect(screen.getByLabelText('Sales channel')).toHaveValue('card shop')
+})
+
+test('a code redeemed after opening the list cannot have its source edited', async () => {
+  apiClient.get = async () => ({
+    data: {
+      success: true,
+      data: { ...redemption(1), redeemed: true, status: 3 },
+    },
+  })
+  await renderDrawer(redemption(1))
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Used redemption codes cannot be changed'
+  )
+  expect(getSaveButton()).toBeDisabled()
+  expect(screen.getByLabelText('Sales channel')).toBeDisabled()
+})
+
+test('sale details preserve tiny credited amounts and immutable source records', async () => {
+  const { RedemptionsSourceDialog } =
+    await import('../redemptions-source-dialog')
+  const row = {
+    ...redemption(1, '0.000002'),
+    redeemed: true,
+    used_user_name: 'buyer',
+    sales_evidence: 'receipt-23',
+  }
+  apiClient.get = async () => ({ data: { success: true, data: row } })
+  queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={queryClient}>
+      <I18nextProvider i18n={i18n}>
+        <RedemptionsSourceDialog id={1} onClose={() => undefined} />
+      </I18nextProvider>
+    </QueryClientProvider>
+  )
+  await screen.findByText('receipt-23')
+  expect(screen.getByText('buyer')).toBeVisible()
+  expect(
+    screen.getByText('Used redemption codes cannot be changed')
+  ).toBeVisible()
+  expect(document.body).toHaveTextContent('0.000002')
+  expect(document.body).not.toHaveTextContent('500000')
+  expect(
+    screen.queryByRole('button', { name: 'Save changes' })
+  ).not.toBeInTheDocument()
+})
+
+test('a new paid code keeps its original money snapshot when metadata refreshes', async () => {
+  apiClient.get = async () => ({
+    data: {
+      success: true,
+      data: { currency: 'CNY', money_revision: 'rate-old' },
+    },
+  })
+  const writes: unknown[] = []
+  apiClient.post = async (_url, data) => {
+    writes.push(data)
+    return { data: { success: true, data: [] } }
+  }
+  await renderDrawer(undefined)
+  await waitFor(() =>
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
+  )
+  fireEvent.input(screen.getByLabelText('Name'), {
+    target: { value: 'New paid code' },
+  })
+  fireEvent.input(screen.getByLabelText('Actual payment (CNY)'), {
+    target: { value: '100' },
+  })
+  fireEvent.input(screen.getByLabelText('Credited paid amount (CNY)'), {
+    target: { value: '100' },
+  })
+  fireEvent.input(screen.getByLabelText('Sales channel'), {
+    target: { value: 'Shop' },
+  })
+  fireEvent.input(screen.getByLabelText('Sales batch'), {
+    target: { value: 'Batch' },
+  })
+  await act(async () => {
+    queryClient.setQueryData(['marketing-admin-metadata'], {
+      currency: 'CNY',
+      money_revision: 'rate-new',
+    })
+  })
+  await rerenderDrawer(undefined)
+  submitForm()
+  await waitFor(() => expect(writes).toHaveLength(1))
+  expect(writes[0]).toMatchObject({
+    credit_amount: '100',
+    money_revision: 'rate-old',
+  })
+})
+
+test('a paid-code detail refresh cannot overwrite edited values or change their money revision', async () => {
+  const original = redemption(1)
+  apiClient.get = async () => ({ data: { success: true, data: original } })
+  const writes: unknown[] = []
+  apiClient.put = async (_url, data) => {
+    writes.push(data)
+    return { data: { success: true, data: original } }
+  }
+  await renderDrawer(original)
+  await waitForLoadedForm()
+  changeInput(getControlByLabel('Name'), 'Unsaved local name')
+  changeInput(getControlByLabel('Credited paid amount (USD)'), '12')
+  await act(async () => {
+    queryClient.setQueryData(['redemption-detail', 1], {
+      ...original,
+      name: 'Background changed name',
+      credit_amount: '24',
+      money_revision: 'rate-new',
+    })
+  })
+  await rerenderDrawer(original)
+  expect(getControlByLabel('Name')).toHaveValue('Unsaved local name')
+  expect(getControlByLabel('Credited paid amount (USD)')).toHaveValue('12')
+  submitForm()
+  await waitFor(() => expect(writes).toHaveLength(1))
+  expect(writes[0]).toMatchObject({
+    name: 'Unsaved local name',
+    credit_amount: '12',
+    money_revision: 'display-v1',
+  })
+})
+
+test('explicit Refresh reloads the paid-code form after a stale money revision is rejected', async () => {
+  const original = redemption(1)
+  let latest = original
+  const writes: unknown[] = []
+  apiClient.get = async () => ({ data: { success: true, data: latest } })
+  apiClient.put = async (_url, data) => {
+    writes.push(data)
+    return {
+      data:
+        writes.length === 1
+          ? { success: false, message: 'Money display settings changed' }
+          : { success: true, data: latest },
+    }
+  }
+  await renderDrawer(original)
+  await waitForLoadedForm()
+  changeInput(getControlByLabel('Name'), 'Unsaved name')
+  submitForm()
+  await screen.findByRole('alert')
+  latest = {
+    ...original,
+    credit_amount: '2.000004',
+    money_revision: 'rate-new',
+  }
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
+  await waitFor(() =>
+    expect(getControlByLabel('Credited paid amount (USD)')).toHaveValue(
+      '2.000004'
+    )
+  )
+  expect(getControlByLabel('Name')).toHaveValue(original.name)
+  submitForm()
+  await waitFor(() => expect(writes).toHaveLength(2))
+  expect(writes[1]).toMatchObject({
+    credit_amount: '2.000004',
+    money_revision: 'rate-new',
   })
 })

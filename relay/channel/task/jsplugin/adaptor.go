@@ -640,7 +640,7 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 			// the vendor's work.
 			logger.LogWarn(c, common.LogText("task plugin %s could not read the result of a relayed submit stream; settling at the reserved quota: %s", a.plugin.Meta.Key, taskErr.Message))
 			a.keepReservation = true
-			submitted = &channel.TaskSubmitResponse{UpstreamTaskID: info.PublicTaskID, Immediate: &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, Progress: taskcommon.ProgressComplete}}
+			submitted = &channel.TaskSubmitResponse{UpstreamTaskID: info.PublicTaskID, Immediate: &relaycommon.TaskInfo{Status: model.TaskStatusSuccess, Progress: taskcommon.ProgressComplete, BillingUnknown: true}}
 			taskErr = nil
 		case acceptedStream:
 			taskErr.NoRetry = true
@@ -751,6 +751,7 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 		Reason: parsed.Immediate.Reason, Url: parsed.Immediate.URL, RemoteUrl: parsed.Immediate.RemoteURL,
 		CompletionTokens: positiveInt(parsed.Immediate.CompletionTokens), TotalTokens: positiveInt(parsed.Immediate.TotalTokens),
 	}
+	immediate.BillingUnknown = a.keepReservation
 	response.Immediate = immediate
 	if immediate.Status != model.TaskStatusSuccess || !a.hasHook(c.Request.Context(), "extractUsageOnComplete") {
 		return response, nil
@@ -767,15 +768,18 @@ func (a *TaskAdaptor) ParseResponse(c *gin.Context, resp *http.Response, info *r
 	task.PrivateData.PluginState = pluginState
 	ctx, err := a.queryContext(task, info.ApiKey, info.ChannelBaseUrl, info.ChannelSetting.Proxy)
 	if err != nil {
+		immediate.BillingUnknown = true
 		logger.LogWarn(c, common.LogText("task plugin %s completion context failed; retaining reserved quota: %v", a.plugin.Meta.Key, err))
 		return response, nil
 	}
 	facts, err := a.plugin.Engine.Call(c.Request.Context(), "extractUsageOnComplete", ctx, jsonValue(immediate), parsed.TaskData)
 	if err != nil {
+		immediate.BillingUnknown = true
 		logger.LogWarn(c, common.LogText("task plugin %s completion usage failed; retaining reserved quota: %v", a.plugin.Meta.Key, err))
 		return response, nil
 	}
 	if err := a.applyCompletionUsageFacts(immediate, facts, info.UpstreamModelName, info.OriginModelName); err != nil {
+		immediate.BillingUnknown = true
 		logger.LogWarn(c, common.LogText("task plugin %s completion usage rejected; retaining reserved quota: %v", a.plugin.Meta.Key, err))
 	}
 	return response, nil
@@ -1061,10 +1065,11 @@ func (a *TaskAdaptor) ParseBatchResult(tasks []*model.Task, resp *http.Response,
 				}
 			}
 			facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", itemCtx, jsonValue(&info), usageBody)
+			info.BillingUnknown = hookErr != nil
 			if hookErr == nil {
 				upstreamModel, _ := itemCtx["upstreamModel"].(string)
 				originModel, _ := itemCtx["model"].(string)
-				a.applyCompletionUsageFacts(&info, facts, upstreamModel, originModel)
+				info.BillingUnknown = a.applyCompletionUsageFacts(&info, facts, upstreamModel, originModel) != nil
 			}
 		}
 		results[item.TaskID] = &service.BatchTaskResult{TaskInfo: info, Action: item.Action, SubmitTime: item.SubmitTime, StartTime: item.StartTime, FinishTime: item.FinishTime, Data: item.Data}
@@ -1128,10 +1133,11 @@ func (a *TaskAdaptor) ParseTaskResult(task *model.Task, resp *http.Response, bod
 	// units here so the host settlement path can consume them from TaskInfo.
 	if a.hasHook(context.Background(), "extractUsageOnComplete") {
 		facts, hookErr := a.plugin.Engine.Call(context.Background(), "extractUsageOnComplete", ctx, jsonValue(result), input)
+		result.BillingUnknown = hookErr != nil
 		if hookErr == nil {
 			upstreamModel, _ := ctx["upstreamModel"].(string)
 			originModel, _ := ctx["model"].(string)
-			a.applyCompletionUsageFacts(result, facts, upstreamModel, originModel)
+			result.BillingUnknown = a.applyCompletionUsageFacts(result, facts, upstreamModel, originModel) != nil
 		}
 	}
 	taskStatus := model.TaskStatus(result.Status)

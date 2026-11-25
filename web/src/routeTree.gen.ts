@@ -34,12 +34,20 @@ import { Route as PricingIndexRouteImport } from './routes/pricing/index'
 import { Route as RankingsIndexRouteImport } from './routes/rankings/index'
 import { Route as SetupIndexRouteImport } from './routes/setup/index'
 import { Route as authUserResetRouteImport } from './routes/(auth)/user/reset'
+import { Route as AuthenticatedActivitiesCenterRouteImport } from './routes/_authenticated/activities/center'
+import { Route as AuthenticatedActivitiesCheckinRouteImport } from './routes/_authenticated/activities/checkin'
+import { Route as AuthenticatedActivitiesInvitationRouteImport } from './routes/_authenticated/activities/invitation'
+import { Route as AuthenticatedActivitiesLotteryRouteImport } from './routes/_authenticated/activities/lottery'
+import { Route as AuthenticatedActivitiesRewardsRouteImport } from './routes/_authenticated/activities/rewards'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
 import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_authenticated/dashboard/$section'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
+import { Route as AuthenticatedMarketingAdminActivitiesRouteImport } from './routes/_authenticated/marketing-admin/activities'
+import { Route as AuthenticatedMarketingAdminPoolsRouteImport } from './routes/_authenticated/marketing-admin/pools'
+import { Route as AuthenticatedMarketingAdminRewardsRouteImport } from './routes/_authenticated/marketing-admin/rewards'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
 import { Route as AuthenticatedModelsSectionRouteImport } from './routes/_authenticated/models/$section'
 import { Route as AuthenticatedPlaygroundIndexRouteImport } from './routes/_authenticated/playground/index'
@@ -197,6 +205,36 @@ const authUserResetRoute = authUserResetRouteImport.update({
   path: '/user/reset',
   getParentRoute: () => authRouteRoute,
 } as any)
+const AuthenticatedActivitiesCenterRoute =
+  AuthenticatedActivitiesCenterRouteImport.update({
+    id: '/activities/center',
+    path: '/activities/center',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesCheckinRoute =
+  AuthenticatedActivitiesCheckinRouteImport.update({
+    id: '/activities/checkin',
+    path: '/activities/checkin',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesInvitationRoute =
+  AuthenticatedActivitiesInvitationRouteImport.update({
+    id: '/activities/invitation',
+    path: '/activities/invitation',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesLotteryRoute =
+  AuthenticatedActivitiesLotteryRouteImport.update({
+    id: '/activities/lottery',
+    path: '/activities/lottery',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedActivitiesRewardsRoute =
+  AuthenticatedActivitiesRewardsRouteImport.update({
+    id: '/activities/rewards',
+    path: '/activities/rewards',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
@@ -231,6 +269,24 @@ const AuthenticatedKeysIndexRoute = AuthenticatedKeysIndexRouteImport.update({
   path: '/keys/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedMarketingAdminActivitiesRoute =
+  AuthenticatedMarketingAdminActivitiesRouteImport.update({
+    id: '/marketing-admin/activities',
+    path: '/marketing-admin/activities',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMarketingAdminPoolsRoute =
+  AuthenticatedMarketingAdminPoolsRouteImport.update({
+    id: '/marketing-admin/pools',
+    path: '/marketing-admin/pools',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMarketingAdminRewardsRoute =
+  AuthenticatedMarketingAdminRewardsRouteImport.update({
+    id: '/marketing-admin/rewards',
+    path: '/marketing-admin/rewards',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedModelsIndexRoute =
   AuthenticatedModelsIndexRouteImport.update({
     id: '/models/',
@@ -446,9 +502,17 @@ export interface FileRoutesByFullPath {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -508,9 +572,17 @@ export interface FileRoutesByTo {
   '/rankings': typeof RankingsIndexRoute
   '/setup': typeof SetupIndexRoute
   '/user/reset': typeof authUserResetRoute
+  '/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -574,9 +646,17 @@ export interface FileRoutesById {
   '/rankings/': typeof RankingsIndexRoute
   '/setup/': typeof SetupIndexRoute
   '/(auth)/user/reset': typeof authUserResetRoute
+  '/_authenticated/activities/center': typeof AuthenticatedActivitiesCenterRoute
+  '/_authenticated/activities/checkin': typeof AuthenticatedActivitiesCheckinRoute
+  '/_authenticated/activities/invitation': typeof AuthenticatedActivitiesInvitationRoute
+  '/_authenticated/activities/lottery': typeof AuthenticatedActivitiesLotteryRoute
+  '/_authenticated/activities/rewards': typeof AuthenticatedActivitiesRewardsRoute
   '/_authenticated/chat/$chatId': typeof AuthenticatedChatChatIdRoute
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
+  '/_authenticated/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/_authenticated/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
+  '/_authenticated/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
@@ -639,9 +719,17 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/user/reset'
+    | '/activities/center'
+    | '/activities/checkin'
+    | '/activities/invitation'
+    | '/activities/lottery'
+    | '/activities/rewards'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
+    | '/marketing-admin/activities'
+    | '/marketing-admin/pools'
+    | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -701,9 +789,17 @@ export interface FileRouteTypes {
     | '/rankings'
     | '/setup'
     | '/user/reset'
+    | '/activities/center'
+    | '/activities/checkin'
+    | '/activities/invitation'
+    | '/activities/lottery'
+    | '/activities/rewards'
     | '/chat/$chatId'
     | '/dashboard/$section'
     | '/errors/$error'
+    | '/marketing-admin/activities'
+    | '/marketing-admin/pools'
+    | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
@@ -766,9 +862,17 @@ export interface FileRouteTypes {
     | '/rankings/'
     | '/setup/'
     | '/(auth)/user/reset'
+    | '/_authenticated/activities/center'
+    | '/_authenticated/activities/checkin'
+    | '/_authenticated/activities/invitation'
+    | '/_authenticated/activities/lottery'
+    | '/_authenticated/activities/rewards'
     | '/_authenticated/chat/$chatId'
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
+    | '/_authenticated/marketing-admin/activities'
+    | '/_authenticated/marketing-admin/pools'
+    | '/_authenticated/marketing-admin/rewards'
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
@@ -1002,6 +1106,41 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof authUserResetRouteImport
       parentRoute: typeof authRouteRoute
     }
+    '/_authenticated/activities/center': {
+      id: '/_authenticated/activities/center'
+      path: '/activities/center'
+      fullPath: '/activities/center'
+      preLoaderRoute: typeof AuthenticatedActivitiesCenterRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/checkin': {
+      id: '/_authenticated/activities/checkin'
+      path: '/activities/checkin'
+      fullPath: '/activities/checkin'
+      preLoaderRoute: typeof AuthenticatedActivitiesCheckinRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/invitation': {
+      id: '/_authenticated/activities/invitation'
+      path: '/activities/invitation'
+      fullPath: '/activities/invitation'
+      preLoaderRoute: typeof AuthenticatedActivitiesInvitationRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/lottery': {
+      id: '/_authenticated/activities/lottery'
+      path: '/activities/lottery'
+      fullPath: '/activities/lottery'
+      preLoaderRoute: typeof AuthenticatedActivitiesLotteryRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/activities/rewards': {
+      id: '/_authenticated/activities/rewards'
+      path: '/activities/rewards'
+      fullPath: '/activities/rewards'
+      preLoaderRoute: typeof AuthenticatedActivitiesRewardsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/channels/': {
       id: '/_authenticated/channels/'
       path: '/channels'
@@ -1042,6 +1181,27 @@ declare module '@tanstack/react-router' {
       path: '/keys'
       fullPath: '/keys/'
       preLoaderRoute: typeof AuthenticatedKeysIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/activities': {
+      id: '/_authenticated/marketing-admin/activities'
+      path: '/marketing-admin/activities'
+      fullPath: '/marketing-admin/activities'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminActivitiesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/pools': {
+      id: '/_authenticated/marketing-admin/pools'
+      path: '/marketing-admin/pools'
+      fullPath: '/marketing-admin/pools'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminPoolsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/rewards': {
+      id: '/_authenticated/marketing-admin/rewards'
+      path: '/marketing-admin/rewards'
+      fullPath: '/marketing-admin/rewards'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminRewardsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/models/': {
@@ -1363,9 +1523,17 @@ const AuthenticatedSystemSettingsRouteRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSystemSettingsRouteRoute: typeof AuthenticatedSystemSettingsRouteRouteWithChildren
   AuthenticatedChat2linkRoute: typeof AuthenticatedChat2linkRoute
+  AuthenticatedActivitiesCenterRoute: typeof AuthenticatedActivitiesCenterRoute
+  AuthenticatedActivitiesCheckinRoute: typeof AuthenticatedActivitiesCheckinRoute
+  AuthenticatedActivitiesInvitationRoute: typeof AuthenticatedActivitiesInvitationRoute
+  AuthenticatedActivitiesLotteryRoute: typeof AuthenticatedActivitiesLotteryRoute
+  AuthenticatedActivitiesRewardsRoute: typeof AuthenticatedActivitiesRewardsRoute
   AuthenticatedChatChatIdRoute: typeof AuthenticatedChatChatIdRoute
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
+  AuthenticatedMarketingAdminActivitiesRoute: typeof AuthenticatedMarketingAdminActivitiesRoute
+  AuthenticatedMarketingAdminPoolsRoute: typeof AuthenticatedMarketingAdminPoolsRoute
+  AuthenticatedMarketingAdminRewardsRoute: typeof AuthenticatedMarketingAdminRewardsRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
@@ -1389,9 +1557,20 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSystemSettingsRouteRoute:
     AuthenticatedSystemSettingsRouteRouteWithChildren,
   AuthenticatedChat2linkRoute: AuthenticatedChat2linkRoute,
+  AuthenticatedActivitiesCenterRoute: AuthenticatedActivitiesCenterRoute,
+  AuthenticatedActivitiesCheckinRoute: AuthenticatedActivitiesCheckinRoute,
+  AuthenticatedActivitiesInvitationRoute:
+    AuthenticatedActivitiesInvitationRoute,
+  AuthenticatedActivitiesLotteryRoute: AuthenticatedActivitiesLotteryRoute,
+  AuthenticatedActivitiesRewardsRoute: AuthenticatedActivitiesRewardsRoute,
   AuthenticatedChatChatIdRoute: AuthenticatedChatChatIdRoute,
   AuthenticatedDashboardSectionRoute: AuthenticatedDashboardSectionRoute,
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
+  AuthenticatedMarketingAdminActivitiesRoute:
+    AuthenticatedMarketingAdminActivitiesRoute,
+  AuthenticatedMarketingAdminPoolsRoute: AuthenticatedMarketingAdminPoolsRoute,
+  AuthenticatedMarketingAdminRewardsRoute:
+    AuthenticatedMarketingAdminRewardsRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,

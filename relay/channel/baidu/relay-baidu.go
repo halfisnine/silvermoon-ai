@@ -1,7 +1,6 @@
 package baidu
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -116,6 +116,8 @@ func embeddingResponseBaidu2OpenAI(response *BaiduEmbeddingResponse) *dto.OpenAI
 
 func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*types.NewAPIError, *dto.Usage) {
 	usage := &dto.Usage{}
+	hasOutput := false
+	completeUsage := false
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var baiduResponse BaiduChatStreamResponse
 		if err := common.Unmarshal([]byte(data), &baiduResponse); err != nil {
@@ -123,7 +125,17 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			sr.Error(err)
 			return
 		}
+		if baiduResponse.ErrorCode != 0 || baiduResponse.ErrorMsg != "" {
+			info.StreamStatus.MarkFailed("provider_error", "", http.StatusBadGateway)
+			sr.Stop(fmt.Errorf("upstream reported a generation failure"))
+			return
+		}
+		hasOutput = hasOutput || baiduResponse.Result != ""
+		if baiduResponse.IsEnd {
+			info.StreamStatus.MarkCompleted()
+		}
 		if baiduResponse.Usage.TotalTokens != 0 {
+			_, completeUsage = ojson.Get(data, "usage.prompt_tokens").Value().(float64)
 			usage.TotalTokens = baiduResponse.Usage.TotalTokens
 			usage.PromptTokens = baiduResponse.Usage.PromptTokens
 			usage.CompletionTokens = baiduResponse.Usage.TotalTokens - baiduResponse.Usage.PromptTokens
@@ -134,6 +146,10 @@ func baiduStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 			sr.Error(err)
 		}
 	})
+	info.StreamStatus.RequireTerminal()
+	if !completeUsage || (hasOutput && usage.CompletionTokens <= 0) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	service.CloseResponseBodyGracefully(resp)
 	return nil, usage
 }
@@ -145,15 +161,23 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &baiduResponse)
+	err = common.Unmarshal(responseBody, &baiduResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	if baiduResponse.ErrorMsg != "" {
 		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
 	}
+	for _, field := range []string{"prompt_tokens", "completion_tokens"} {
+		if _, present := ojson.GetBytes(responseBody, "usage."+field).Value().(float64); !present {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}
+	if baiduResponse.Result != "" && baiduResponse.Usage.CompletionTokens <= 0 {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	fullTextResponse := responseBaidu2OpenAI(&baiduResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -170,7 +194,7 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &baiduResponse)
+	err = common.Unmarshal(responseBody, &baiduResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -178,7 +202,7 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
 	}
 	fullTextResponse := embeddingResponseBaidu2OpenAI(&baiduResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
@@ -230,7 +254,7 @@ func getBaiduAccessTokenHelper(apiKey string) (*BaiduAccessToken, error) {
 	defer res.Body.Close()
 
 	var accessToken BaiduAccessToken
-	err = json.NewDecoder(res.Body).Decode(&accessToken)
+	err = common.DecodeJson(res.Body, &accessToken)
 	if err != nil {
 		return nil, err
 	}

@@ -62,7 +62,6 @@ func PrepareRequestBilling(c *gin.Context, info *relaycommon.RelayInfo) *types.N
 	}
 	if priceData.FreeModel {
 		logger.LogInfo(c, common.LogText("model %s is free, skipping pre-consume", info.OriginModelName))
-		return nil
 	}
 	return service.PreConsumeBilling(c, priceData.QuotaToPreConsume, info)
 }
@@ -74,6 +73,14 @@ func RefundFailedRequestBilling(c *gin.Context, info *relaycommon.RelayInfo, api
 		return nil
 	}
 	apiErr = service.NormalizeViolationFeeError(apiErr)
+	if _, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		// The provider's explicit fee is the terminal cost of this request.
+		// Resolve it before cancellation can finalize a zero-cost rejection.
+		if !service.ChargeViolationFeeIfNeeded(c, info, apiErr) {
+			info.Billing.Refund(c)
+		}
+		return apiErr
+	}
 	if info.Billing != nil {
 		info.Billing.Refund(c)
 	}

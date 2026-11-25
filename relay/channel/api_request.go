@@ -486,6 +486,11 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 
 	common2.SetContextKey(c, appconstant.ContextKeyUpstreamRequestOrigin, req.URL.Scheme+"://"+req.URL.Host)
+	if funding, ok := info.Billing.(*service.MarketingBillingSession); ok {
+		if err := funding.BeginDispatch(); err != nil {
+			return nil, types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+		}
+	}
 	resp, err := relayClient.Do(req)
 	if err != nil {
 		logger.LogError(c, common2.LogText("do request failed: %s", err.Error()))
@@ -493,6 +498,17 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+	if funding, ok := info.Billing.(*service.MarketingBillingSession); ok {
+		// Authentication rejection and rate limiting are explicit refusals to
+		// execute. Transport failures, 5xx and read failures remain ambiguous.
+		switch resp.StatusCode {
+		case http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests:
+			if err := funding.RejectDispatch(fmt.Sprintf("upstream_http_rejection:%d", resp.StatusCode)); err != nil {
+				_ = resp.Body.Close()
+				return nil, types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 	}
 	if common2.DebugEnabled {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)

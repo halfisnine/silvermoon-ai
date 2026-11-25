@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -140,7 +141,7 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &tencentSb)
+	err = common.Unmarshal(responseBody, &tencentSb)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -149,6 +150,19 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 			Message: tencentSb.Response.Error.Message,
 			Code:    tencentSb.Response.Error.Code,
 		}, resp.StatusCode)
+	}
+	// Presence is checked on the original provider body: absent counters must
+	// not become confirmed zero usage when the typed response is converted.
+	for _, field := range []string{"PromptTokens", "CompletionTokens"} {
+		value, present := ojson.GetBytes(responseBody, "Response.Usage."+field).Value().(float64)
+		if !present || value < 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}
+	for _, choice := range tencentSb.Response.Choices {
+		if choice.Messages.Content != "" && tencentSb.Response.Usage.CompletionTokens <= 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
 	}
 	fullTextResponse := responseTencent2OpenAI(&tencentSb.Response)
 	jsonResponse, err := common.Marshal(fullTextResponse)

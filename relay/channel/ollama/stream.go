@@ -1,6 +1,7 @@
 package ollama
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,8 +37,8 @@ type ollamaChatStreamChunk struct {
 	DoneReason         string `json:"done_reason"`
 	TotalDuration      int64  `json:"total_duration"`
 	LoadDuration       int64  `json:"load_duration"`
-	PromptEvalCount    int    `json:"prompt_eval_count"`
-	EvalCount          int    `json:"eval_count"`
+	PromptEvalCount    *int   `json:"prompt_eval_count"`
+	EvalCount          *int   `json:"eval_count"`
 	PromptEvalDuration int64  `json:"prompt_eval_duration"`
 	EvalDuration       int64  `json:"eval_duration"`
 }
@@ -109,11 +110,12 @@ func buildOllamaStreamDelta(chunk *ollamaChatStreamChunk, responseID string, cre
 			var thinkingContent string
 			if err := common.Unmarshal(chunk.Message.Thinking, &thinkingContent); err == nil {
 				delta.Choices[0].Delta.SetReasoningContent(thinkingContent)
+				hasPayload = hasPayload || thinkingContent != ""
 			} else {
 				// Fallback to raw string if it's not a JSON string
 				delta.Choices[0].Delta.SetReasoningContent(raw)
+				hasPayload = true
 			}
-			hasPayload = true
 		}
 	}
 	if chunk.Message != nil && len(chunk.Message.ToolCalls) > 0 {
@@ -141,56 +143,77 @@ func toUnix(ts string) int64 {
 }
 
 func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	info.StreamStatus = relaycommon.NewStreamStatus()
+	info.StreamStatus.RequireTerminal()
 	if resp == nil || resp.Body == nil {
 		return nil, types.NewOpenAIError(fmt.Errorf("empty response"), types.ErrorCodeBadResponse, http.StatusBadRequest)
 	}
 	defer service.CloseResponseBodyGracefully(resp)
+	// Closing the upstream body unblocks a pending read on client cancellation.
+	if c.Request != nil {
+		stop := context.AfterFunc(c.Request.Context(), func() { _ = resp.Body.Close() })
+		defer stop()
+	}
 
 	helper.SetEventStreamHeaders(c)
 	scanner := helper.NewStreamScanner(resp.Body)
 	usage := &dto.Usage{}
-	var model = info.UpstreamModelName
-	var responseId = common.GetUUID()
-	var created = time.Now().Unix()
+	model := info.UpstreamModelName
+	responseId := common.GetUUID()
+	created := time.Now().Unix()
 	var toolCallIndex int
+	var hasOutput bool
+	defer func() {
+		if hasOutput && usage.CompletionTokens == 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}()
 	start := helper.GenerateStartEmptyResponse(responseId, created, model, nil)
-	if data, err := common.Marshal(start); err == nil {
-		_ = helper.StringData(c, string(data))
+	if err := helper.ObjectData(c, start); err != nil {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
+		return usage, nil
 	}
 
 	for scanner.Scan() {
-		line := scanner.Text()
-		line = strings.TrimSpace(line)
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
 			continue
 		}
 		var chunk ollamaChatStreamChunk
 		if err := common.Unmarshal([]byte(line), &chunk); err != nil {
-			logger.LogError(c, common.LogText("ollama stream json decode error: %s line=%s", err.Error(), line))
+			info.StreamStatus.MarkIncomplete("invalid_provider_chunk")
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 			return usage, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 		if chunk.Model != "" {
 			model = chunk.Model
 		}
 		created = toUnix(chunk.CreatedAt)
-
-		if !chunk.Done {
-			delta, _ := buildOllamaStreamDelta(&chunk, responseId, created, model, &toolCallIndex)
-			if data, err := common.Marshal(delta); err == nil {
-				_ = helper.StringData(c, string(data))
+		delta, hasPayload := buildOllamaStreamDelta(&chunk, responseId, created, model, &toolCallIndex)
+		hasOutput = hasOutput || hasPayload
+		if chunk.Done {
+			if chunk.PromptEvalCount != nil {
+				usage.PromptTokens = *chunk.PromptEvalCount
 			}
+			if chunk.EvalCount != nil {
+				usage.CompletionTokens = *chunk.EvalCount
+			}
+			if chunk.PromptEvalCount == nil || chunk.EvalCount == nil {
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+			}
+			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+			info.StreamStatus.MarkCompleted()
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+		}
+		if !chunk.Done || hasPayload {
+			if err := helper.ObjectData(c, delta); err != nil {
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
+				return usage, nil
+			}
+		}
+		if !chunk.Done {
 			continue
 		}
-		// done frame
-		if delta, hasPayload := buildOllamaStreamDelta(&chunk, responseId, created, model, &toolCallIndex); hasPayload {
-			if data, err := common.Marshal(delta); err == nil {
-				_ = helper.StringData(c, string(data))
-			}
-		}
-		// finalize once and break loop
-		usage.PromptTokens = chunk.PromptEvalCount
-		usage.CompletionTokens = chunk.EvalCount
-		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 		finishReason := chunk.DoneReason
 		if finishReason == "" {
 			finishReason = "stop"
@@ -198,35 +221,39 @@ func ollamaStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		if toolCallIndex > 0 {
 			finishReason = constant.FinishReasonToolCalls
 		}
-		// emit stop delta
 		if stop := helper.GenerateStopResponse(responseId, created, model, finishReason); stop != nil {
-			if data, err := common.Marshal(stop); err == nil {
-				_ = helper.StringData(c, string(data))
+			if err := helper.ObjectData(c, stop); err != nil {
+				return usage, nil
 			}
 		}
-		// emit usage frame
 		if final := helper.GenerateFinalUsageResponse(responseId, created, model, *usage); final != nil {
-			if data, err := common.Marshal(final); err == nil {
-				_ = helper.StringData(c, string(data))
+			if err := helper.ObjectData(c, final); err != nil {
+				return usage, nil
 			}
 		}
-		// send [DONE]
 		helper.Done(c)
-		break
+		return usage, nil
 	}
-	if err := scanner.Err(); err != nil && err != io.EOF {
+	if c.Request != nil && c.Request.Context().Err() != nil {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, c.Request.Context().Err())
+	} else if err := scanner.Err(); err != nil {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
 		logger.LogError(c, common.LogText("ollama stream scan error: %s", err.Error()))
+	} else {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
 	}
 	return usage, nil
 }
 
 // non-stream handler for chat/generate
 func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	info.StreamStatus = relaycommon.NewStreamStatus()
+	info.StreamStatus.RequireTerminal()
+	defer service.CloseResponseBodyGracefully(resp)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
-	service.CloseResponseBodyGracefully(resp)
 	raw := string(body)
 	if common.DebugEnabled {
 		println("ollama non-stream raw resp:", raw)
@@ -238,6 +265,7 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		reasoningBuilder strings.Builder
 		lastChunk        ollamaChatStreamChunk
 		parsedAny        bool
+		invalidLine      bool
 		toolCallIndex    int
 		toolCalls        []dto.ToolCallResponse
 	)
@@ -251,6 +279,7 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 			if len(lines) == 1 {
 				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			}
+			invalidLine = true
 			continue
 		}
 		parsedAny = true
@@ -311,12 +340,32 @@ func ollamaChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 		}
 	}
 
+	if parsedAny && invalidLine {
+		info.StreamStatus.MarkIncomplete("invalid_provider_chunk")
+	}
+	if lastChunk.Done {
+		info.StreamStatus.MarkCompleted()
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+	} else {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+	}
+	if lastChunk.PromptEvalCount == nil || lastChunk.EvalCount == nil || (*lastChunk.EvalCount == 0 && (aggContent.Len() > 0 || reasoningBuilder.Len() > 0 || len(toolCalls) > 0)) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
+
 	model := lastChunk.Model
 	if model == "" {
 		model = info.UpstreamModelName
 	}
 	created := toUnix(lastChunk.CreatedAt)
-	usage := &dto.Usage{PromptTokens: lastChunk.PromptEvalCount, CompletionTokens: lastChunk.EvalCount, TotalTokens: lastChunk.PromptEvalCount + lastChunk.EvalCount}
+	usage := &dto.Usage{}
+	if lastChunk.PromptEvalCount != nil {
+		usage.PromptTokens = *lastChunk.PromptEvalCount
+	}
+	if lastChunk.EvalCount != nil {
+		usage.CompletionTokens = *lastChunk.EvalCount
+	}
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	content := aggContent.String()
 	finishReason := lastChunk.DoneReason
 	if finishReason == "" {

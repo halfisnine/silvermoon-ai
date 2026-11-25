@@ -31,11 +31,11 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { REDEMPTION_STATUS, REDEMPTION_STATUSES } from '../constants'
 import { isRedemptionExpired } from '../lib'
+import { formatRedemptionMoney, formatRedemptionDate } from '../lib/display'
 import type { Redemption } from '../types'
 import { DataTableRowActions } from './data-table-row-actions'
 
@@ -76,7 +76,7 @@ interface RedemptionsMobileListProps {
 }
 
 export function RedemptionsMobileList(props: RedemptionsMobileListProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const rows = props.table.getRowModel().rows
 
   if (props.isLoading) return <RedemptionsMobileSkeleton />
@@ -116,7 +116,7 @@ export function RedemptionsMobileList(props: RedemptionsMobileListProps) {
           <div
             key={row.id}
             className={cn(
-              'bg-card space-y-2.5 border-b px-3 py-2.5 last:border-b-0',
+              'space-y-2.5 border-b px-3 py-2.5 last:border-b-0',
               expired || redemption.status !== REDEMPTION_STATUS.ENABLED
                 ? DISABLED_ROW_MOBILE
                 : undefined
@@ -161,12 +161,40 @@ export function RedemptionsMobileList(props: RedemptionsMobileListProps) {
               <DataTableRowActions row={row} />
             </div>
 
-            <div className='flex items-center justify-between gap-2 text-xs'>
-              <span className='text-muted-foreground'>{t('Quota')}</span>
-              <span className='font-medium tabular-nums'>
-                {formatQuota(redemption.quota)}
+            <div className='flex flex-wrap items-center justify-between gap-2 text-xs'>
+              <span className='text-muted-foreground'>
+                {t('Actual payment (CNY)')}
+              </span>
+              <span className='tabular-nums'>
+                {formatRedemptionMoney(
+                  redemption.paid_amount_cny,
+                  'CNY',
+                  i18n.language
+                )}
               </span>
             </div>
+            <div className='flex items-center justify-between gap-2 text-xs'>
+              <span className='text-muted-foreground'>
+                {t('Credited paid amount')}
+              </span>
+              <span className='font-medium tabular-nums'>
+                {formatRedemptionMoney(
+                  redemption.credit_amount,
+                  redemption.credit_currency,
+                  i18n.language
+                )}
+              </span>
+            </div>
+            <p className='text-muted-foreground text-xs break-words'>
+              {t('Sales channel')}: {redemption.sales_channel} ·{' '}
+              {t('Sales batch')}: {redemption.sales_batch}
+            </p>
+            <p className='text-muted-foreground text-xs'>
+              {t('Code validity')}:{' '}
+              {redemption.expired_time
+                ? formatRedemptionDate(redemption.expired_time, i18n.language)
+                : t('Never expires')}
+            </p>
           </div>
         )
       })}

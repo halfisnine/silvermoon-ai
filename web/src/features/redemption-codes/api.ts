@@ -105,3 +105,10 @@ export async function batchDeleteRedemptions(
   const res = await api.post('/api/redemption/batch', { ids })
   return res.data
 }
+
+export async function getRedemptionMoneyContext(): Promise<
+  ApiResponse<{ currency: string; money_revision: string }>
+> {
+  const response = await api.get('/api/marketing/admin/metadata')
+  return response.data
+}

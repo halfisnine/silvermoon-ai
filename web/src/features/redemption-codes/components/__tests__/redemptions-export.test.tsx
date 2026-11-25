@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   fireEvent,
   render,
@@ -25,7 +26,7 @@ import {
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { afterEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 
 import { api } from '@/lib/api'
 import {
@@ -52,11 +53,11 @@ function captureDownloads() {
       revokeObjectURL: vi.fn(),
     })
   )
-  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(
-    function (this: HTMLAnchorElement) {
-      downloads.push({ filename: this.download, blob: currentBlob })
-    }
-  )
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+    this: HTMLAnchorElement
+  ) {
+    downloads.push({ filename: this.download, blob: currentBlob })
+  })
   return downloads
 }
 
@@ -72,13 +73,34 @@ function readDownload(download: Download): Promise<string> {
 }
 
 function CreateDrawer() {
+  const [queryClient] = useState(
+    () => new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  )
   const [open, setOpen] = useState(true)
   return (
-    <RedemptionsProvider>
-      <RedemptionsMutateDrawer open={open} onOpenChange={setOpen} />
-    </RedemptionsProvider>
+    <QueryClientProvider client={queryClient}>
+      <RedemptionsProvider>
+        <RedemptionsMutateDrawer open={open} onOpenChange={setOpen} />
+      </RedemptionsProvider>
+    </QueryClientProvider>
   )
 }
+
+beforeEach(() => {
+  vi.spyOn(api, 'get').mockImplementation(async () => ({
+    data: {
+      success: true,
+      data: {
+        currency:
+          useSystemConfigStore.getState().config.currency.quotaDisplayType ===
+          'CNY'
+            ? 'CNY'
+            : 'USD',
+        money_revision: 'display-v1',
+      },
+    },
+  }))
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -92,26 +114,26 @@ test.each([
   {
     name: true,
     quota: true,
-    txt: 'launch\tcodeA\t$10.00\nlaunch\tcodeB\t$10.00\n',
-    md: '| Name | Code | Quota |\n| --- | --- | --- |\n| launch | codeA | $10.00 |\n| launch | codeB | $10.00 |\n',
+    txt: 'launch\tcodeA\t¥8\t$10.00\tshop\tbatch\nlaunch\tcodeB\t¥8\t$10.00\tshop\tbatch\n',
+    md: '| Name | Code | Actual payment (CNY) | Credited paid amount | Sales channel | Sales batch |\n| --- | --- | --- | --- | --- | --- |\n| launch | codeA | ¥8 | $10.00 | shop | batch |\n| launch | codeB | ¥8 | $10.00 | shop | batch |\n',
   },
   {
     name: true,
     quota: false,
-    txt: 'launch\tcodeA\nlaunch\tcodeB\n',
-    md: '| Name | Code |\n| --- | --- |\n| launch | codeA |\n| launch | codeB |\n',
+    txt: 'launch\tcodeA\tshop\tbatch\nlaunch\tcodeB\tshop\tbatch\n',
+    md: '| Name | Code | Sales channel | Sales batch |\n| --- | --- | --- | --- |\n| launch | codeA | shop | batch |\n| launch | codeB | shop | batch |\n',
   },
   {
     name: false,
     quota: true,
-    txt: 'codeA\t$10.00\ncodeB\t$10.00\n',
-    md: '| Code | Quota |\n| --- | --- |\n| codeA | $10.00 |\n| codeB | $10.00 |\n',
+    txt: 'codeA\t¥8\t$10.00\tshop\tbatch\ncodeB\t¥8\t$10.00\tshop\tbatch\n',
+    md: '| Code | Actual payment (CNY) | Credited paid amount | Sales channel | Sales batch |\n| --- | --- | --- | --- | --- |\n| codeA | ¥8 | $10.00 | shop | batch |\n| codeB | ¥8 | $10.00 | shop | batch |\n',
   },
   {
     name: false,
     quota: false,
-    txt: 'codeA\ncodeB\n',
-    md: '| Code |\n| --- |\n| codeA |\n| codeB |\n',
+    txt: 'codeA\tshop\tbatch\ncodeB\tshop\tbatch\n',
+    md: '| Code | Sales channel | Sales batch |\n| --- | --- | --- |\n| codeA | shop | batch |\n| codeB | shop | batch |\n',
   },
 ])(
   'exports TXT and Markdown with name=$name and quota=$quota',
@@ -122,7 +144,14 @@ test.each([
       const onClose = vi.fn()
       const view = render(
         <RedemptionsExportDialog
-          data={{ keys: ['codeA', 'codeB'], name: 'launch', quota: '$10.00' }}
+          data={{
+            keys: ['codeA', 'codeB'],
+            name: 'launch',
+            credit: '$10.00',
+            paid: '¥8',
+            salesChannel: 'shop',
+            salesBatch: 'batch',
+          }}
           onClose={onClose}
         />
       )
@@ -133,7 +162,9 @@ test.each([
         })
       )
       const name = screen.getByRole('checkbox', { name: 'Include name' })
-      const quota = screen.getByRole('checkbox', { name: 'Include quota' })
+      const quota = screen.getByRole('checkbox', {
+        name: 'Include payment and credit amounts',
+      })
       expect(name).not.toHaveAttribute('aria-disabled', 'true')
       expect(quota).not.toHaveAttribute('aria-disabled', 'true')
       expect(name).toBeChecked()
@@ -166,7 +197,14 @@ test('keeps names containing table delimiters and markup inside one Markdown cel
   const user = userEvent.setup()
   render(
     <RedemptionsExportDialog
-      data={{ keys: ['codeA'], name: 'A | [B]\n<x>', quota: '$10' }}
+      data={{
+        keys: ['codeA'],
+        name: 'A | [B]\n<x>',
+        credit: '$10',
+        paid: '¥8',
+        salesChannel: 'shop',
+        salesBatch: 'batch',
+      }}
       onClose={() => undefined}
     />
   )
@@ -174,7 +212,7 @@ test('keeps names containing table delimiters and markup inside one Markdown cel
   await user.click(screen.getByRole('radio', { name: 'Save as Markdown' }))
   await user.click(screen.getByRole('button', { name: 'Done' }))
   expect(await readDownload(downloads[0])).toBe(
-    '| Name | Code | Quota |\n| --- | --- | --- |\n| A \\| \\[B\\] \\<x\\> | codeA | $10 |\n'
+    '| Name | Code | Actual payment (CNY) | Credited paid amount | Sales channel | Sales batch |\n| --- | --- | --- | --- | --- | --- |\n| A \\| \\[B\\] \\<x\\> | codeA | ¥8 | $10 | shop | batch |\n'
   )
 })
 
@@ -192,6 +230,7 @@ test('successful batch creation opens export with returned codes and the configu
     data: { success: true, data: ['createdA', 'createdB'] },
   })
   render(<CreateDrawer />)
+  await screen.findByLabelText('Credited paid amount (CNY)')
   const createDialog = screen.getByRole('dialog', {
     name: 'Create Redemption Code',
   })
@@ -201,8 +240,20 @@ test('successful batch creation opens export with returned codes and the configu
   fireEvent.change(within(createDialog).getByLabelText('Quantity'), {
     target: { value: '2' },
   })
-  fireEvent.change(within(createDialog).getByLabelText('Quota (CNY)'), {
-    target: { value: '2000' },
+  fireEvent.change(
+    within(createDialog).getByLabelText('Credited paid amount (CNY)'),
+    {
+      target: { value: '2000' },
+    }
+  )
+  fireEvent.change(screen.getByLabelText('Actual payment (CNY)'), {
+    target: { value: '1800' },
+  })
+  fireEvent.change(screen.getByLabelText('Sales channel'), {
+    target: { value: 'shop' },
+  })
+  fireEvent.change(screen.getByLabelText('Sales batch'), {
+    target: { value: 'batch' },
   })
   await user.click(
     within(createDialog).getByRole('button', { name: 'Save changes' })
@@ -232,7 +283,7 @@ test('successful batch creation opens export with returned codes and the configu
     ).not.toBeInTheDocument()
   )
   expect(await readDownload(downloads[0])).toBe(
-    'batch\tcreatedA\t¥2,000\nbatch\tcreatedB\t¥2,000\n'
+    'batch\tcreatedA\t¥1,800\t¥2,000\tshop\tbatch\nbatch\tcreatedB\t¥1,800\t¥2,000\tshop\tbatch\n'
   )
 })
 
@@ -242,7 +293,20 @@ test('failed creation does not open a success export dialog', async () => {
     data: { success: false, message: 'Creation failed' },
   })
   render(<CreateDrawer />)
+  await screen.findByLabelText('Credited paid amount (USD)')
   fireEvent.change(screen.getByLabelText('Name'), {
+    target: { value: 'batch' },
+  })
+  fireEvent.change(screen.getByLabelText('Actual payment (CNY)'), {
+    target: { value: '10' },
+  })
+  fireEvent.change(screen.getByLabelText('Credited paid amount (USD)'), {
+    target: { value: '10' },
+  })
+  fireEvent.change(screen.getByLabelText('Sales channel'), {
+    target: { value: 'shop' },
+  })
+  fireEvent.change(screen.getByLabelText('Sales batch'), {
     target: { value: 'batch' },
   })
   await user.click(screen.getByRole('button', { name: 'Save changes' }))
@@ -263,7 +327,14 @@ test('completion defaults to no file and closes without downloading', async () =
   const onClose = vi.fn()
   render(
     <RedemptionsExportDialog
-      data={{ keys: ['codeA'], name: 'launch', quota: '$10' }}
+      data={{
+        keys: ['codeA'],
+        name: 'launch',
+        credit: '$10',
+        paid: '¥8',
+        salesChannel: 'shop',
+        salesBatch: 'batch',
+      }}
       onClose={onClose}
     />
   )
@@ -275,7 +346,9 @@ test('completion defaults to no file and closes without downloading', async () =
     screen.queryByRole('checkbox', { name: 'Include name' })
   ).not.toBeInTheDocument()
   expect(
-    screen.queryByRole('checkbox', { name: 'Include quota' })
+    screen.queryByRole('checkbox', {
+      name: 'Include payment and credit amounts',
+    })
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Done' }))
   expect(downloads).toEqual([])
@@ -288,7 +361,14 @@ test('unchecking save as a file hides export settings and completes without down
   const onClose = vi.fn()
   render(
     <RedemptionsExportDialog
-      data={{ keys: ['codeA'], name: 'launch', quota: '$10' }}
+      data={{
+        keys: ['codeA'],
+        name: 'launch',
+        credit: '$10',
+        paid: '¥8',
+        salesChannel: 'shop',
+        salesBatch: 'batch',
+      }}
       onClose={onClose}
     />
   )
@@ -303,7 +383,9 @@ test('unchecking save as a file hides export settings and completes without down
     screen.queryByRole('checkbox', { name: 'Include name' })
   ).not.toBeInTheDocument()
   expect(
-    screen.queryByRole('checkbox', { name: 'Include quota' })
+    screen.queryByRole('checkbox', {
+      name: 'Include payment and credit amounts',
+    })
   ).not.toBeInTheDocument()
   await user.click(screen.getByRole('button', { name: 'Done' }))
   expect(downloads).toEqual([])

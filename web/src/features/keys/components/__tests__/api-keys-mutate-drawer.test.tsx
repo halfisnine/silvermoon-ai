@@ -370,8 +370,8 @@ describe('API key expiry across editing sessions', () => {
         expect(findButton('Save changes', true)).toBeEnabled()
       )
       expect(
-        screen.getByRole('button', { name: 'Never expires' })
-      ).toBeVisible()
+        screen.getByRole('button', { name: 'Expiration Time' })
+      ).toHaveTextContent('Never expires')
       expect(screen.getByLabelText('Time')).toBeDisabled()
       fireEvent.click(findButton('Save changes', true))
       await waitFor(() =>
@@ -394,8 +394,8 @@ describe('API key expiry across editing sessions', () => {
       expect(screen.getByLabelText('Time')).toBeEnabled()
       fireEvent.click(screen.getByRole('button', { name: action }))
       expect(
-        screen.getByRole('button', { name: 'Never expires' })
-      ).toBeVisible()
+        screen.getByRole('button', { name: 'Expiration Time' })
+      ).toHaveTextContent('Never expires')
       expect(screen.getByLabelText('Time')).toBeDisabled()
       fireEvent.click(findButton('Save changes', true))
       await waitFor(() => expect(payloads).toHaveLength(1))

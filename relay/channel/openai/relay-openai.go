@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel/openrouter"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -187,6 +188,12 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		usage.CompletionTokens += toolCount * 7
 	}
 
+	if !service.CompleteTokenUsageEvidence([]byte(ojson.Get(usageFrame, "usage").Raw)) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
+	if (responseTextBuilder.Len() > 0 || toolCount > 0) && !hasPositiveOutputUsage(usage) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	applyUsagePostProcessing(info, usage, common.StringToByteSlice(usageFrame))
 
 	for _, name := range streamFunctionCallNames {
@@ -305,8 +312,13 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		forceFormat = true
 	}
 
+	if info.RelayMode != relayconstant.RelayModeEmbeddings &&
+		!service.CompleteTokenUsageEvidence([]byte(ojson.GetBytes(responseBody, "usage").Raw)) {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+	}
 	usageModified := false
 	if simpleResponse.Usage.PromptTokens == 0 {
+		common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
 		completionTokens := simpleResponse.Usage.CompletionTokens
 		if completionTokens == 0 {
 			for _, choice := range simpleResponse.Choices {
@@ -323,6 +335,15 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 		usageModified = true
 	}
 
+	if !hasPositiveOutputUsage(&simpleResponse.Usage) {
+		for i, choice := range simpleResponse.Choices {
+			if choice.Message.StringContent() != "" || choice.Message.GetReasoningContent() != "" ||
+				len(choice.Message.ParseToolCalls()) > 0 || ojson.GetBytes(responseBody, fmt.Sprintf("choices.%d.text", i)).String() != "" {
+				common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+				break
+			}
+		}
+	}
 	applyUsagePostProcessing(info, &simpleResponse.Usage, responseBody)
 
 	switch info.RelayFormat {

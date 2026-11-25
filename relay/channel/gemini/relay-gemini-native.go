@@ -83,7 +83,7 @@ func NativeGeminiEmbeddingHandler(c *gin.Context, resp *http.Response, info *rel
 
 	var usage *dto.Usage
 	if upstream := metadata.GeminiUsageMetadata(); upstream != nil {
-		upstreamUsage := buildUsageFromGeminiMetadata(upstream, info.GetEstimatePromptTokens())
+		upstreamUsage := buildUsageFromGeminiMetadata(c, upstream, info.GetEstimatePromptTokens())
 		usage = &upstreamUsage
 	} else {
 		usage = service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())

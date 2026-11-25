@@ -3,6 +3,7 @@ package controller
 import (
 	"strings"
 
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
@@ -12,12 +13,9 @@ func isPaymentComplianceConfirmed() bool {
 }
 
 func isStripeTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	return strings.TrimSpace(setting.StripeApiSecret) != "" &&
-		strings.TrimSpace(setting.StripeWebhookSecret) != "" &&
-		strings.TrimSpace(setting.StripePriceId) != ""
+	// This site accepts CNY Epay and paid redemption codes only.
+	// Credentials alone must not enable a route outside its payment ledger.
+	return false
 }
 
 func isStripeWebhookConfigured() bool {
@@ -29,13 +27,9 @@ func isStripeWebhookEnabled() bool {
 }
 
 func isCreemTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	products := strings.TrimSpace(setting.CreemProducts)
-	return strings.TrimSpace(setting.CreemApiKey) != "" &&
-		products != "" &&
-		products != "[]"
+	// This site accepts CNY Epay and paid redemption codes only.
+	// Credentials alone must not enable a route outside its payment ledger.
+	return false
 }
 
 func isCreemWebhookConfigured() bool {
@@ -47,14 +41,9 @@ func isCreemWebhookEnabled() bool {
 }
 
 func isWaffoTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	if !setting.WaffoEnabled {
-		return false
-	}
-
-	return isWaffoWebhookConfigured()
+	// This site accepts CNY Epay and paid redemption codes only.
+	// Credentials alone must not enable a route outside its payment ledger.
+	return false
 }
 
 func isWaffoWebhookConfigured() bool {
@@ -74,14 +63,9 @@ func isWaffoWebhookEnabled() bool {
 }
 
 func isWaffoPancakeTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
-		return false
-	}
-	// Presence-of-credentials = enabled. Webhook public keys ship inside
-	// the SDK; mode (test/prod) is read from each event.
-	return strings.TrimSpace(setting.WaffoPancakeMerchantID) != "" &&
-		strings.TrimSpace(setting.WaffoPancakePrivateKey) != "" &&
-		strings.TrimSpace(setting.WaffoPancakeProductID) != ""
+	// This site accepts CNY Epay and paid redemption codes only.
+	// Credentials alone must not enable a route outside its payment ledger.
+	return false
 }
 
 func isWaffoPancakeWebhookConfigured() bool {
@@ -93,10 +77,24 @@ func isWaffoPancakeWebhookEnabled() bool {
 }
 
 func isEpayTopUpEnabled() bool {
-	if !isPaymentComplianceConfirmed() {
+	if !isPaymentComplianceConfirmed() || !isEpayWebhookConfigured() {
 		return false
 	}
-	return isEpayWebhookConfigured() && len(operation_setting.PayMethods) > 0
+	for _, method := range operation_setting.PayMethods {
+		if isEpayPaymentMethod(method["type"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func isEpayPaymentMethod(method string) bool {
+	switch method {
+	case "", model.PaymentMethodStripe, model.PaymentMethodCreem, model.PaymentMethodWaffo, model.PaymentMethodWaffoPancake:
+		return false
+	default:
+		return operation_setting.ContainsPayMethod(method)
+	}
 }
 
 func isEpayWebhookConfigured() bool {

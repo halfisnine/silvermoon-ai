@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>银月 · 新版营销原型 P1.12</title><style>
+:root{color-scheme:light;--bg:#f1f4fa;--card:#ffffffed;--ink:#24314c;--muted:#59677d;--line:#dce2ed;--accent:#4b5cad;--soft:#eef0ff;--warning:#805013;--warnbg:#fff4d9;--success:#207460;--shadow:0 8px 26px #25385e08}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}body[data-theme=dream]{--bg:linear-gradient(135deg,#e8efff,#f2e7fa 45%,#e2f3f6);--accent:#6654b0;--card:#ffffffcf}body[data-theme=cloud]{--bg:linear-gradient(130deg,#fff0e4,#f7e4ed 50%,#eee8fc);--accent:#9a4b6c;--card:#fffaf5d9}body{background-attachment:fixed}header{min-height:64px;padding:12px 26px;display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--card);border-bottom:1px solid var(--line)}header strong{font-size:22px;margin-right:18px}.tools{display:flex;align-items:center;gap:12px}.tools label{display:flex;align-items:center;gap:8px;font-size:13px}.prototype-banner{padding:8px 24px;background:#e8edf8;color:#435474;font-size:12px}.layout{display:grid;grid-template-columns:224px minmax(0,1fr);max-width:1640px;margin:auto}aside{min-width:0;padding:22px 12px;border-right:1px solid var(--line)}nav{position:sticky;top:16px;max-height:calc(100vh - 30px);overflow:auto}nav a{display:block;padding:7px 12px;color:var(--muted);text-decoration:none;border-radius:8px;font-size:14px}nav a:hover,nav a.active{background:var(--soft);color:var(--accent)}nav a.active{font-weight:700}nav h3{font-size:11px;letter-spacing:1px;color:var(--muted);margin:22px 12px 6px}main{padding:30px clamp(16px,3vw,44px) 60px;min-width:0}h1{font-size:27px;letter-spacing:-.5px;margin:0 0 6px}h2{font-size:19px;margin:0 0 12px}h3{font-size:15px;margin:0 0 8px}p{margin:6px 0 14px}.muted,small{color:var(--muted)}small{font-size:12px;display:block}a{color:var(--accent)}.title-row,.row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.title-row{justify-content:space-between;margin-bottom:22px}.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-bottom:18px;box-shadow:var(--shadow)}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid>.card{margin-bottom:0}.field{display:block;min-width:0;margin-bottom:14px}.field>span{display:block;font-weight:600;font-size:13px;margin-bottom:6px}input,select,textarea,button{font:inherit}input,select,textarea{background:#ffffffc9;color:var(--ink);border:1px solid #bcc7d9;border-radius:8px;padding:9px 11px;width:100%;min-height:42px}input[type=checkbox]{width:18px;min-height:18px;accent-color:var(--accent)}textarea{min-height:80px}button,.button{border:1px solid #bdc7da;border-radius:8px;background:var(--card);color:var(--ink);padding:8px 14px;min-height:42px;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px}button:hover,.button:hover{border-color:var(--accent);background:var(--soft)}button.primary,.button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button:disabled{opacity:.55;cursor:not-allowed}.danger{color:#a53038}.pill{display:inline-block;font-size:11px;line-height:1.5;padding:4px 8px;border-radius:5px;background:var(--soft);color:var(--accent);vertical-align:middle}.pill.success{background:#e4f5ee;color:var(--success)}.pill.warn{background:var(--warnbg);color:var(--warning)}.note{border-left:3px solid #aab8d8;background:#edf2fb;padding:12px 15px;margin:14px 0;font-size:13px;border-radius:4px}.pending{border-left-color:#c99535;background:var(--warnbg);color:var(--warning)}.note strong{display:block}.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;margin:12px 0}table{width:100%;border-collapse:collapse;white-space:nowrap;font-size:13px}th{text-align:left;background:#f4f6fa;color:var(--muted);font-weight:600}td,th{padding:12px 14px;border-bottom:1px solid var(--line)}tr:last-child td{border-bottom:0}td.wrap{white-space:normal;min-width:200px}details{border:1px solid var(--line);border-radius:9px;padding:12px 14px;margin:12px 0;background:#ffffff75}summary{cursor:pointer;font-weight:600}details>div{padding-top:12px}.reward-row{padding:14px 0;border-bottom:1px solid var(--line)}.reward-row:last-child{border-bottom:0}.reward-fields,.prize-fields{display:grid;grid-template-columns:minmax(150px,1.2fr) minmax(100px,.8fr) minmax(135px,1fr) minmax(155px,1.2fr) auto;align-items:start;gap:12px}.reward-row .field,.prize-fields .field{margin:0}.row-remove{align-self:start;margin-top:27px;white-space:nowrap}.duration-fields{display:grid;grid-template-columns:1fr 75px;gap:6px}.duration-fields .field>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}.field-label{display:block;font-size:13px;font-weight:600;margin-bottom:6px}.editor-footer{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:10px}.prize-row,.milestone-row{padding:22px 0;border-bottom:1px solid var(--line);background:none}.prize-row:first-child,.milestone-row:first-child{padding-top:6px}.prize-row:last-child,.milestone-row:last-child{border-bottom:0}.inline-rewards{padding:12px 0 0;background:none;border:0;box-shadow:none;margin:0}.inline-rewards h2,.inline-rewards h3{font-size:13px;margin:0;color:var(--muted)}.milestone-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}.milestone-heading .field{max-width:220px;margin:0}.new-group-row{display:flex;align-items:end;gap:10px;flex-wrap:wrap;margin:12px 0}.new-group-row .field{margin:0;flex:1;min-width:160px}[data-group-members]{margin-top:16px}.actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px}.big{font-size:34px;line-height:1.3;font-variant-numeric:tabular-nums;font-weight:650;margin:14px 0}.stat small{margin-top:12px}.calendar{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;max-width:650px}.calendar button{padding:7px 3px;min-width:0;display:block}.calendar .checked{background:#e4f5ee;color:#22634c}.calendar .today{border:2px solid var(--accent)}.calendar .missed{background:#fff4dc}.calendar span{text-align:center;font-size:12px;color:var(--muted)}.calendar small{font-size:10px}.step{display:flex;gap:12px;margin:12px 0}.step b{flex:none;display:grid;place-items:center;background:var(--soft);color:var(--accent);width:28px;height:28px;border-radius:50%}.reward-amount{font-size:25px;font-weight:700;color:var(--accent)}.prizes{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.prize{padding:23px 12px;text-align:center;border:1px solid var(--line);border-radius:14px;background:linear-gradient(135deg,#f2efff,#eaf4fb)}.prize:nth-child(2){background:linear-gradient(135deg,#e8f3f0,#ebf5fb)}.prize:nth-child(3){background:linear-gradient(135deg,#fff0d5,#f9e5f0)}.empty{text-align:center;padding:35px;color:var(--muted)}dialog{width:min(700px,calc(100vw - 32px));max-height:86vh;border:1px solid var(--line);border-radius:16px;padding:24px;color:var(--ink);background:#fff;box-shadow:0 20px 80px #16254840}dialog::backdrop{background:#1a244b66}.dialog-head{display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:18px}.dialog-head h2{margin:0}#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);max-width:90vw;background:#24314c;color:white;padding:12px 20px;border-radius:10px;display:none;z-index:10}.review-only{font-size:12px;padding:12px 14px;border:1px dashed #aeb9d1;border-radius:8px;color:var(--muted);margin-bottom:16px}.switch-label{display:flex;align-items:center;gap:9px;font-size:14px}.filters{display:flex;gap:12px;flex-wrap:wrap}.filters>*{flex:1;min-width:130px}.filters button{flex:0;white-space:nowrap}.rule-list li{margin:8px 0}.skip{position:absolute;top:-100px}.skip:focus{top:8px;background:white;padding:8px;z-index:100}:focus-visible{outline:3px solid #8799ed;outline-offset:3px}[hidden]{display:none!important}.coverage td{white-space:normal}.check{color:var(--success)}.next{display:flex;gap:12px;justify-content:space-between;margin-top:28px}.preview-value{white-space:pre-wrap;overflow-wrap:anywhere}.flow-links{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.editor-help{font-size:12px;color:var(--muted)}
+@media(max-width:850px){.layout{grid-template-columns:minmax(0,1fr)}aside{padding:10px;border-right:0;border-bottom:1px solid var(--line)}nav{position:static;display:flex;gap:6px;overflow-x:auto;max-height:none;white-space:nowrap}nav h3{display:none}nav a{flex:none}main{padding:22px 14px 50px}.grid.three{grid-template-columns:1fr}.reward-fields,.prize-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.row-remove{margin-top:0;justify-self:start;align-self:end}header{padding:12px 15px}.tools label{font-size:0}.tools select{font-size:13px;width:100px}.prototype-banner{padding:8px 15px}.card{padding:16px}h1{font-size:23px}}
+@media(max-width:520px){.grid{grid-template-columns:1fr;gap:12px}.tools{gap:6px}header strong{margin-right:6px;font-size:18px}header .pill{display:none}.prizes{grid-template-columns:1fr 1fr}.reward-fields,.prize-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.reward-fields>.field:first-child,.prize-fields>.field:first-child{grid-column:1/-1}.reward-fields{gap:10px}.duration-fields{grid-template-columns:minmax(0,1fr) 65px}.prize-row,.milestone-row{padding:16px 0}.editor-footer{gap:8px}.title-row{align-items:flex-start}.big{font-size:29px}.calendar{gap:4px}.calendar button{font-size:13px}.next{flex-wrap:wrap}.actions>*{flex:1}.table-wrap{max-width:100%}dialog{padding:16px}.field input,.field select{font-size:16px}}
+@media print{header,aside,.prototype-banner,.actions,.review-only{display:none}.layout{display:block}.card{break-inside:avoid;box-shadow:none}main{padding:0}body{background:white}}
+
+@media(min-width:851px) and (max-width:1200px){.reward-fields,.prize-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.row-remove{margin-top:0;justify-self:start}}
+/* P1.2: prize summaries and compact editing inspired by the supplied reference. */
+.probability-overview{background:linear-gradient(120deg,#283565,#3f4487);color:#fff;border:1px solid #4d5789;border-radius:14px;padding:22px;margin:20px 0 26px}.probability-overview .title-row{margin-bottom:15px}.probability-overview h2{margin:0}.probability-overview p{color:#dce4ff;font-size:13px;margin:5px 0}.probability-count{background:#ffffff13;border:1px solid #ffffff30;border-radius:8px;padding:9px 12px;font-size:13px}.probability-bar{display:flex;gap:2px;height:15px;overflow:hidden;border-radius:7px;background:#172443}.probability-bar span{min-width:0}.probability-legend{display:flex;flex-wrap:wrap;gap:12px 22px;padding:15px 0 6px;font-size:13px}.probability-legend>span{display:flex;align-items:center;gap:7px;overflow-wrap:anywhere}.probability-legend i{width:9px;height:9px;flex:none;border-radius:50%}.probability-footnote{border-top:1px solid #ffffff25;padding-top:12px!important}.prize-section-title{margin-bottom:14px}.prize-section-title h2{margin:0}.prize-row.prize-card{padding:0;margin:0 0 18px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}.prize-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:15px 18px;background:#f7f8fc;border-bottom:1px solid var(--line)}.prize-heading-text{display:flex;gap:10px;min-width:0;flex:1}.prize-number{display:grid;place-items:center;width:25px;height:25px;flex:none;border-radius:50%;background:#e5eaf4;color:#4c5871;font-size:12px;font-weight:700}.prize-heading h3{font-size:15px;margin:0;overflow-wrap:anywhere}.prize-heading p{font-size:12px;color:var(--muted);margin:4px 0 0;overflow-wrap:anywhere}.prize-heading-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end;max-width:52%}.prize-heading-actions button{min-height:32px;font-size:12px;padding:4px 8px;background:transparent}.prize-body{padding:18px}.prize-rule-fields{display:grid;grid-template-columns:1.3fr .8fr 1.1fr .8fr;gap:15px}.prize-rule-fields .field{margin-bottom:8px}.prize-body .inline-rewards{border-top:1px solid var(--line);margin-top:8px;padding-top:14px}.prize-body .inline-rewards>h3{font-weight:650;color:var(--ink)}.prize-body .inline-rewards>small{margin-top:8px}.prize-card.featured-prize{border-color:#dac195}.featured-prize .prize-heading{background:linear-gradient(110deg,#fff7e5,#fffaf1)}.featured-prize .prize-number{background:#efd098;color:#694619}.add-prize-wide{width:100%;border:1px dashed #9aa8cb;background:#edf0fc8a;color:var(--accent);min-height:50px}.pool-simulator{margin-top:22px;background:var(--card);padding:17px 20px}.pool-pending{font-size:13px}.pool-action-bar{position:fixed;bottom:0;left:0;right:0;z-index:6;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px max(24px,calc((100vw - 1420px)/2));background:#fffffff5;border-top:1px solid var(--line);box-shadow:0 -6px 20px #24314c08}.pool-action-bar strong{font-size:13px}.pool-action-bar small{font-size:11px}.pool-user-preview .prizes{margin:16px 0}.pool-user-preview .prize p{font-size:13px;overflow-wrap:anywhere}.pool-user-preview>h2{margin:12px 0}.pool-user-preview{overflow-wrap:anywhere}body:has(#pool-form) main{padding-bottom:155px}body:has(#pool-form) #toast{bottom:115px}
+@media(max-width:1100px){.prize-heading{flex-direction:column}.prize-heading-actions{max-width:100%;justify-content:flex-start}.prize-rule-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:600px){.prize-heading,.prize-body{padding:14px}.probability-overview{padding:17px}.prize-rule-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.prize-rule-fields>.field:first-child{grid-column:1/-1}.prize-heading-actions{gap:6px}.prize-heading-actions .pill{font-size:11px}.pool-action-bar{flex-direction:column;align-items:stretch;padding:10px 14px;gap:8px}.pool-action-bar>.row{display:grid;grid-template-columns:1fr 1fr}.pool-action-bar>div:first-child{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}.pool-action-bar button{font-size:13px}.prize-section-title{gap:10px}.prize-section-title>.row{width:100%;justify-content:flex-end}.pool-user-preview .prizes{grid-template-columns:1fr}.pool-action-bar small{max-width:190px}}
+@media print{.pool-action-bar{display:none}}
+
+main:focus{outline:none}
+/* P1.3 lottery visuals follow the supplied standalone references; fixed palette. */
+.lottery-reference{background:linear-gradient(145deg,#f8fbff 0%,#fff 48%,#f1f6ff 100%);border:1px solid #e1e8f4;border-radius:24px;color:#334155;overflow:hidden;box-shadow:0 14px 50px #28457312;margin:20px 0}
+.lottery-reference h2,.lottery-reference h3,.lottery-reference h4{color:#1e293b}.lottery-reference p{color:#52627b}.lottery-heading{padding:28px 30px;display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid #e5eaf4;background:linear-gradient(110deg,#eaf2ff,#fff 65%,#fff8e6)}
+.lottery-heading h2{font-size:28px;margin:8px 0}.lottery-heading p{font-size:13px;margin:8px 0}.lottery-eyebrow{font-size:11px;letter-spacing:2px;color:#4e6ca5}.lottery-reference .pill{background:#fff;color:#43628e;border-color:#dbe5f4}
+.draw-stage{padding:38px 20px 10px;text-align:center;background:radial-gradient(ellipse at center,#e9f2ff88,transparent 68%)}
+.wheel-rim{position:relative;width:min(100%,420px);aspect-ratio:1;margin:0 auto;border-radius:50%;background:linear-gradient(135deg,#2b3a67,#3b4c80,#1e2949);padding:22px;box-shadow:0 12px 30px #1e294930,inset 0 0 0 4px #b9c9e0}
+#prize-wheel{width:100%;height:100%;display:block;border-radius:50%;background:white}
+.rim-lights{position:absolute;inset:0;pointer-events:none}.rim-lights i{position:absolute;left:50%;top:50%;width:7px;height:7px;border-radius:50%;background:#ffe5a2;box-shadow:0 0 7px #ffd35c;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(calc(-1 * min(190px, 38vw)))}
+.wheel-pin{position:absolute;top:12px;left:50%;transform:translateX(-50%);width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-top:30px solid #ed5473;filter:drop-shadow(0 2px 2px #1e294940)}
+.lottery-reference .wheel-go{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:82px;height:82px;min-height:0;padding:8px;border:4px solid white;border-radius:50%;background:linear-gradient(#ff5e7e,#e11d48);color:#fff;font-weight:900;font-size:23px;box-shadow:0 5px 14px #be123c50}.wheel-go span{display:block;font-size:12px}.wheel-go:disabled{opacity:.6}
+.draw-status{font-size:15px;margin:24px 0 12px!important;min-height:24px}.single-box-stage{display:flex;justify-content:center;padding:20px 0 0}
+.lottery-reference .mystery-box{position:relative;isolation:isolate;display:flex;flex-direction:column;align-items:center;gap:8px;width:270px;max-width:100%;padding:12px 24px 18px;border:0;border-radius:24px;background:radial-gradient(ellipse at 50% 45%,#dbeafeaa,transparent 70%);color:#2563eb;box-shadow:none}
+.mystery-box::before{content:"";position:absolute;z-index:-1;inset:18% 0 15%;border-radius:50%;background:radial-gradient(ellipse,#fff5cfa0,#bfdbfe60,transparent 70%);transition:filter .2s}
+.mystery-box:hover:not(:disabled)::before{filter:drop-shadow(0 0 14px #93c5fd)}
+.lottery-reference .mystery-box>strong{display:block;width:100%;padding:10px 20px;border-radius:10px;font-size:15px;background:linear-gradient(120deg,#3b82f6,#6366f1);color:white;box-shadow:0 4px 12px #3b82f628}.mystery-box>span:last-child{font-size:12px;color:#64748b}
+.box-art{width:190px;max-width:100%;display:block;animation:gift-float 3.8s ease-in-out infinite;filter:drop-shadow(0 12px 12px #3b5d8733)}.box-art svg{width:100%;overflow:visible}.charging .box-art{animation:gift-shake .25s infinite!important}.charging::before{animation:box-glow .6s ease-in-out infinite alternate}.opened .box-art{animation:none}.opened .gift-lid{animation:gift-open .65s forwards;transform-origin:60px 55px}
+.box-reveal{position:absolute;top:0;left:0;right:0;opacity:0;font-size:17px;font-weight:700;color:#3158a2;pointer-events:none;overflow-wrap:anywhere}.opened .box-reveal{animation:box-reveal .5s .25s both}
+@keyframes box-glow{to{filter:drop-shadow(0 0 18px #fcd34d);transform:scale(1.12)}}@keyframes box-reveal{from{opacity:0;transform:translateY(30px) scale(.8)}to{opacity:1;transform:translateY(-14px) scale(1)}}
+.stage-note{text-align:center;font-size:12px;padding:8px 22px 16px;line-height:1.8}.lottery-prize-list{padding:16px 28px}.reference-prizes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch;gap:10px}.reference-prize{border-radius:12px;background:linear-gradient(135deg,#fff,var(--prize-light) 50%,var(--prize-mid));padding:12px 14px;border:1px solid var(--prize-mid);overflow-wrap:anywhere;min-width:0}.prize-title-line{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:7px}.reference-prize h4{font-size:14px;line-height:1.5;margin:0;min-width:0}.prize-index{font-size:11px;color:var(--prize-ink);letter-spacing:1px}.combo-badge{font-size:10px;line-height:1.6;padding:0 5px;border-radius:4px;background:#ffffffb0;color:var(--prize-ink)}.reference-prize p{font-size:12px;line-height:1.65;color:var(--prize-ink);margin:4px 0 0}.prize-gift-line{display:flex;align-items:baseline;flex-wrap:wrap;gap:0 6px}.prize-gift-line strong{font-size:14px;white-space:nowrap}.prize-gift-line span{font-size:12px;color:#52627b}.lottery-reference .prize-list-help{font-size:12px;margin:0 0 10px;color:#64748b}.lottery-prize-list>h3{margin:0 0 10px}
+@media(min-width:1500px){.reference-prizes{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.draw-result{text-align:center;animation:result-pop .4s ease-out}.result-spark{font-size:48px;color:#e4ac42}.draw-result p{line-height:1.8}.outside-period{opacity:.35}
+@keyframes gift-float{50%{transform:translateY(-8px) rotate(.5deg)}}@keyframes gift-shake{25%{transform:translate(-3px,2px) rotate(-2deg)}75%{transform:translate(3px,-2px) rotate(2deg)}}@keyframes gift-open{to{transform:translateY(-70px) rotate(-35deg) scale(.6);opacity:0}}@keyframes result-pop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+@media(max-width:760px){.reference-prizes{grid-template-columns:repeat(2,minmax(0,1fr))}.lottery-heading{padding:20px;flex-direction:column;gap:0}.lottery-prize-list{padding:14px}.draw-stage{padding:25px 12px 6px}.wheel-rim{padding:17px}.rim-lights{display:none}}
+@media(max-width:540px){.reference-prizes{grid-template-columns:1fr}.lottery-reference .wheel-go{width:65px;height:65px;font-size:18px}.wheel-pin{top:10px;border-top-width:22px}}
+@media(prefers-reduced-motion:reduce){.box-art,.charging .box-art,.opened .gift-lid,.draw-result,.charging::before,.opened .box-reveal{animation:none!important}#prize-wheel{transition:none!important}}
+
+.lottery-reference .wheel-go{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}.wheel-rim{container-type:inline-size}.rim-lights i{transform:translate(-50%,-50%) rotate(var(--angle)) translateY(calc(-50cqw - 11px))}
+@media(max-width:760px){.rim-lights{display:block}.rim-lights i{width:5px;height:5px;transform:translate(-50%,-50%) rotate(var(--angle)) translateY(calc(-50cqw - 8px))}}
+
+/* One user reward entry; ordinary links also support keyboard and browser history. */
+.reward-view-switch{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:10px;margin:0 0 18px}.reward-view-switch a{display:inline-block;padding:9px 16px;border-radius:8px;color:var(--muted);text-decoration:none;font-size:14px}.reward-view-switch a[aria-current="page"]{background:var(--soft);color:var(--accent);font-weight:650}.reward-view-switch a:hover{background:var(--soft)}
+/* Selected date text is localized independently of the operating system's picker. */
+.date-control{position:relative;display:flex;align-items:center;gap:8px;width:100%;min-height:42px;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink);font-weight:400!important;font-size:14px!important;line-height:1.5;cursor:pointer}.date-control [data-date-display]{flex:1;min-width:0;overflow-wrap:anywhere}.date-icon{color:var(--muted);flex:none}.field .date-control input{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;border:0;opacity:0;cursor:pointer}.date-control:focus-within{outline:3px solid #8799ed;outline-offset:2px}.date-control:has(input:disabled){opacity:.5;cursor:default}.reward-log-items{min-width:250px;max-width:430px;white-space:normal;line-height:1.7}.reward-log-items>div+div{margin-top:6px}[data-range-error]{color:#b42318;font-size:13px}.filters:has([data-record-start]){flex-wrap:wrap}.filters:has([data-record-start])>.field{min-width:190px}
+@media(max-width:540px){.filters:has([data-record-start])>.field{flex-basis:100%;min-width:0}}
+
+table.grant-expiry{table-layout:fixed;white-space:normal}table.grant-expiry td,table.grant-expiry th{padding:10px;font-size:12px;overflow-wrap:anywhere}table.grant-expiry td{line-height:1.7}
+
+/* Activity announcements use flat facts and reward rows, not nested cards. */
+.announcement-review{margin:0 0 20px;color:var(--muted);font-size:13px}.announcement-review summary{cursor:pointer}.announcement-review .review-only{margin:10px 0 0}.announcement-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:20px}.announcement-card .announcement-heading h2{margin:0}.announcement-facts{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px 20px;margin:0 0 20px;line-height:1.7}.announcement-facts dt{color:var(--muted)}.announcement-facts dd{margin:0;overflow-wrap:anywhere}.announcement-facts dd small{display:block;color:var(--muted);font-size:12px;margin-top:3px}.announcement-secondary{border-top:1px solid var(--line);padding-top:18px}.announcement-highlight{color:var(--accent);margin:16px 0 4px}.announcement-card .muted{font-size:13px}.announcement-rewards{white-space:normal}.announcement-rewards th,.announcement-rewards td{overflow-wrap:anywhere}.announcement-card .flow-links{margin-top:18px}
+@media(max-width:540px){.announcement-facts{grid-template-columns:100px minmax(0,1fr);gap:10px 12px;font-size:14px}.announcement-rewards th,.announcement-rewards td{padding:10px 8px;font-size:13px}}
+
+.activity-center-section{margin-top:28px}.activity-center-section>h2{display:flex;align-items:center;gap:10px;margin-bottom:16px}.activity-center-section>.muted{font-size:13px}
+
+</style></head>
+<body><a class="skip" href="#main">跳到页面内容</a><header><div><strong>☾ 银月</strong><span class="pill">营销原型 P1.12</span></div><div class="tools"><label>外观样例 <select id="theme"><option value="default">默认</option><option value="dream">银月梦境</option><option value="cloud">绯云</option></select></label><button id="reset">重置演示</button></div></header>
+<div class="prototype-banner">静态原型 · 所有姓名、金额、日期均为演示数据 · 操作仅影响本次浏览，不连接账号、支付或数据库</div>
+<div class="layout"><aside><nav id="nav" aria-label="原型页面导航"></nav></aside><main id="main" tabindex="-1"></main></div>
+<dialog id="dialog" aria-labelledby="dialog-title"><div class="dialog-head"><h2 id="dialog-title"></h2><button id="close-dialog" aria-label="关闭弹窗">关闭</button></div><div id="dialog-body"></div></dialog><div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* Static review interactions only. Fixed outcomes, no APIs, no real random draw. */
+'use strict';
+let linkedPool = null;
+let sampleCount = 0;
+let demoFormat = 'wheel';
+let outcomeId = '';
+let drawBusy = false;
+let drawTimers = [];
+let drawEpoch = 0;
+const referencePalette = [
+ ['#eff6ff','#bfdbfe','#2563eb'], ['#ecfdf5','#a7f3d0','#059669'],
+ ['#fffbeb','#fde68a','#d97706'], ['#fdf2f8','#fbcfe8','#db2777'],
+ ['#f5f3ff','#ddd6fe','#7c3aed'], ['#fff7ed','#fed7aa','#ea580c']
+];
+function capturePool() {
+ const form=$('#pool-form');
+ linkedPool={name:form.elements.namedItem('奖池名称').value,format:form.elements.namedItem('展示方式').value,start:form.elements.namedItem('开始时间').value,end:form.elements.namedItem('结束时间').value,
+ prizes:poolEntries().map(e=>({id:e.id,name:e.name,gifts:e.row?$$('.reward-row',e.row).map(r=>({amount:Number($('[data-amount]',r).value),life:$('[data-life]',r).value,duration:$('[data-duration-value]',r).value,unit:$('[data-duration-unit]',r).value})):[]}))};
+ sampleCount=0;outcomeId='';demoFormat=linkedPool.format;
+}
+function poolPreview() {
+ const form=$('#pool-form');
+ if(!form.reportValidity()||!validateCustom(form))return;
+ capturePool();poolDraft=form.cloneNode(true);copyFormValues(form,poolDraft);
+ state.lotteryScene='normal';location.hash='lottery';
+}
+function currentPool() {
+ if(linkedPool&&!sampleCount)return linkedPool;
+ const count=sampleCount||3;
+ const names=['月光赠金','星辉赠金','银月大奖'];
+ return {name:sampleCount?`${count} 奖项布局样例`:'月光礼盒',format:demoFormat,start:'2026-11-01T00:00',end:'2026-12-05T23:59',prizes:Array.from({length:count},(_,i)=>({id:`sample-${i}`,name:names[i]||`星愿赠金 ${i+1}`,gifts:[{amount:[2,5,100][i]||i+1,life:'limited',duration:i===2?7:2+i,unit:i===2?'天':'小时'},...(i===1?[{amount:1,life:'permanent'}]:[])]}))};
+}
+function giftText(g) {return `${money(g.amount)} ${g.life==='permanent'?'永久赠金（不过期）':`限时赠金（有效期：${g.duration}${g.unit}）`}`;}
+function visiblePrizes(pool) {
+ const prizes=pool.prizes.slice();
+ if(state.lotteryScene==='empty'&&!prizes.some(p=>p.id==='empty'))prizes.push({id:'empty',name:'谢谢惠顾',gifts:[]});
+ return prizes;
+}
+function giftBox(i) {
+ const c=referencePalette[i%referencePalette.length];
+ return `<svg viewBox="0 0 120 120" aria-hidden="true"><path d="M20 45 L60 65 L100 45 L100 85 L60 105 L20 85 Z" fill="${c[2]}"/><path d="M60 65 L100 45 L100 85 L60 105 Z" fill="${c[2]}"/><path d="M20 45 L60 65 L60 105 L20 85 Z" fill="${c[1]}"/><path d="M54 62 L66 68 L66 102 L54 96 Z" fill="#facc15"/><g class="gift-lid"><path d="M15 42 L60 20 L105 42 L60 62 Z" fill="${c[1]}"/><path d="M15 42 L60 62 L60 68 L15 48 Z" fill="${c[2]}"/><path d="M60 62 L105 42 L105 48 L60 68 Z" fill="${c[2]}"/><path d="M55 22 L65 17 L65 64 L55 60 Z" fill="#fde047"/><circle cx="60" cy="22" r="6" fill="#eab308"/></g></svg>`;
+}
+function lottery() {
+ const pool=currentPool();const scene=state.lotteryScene;const prizes=visiblePrizes(pool);
+ const blocked=['none','ended','upcoming'].includes(scene)||state.draws<=0;
+ const status=scene==='ended'?'已结束':scene==='upcoming'?'尚未开始':'开放中';
+ const reason=scene==='ended'?'本期已结束':scene==='upcoming'?'尚未开放':blocked?'暂无可用机会':'使用 1 次机会抽奖';
+ if(!prizes.some(p=>p.id===outcomeId))outcomeId=prizes[0]?.id||'';
+ return title('抽奖','开启盲盒或转动转盘，查看本次奖励。',link('pool-edit','返回奖池配置'))+
+ review(`P1.8 · 按你提供的转盘和盲盒静态稿制作，抽奖区域固定参考配色，暂不跟随顶部外观样例。<div class="grid">${field('展示方式',select([['wheel','转盘'],['box','盲盒']],'id="draw-format"',demoFormat))}${field('配置来源',select([['0',linkedPool?'使用后台演示配置':'默认 3 奖项'],['3','3 奖项样例'],['6','6 奖项样例'],['12','12 奖项样例']],'id="draw-sample"',String(sampleCount)))}${field('演示场景',select([['normal','正常开奖'],['empty','未中奖结果样例'],['none','没有机会'],['upcoming','尚未开放'],['ended','已结束'],['error','提交前网络失败']],'id="lottery-scene"',scene))}${field('本次演示结果',select(prizes.map(p=>[p.id,p.name]),'id="draw-outcome"',outcomeId))}</div><small>以上是审阅工具，不出现在正式用户页。结果按所选样例确定，不使用随机算法；“未中奖”样例临时加入空奖，不改变后台草稿。</small>`)+
+ `<section class="lottery-reference"><div class="lottery-heading"><div><span class="lottery-eyebrow">SILVERMOON · 幸运时刻</span><h2>${esc(pool.name)}</h2><p>${esc(displayDate(pool.start))} — ${esc(displayDate(pool.end))}</p></div><div><span class="pill">${status}</span><p>可用机会 <strong>${scene==='none'?0:state.draws}</strong> 次</p></div></div>
+ <div class="draw-stage" aria-busy="false">${demoFormat==='wheel'?`<div class="wheel-rim"><div class="rim-lights">${Array.from({length:24},(_,i)=>`<i style="--angle:${i*15}deg"></i>`).join('')}</div><canvas id="prize-wheel" width="720" height="720" role="img" aria-label="奖项转盘，完整奖项见下方列表"></canvas><span class="wheel-pin"></span><button class="wheel-go" data-draw ${blocked?'disabled':''} aria-label="使用一次机会转动转盘">GO<span>抽奖</span></button></div>`:`<div class="single-box-stage"><button class="mystery-box" data-draw ${blocked?'disabled':''} aria-label="使用一次机会开启盲盒"><span class="box-reveal" aria-hidden="true"></span><span class="box-art">${giftBox(0)}</span><strong>开启盲盒</strong><span>剩余 ${scene==='none'?0:state.draws} 次机会</span></button></div>`}
+ <p class="draw-status" role="status">${blocked?reason:demoFormat==='wheel'?'点击 GO，开启幸运时刻':'点击开启盲盒，揭晓本次惊喜'}</p></div>
+ <div class="lottery-prize-list"><h3>本期奖项</h3>${prizes.some(p=>p.gifts.length>1)?'<p class="prize-list-help">抽中组合奖时，其中的赠金一起发放。</p>':''}<div class="reference-prizes">${prizes.map((p,i)=>`<article class="reference-prize" style="--prize-light:${referencePalette[i%6][0]};--prize-mid:${referencePalette[i%6][1]};--prize-ink:${referencePalette[i%6][2]}"><div class="prize-title-line"><span class="prize-index">${String(i+1).padStart(2,'0')}</span><h4>${esc(p.name)}</h4>${p.gifts.length>1?'<span class="combo-badge">组合奖</span>':''}</div>${p.gifts.length?p.gifts.map(g=>`<p class="prize-gift-line"><strong>${esc(money(g.amount))}</strong><span>${g.life==='permanent'?'永久赠金':`限时赠金 · 有效期：${esc(g.duration)}${esc(g.unit)}`}</span></p>`).join(''):'<p>本次未中奖，无赠金到账</p>'}</article>`).join('')}</div></div><p class="stage-note">每次使用 1 次机会，中奖赠金自动到账，无需领取。完整赠金金额与有效期以上方清单为准。</p></section>`+
+ review('转盘格子仅用于展示，不代表中奖概率；奖项多时以编号对应完整清单。页面不展示后台权重。此为静态样例，机会截止与暂停联动仍待 N03 确认。')+
+ card('机会来源（独立样例）',table(['来源','获得','说明'],[['充值福利','2 次','符合充值活动条件后获得'],['十一月签到礼','1 次','符合签到活动条件后获得']]))+
+ card('本次浏览的抽奖记录',state.drawn.length?table(['奖池','结果','奖励'],state.drawn.map(r=>[esc(r.pool),esc(r.result),esc(r.gift)])):'<p class="muted">暂无记录，完成一次演示开奖后可查看。</p>')+
+ `<div class="flow-links">${link('gifts','查看赠金明细')}<button data-reset-draws>重置抽奖演示（3 次机会）</button></div>`;
+}
+function paintWheel() {
+ const canvas=$('#prize-wheel');if(!canvas)return;
+ const ctx=canvas.getContext('2d');const prizes=visiblePrizes(currentPool());const arc=Math.PI*2/prizes.length;
+ prizes.forEach((p,i)=>{
+  const color=referencePalette[i%6];const gradient=ctx.createRadialGradient(360,360,0,360,360,354);gradient.addColorStop(0,'#ffffff');gradient.addColorStop(1,color[1]);
+  ctx.beginPath();ctx.moveTo(360,360);ctx.arc(360,360,354,i*arc,(i+1)*arc);ctx.closePath();ctx.fillStyle=gradient;ctx.fill();ctx.strokeStyle='#ffffff';ctx.lineWidth=3;ctx.stroke();
+  ctx.save();ctx.translate(360,360);ctx.rotate(i*arc+arc/2);ctx.fillStyle=color[2];ctx.textAlign='center';ctx.font='bold 23px sans-serif';
+  const short=prizes.length>8||p.name.length>7;ctx.fillText(short?`奖项 ${i+1}`:p.name,245,-7,145);
+  ctx.font='18px sans-serif';ctx.fillText(p.gifts.length>1?'组合赠金':p.gifts.length?money(p.gifts[0].amount):'谢谢惠顾',245,24,130);ctx.restore();
+ });
+}
+function cancelDrawAnimation() {
+ drawEpoch++;drawTimers.forEach(clearTimeout);drawTimers=[];drawBusy=false;
+}
+function startDraw(button) {
+ if(drawBusy||button.disabled||state.draws<1||['none','ended','upcoming'].includes(state.lotteryScene))return;
+ if(state.lotteryScene==='error'){modal('抽奖暂未完成',note('本场景模拟提交前网络失败：机会尚未扣除。若服务器已形成结果，正式实现应恢复原结果，不能重新开奖。'));return;}
+ const pool=currentPool();const prizes=visiblePrizes(pool);const prize=prizes.find(p=>p.id===(state.lotteryScene==='empty'?'empty':outcomeId))||prizes[0];if(!prize)return;
+ drawBusy=true;const epoch=drawEpoch;state.draws--;
+ // Outcome is stored before animation so navigation cannot lose an already completed demo draw.
+ state.drawn.unshift({pool:pool.name,result:prize.name,gift:prize.gifts.length?prize.gifts.map(giftText).join(' ＋ '):'无赠金到账'});
+ $$('.review-only select,[data-draw],[data-reset-draws]').forEach(el=>el.disabled=true);
+ $('.draw-stage').setAttribute('aria-busy','true');$('.draw-status').textContent='正在揭晓…';
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const duration=reduced?50:demoFormat==='wheel'?4200:2200;
+ const canvas=$('#prize-wheel');
+ if(canvas){const index=prizes.indexOf(prize);const stop=(270-(index*360/prizes.length+180/prizes.length)+360)%360;canvas.style.transition=`transform ${duration}ms cubic-bezier(.12,.72,.12,1)`;canvas.style.transform=`rotate(${1800+stop}deg)`;}
+ else {button.classList.add('charging');drawTimers.push(setTimeout(()=>{if(epoch!==drawEpoch)return;button.classList.remove('charging');button.classList.add('opened');$('.box-reveal',button).textContent=prize.name;},reduced?10:1200));}
+ drawTimers.push(setTimeout(()=>{
+  if(epoch!==drawEpoch||currentRoute!=='lottery')return;
+  render();modal(prize.gifts.length?'恭喜中奖':'谢谢惠顾',`<div class="draw-result"><span class="result-spark">✦</span><h3>${esc(prize.name)}</h3>${prize.gifts.map(g=>`<p>${esc(giftText(g))}</p>`).join('')||'<p>本次未中奖，无赠金到账。</p>'}<p>已使用 1 次机会，剩余 ${state.draws} 次。</p>${prize.gifts.length?'<p>以上赠金已在本次抽奖演示中记为到账，无需领取。</p>':''}<small>静态演示，不修改真实钱包。</small>${state.draws>0?'<div class="actions"><button class="primary" data-draw-again>再抽一次</button></div>':''}</div>`);
+ },duration+80));
+}
+function signIn() {
+ const scene=state.profileScene;const active=!['none','upcoming','ended'].includes(scene);const done=state.checkin||scene==='signed';const ineligible=scene==='ineligible';
+ let calendar='<div class="calendar">'+['一','二','三','四','五','六','日'].map(d=>`<span>${d}</span>`).join('')+'<span></span>'.repeat(6);
+ for(let d=1;d<=30;d++){
+  const outside=d<15;const checked=!outside&&((d>=16&&d<=21)||(d===22&&done)||(d===15&&state.makeup));const canMakeup=active&&d===15&&!state.makeup;
+  calendar+=`<button class="${outside?'outside-period':checked?'checked':canMakeup?'missed':''} ${d===22?'today':''}" data-day="${d}" ${canMakeup?'':'disabled'}>${d}<small>${outside?'活动外':checked?'已签':canMakeup?'补签':d===22?'今天':'—'}</small></button>`;
+ }
+ calendar+='</div>';
+ const content=scene==='none'?'<div class="empty">当前没有可参与的签到活动，开放后可在这里签到。</div>':scene==='upcoming'?'<div class="empty"><h3>十二月签到礼 · 尚未开始</h3><p>2026年12月1日—12月15日</p><p>每日赠金 ¥1.00，有效期：3天。</p><button disabled>12 月 1 日开放签到</button></div>':scene==='ended'?'<div class="empty"><h3>十月签到礼 · 已结束</h3><p>2026年10月15日—10月31日</p><p>本活动已结束，不能继续签到或补签。过往奖励可在“活动奖励”中查询。</p><button disabled>活动已结束</button></div>':`<div class="title-row"><div><h3>十一月签到礼</h3><small>2026年11月15日—11月30日</small></div>${badge(done?'今日已签到':'今日未签到',done?'success':'')}</div><div class="grid three"><div>每日奖励<div class="reward-amount">¥1.00</div><small>有效期：3天</small></div><div>已连续签到<div class="reward-amount">${(done?7:6)+(state.makeup?1:0)} 天</div><small>连续签到7天，额外赠送限时赠金 ¥2.00（有效期：7天）</small></div><div>本活动剩余补签<div class="reward-amount">${state.makeup?'0':'1'} 次</div><small>总上限 2 次，按本活动累计</small></div></div>${note(ineligible?'今天累计实付充值未达到 ¥10，暂不能签到；11 月 15 日当时已达标，仍可补签。':state.makeup?'补签已修复连续记录；连续第 7 天奖励只发一次。':done?'今日已获得每日 ¥1.00 ＋ 连续额外 ¥2.00，合计 ¥3.00。':'今天签到：每日 ¥1.00 ＋ 连续第 7 天额外 ¥2.00，合计 ¥3.00。')}<button class="primary" data-checkin ${done||ineligible?'disabled':''}>${done?'今日已签到':'签到'}</button><h3>2026 年 11 月</h3>${calendar}<p class="muted">最近 10 天内可补签，且必须处于本活动期间、符合漏签当天条件。活动前日期不计断签；次数按活动统计，跨月不重置。</p>${scene==='multi'?note(`另有“周末签到礼”可叠加：每日 ¥0.50，本活动剩余补签 ${state.makeup?'1':'2'} 次。一次操作统一判断，各活动独立记次数和奖励。`):''}`;
+ return title('签到','查看当前活动，签到或补签；过往奖励统一在活动奖励中查询。')+review(`固定演示日期 2026-11-22。${select([['normal','进行中 · 可签到'],['signed','进行中 · 今日已签到'],['ineligible','进行中 · 当日条件未满足'],['multi','多个活动同时进行'],['upcoming','活动未开始'],['ended','活动已结束'],['none','当前没有活动']],'id="profile-scene"',scene)}`)+card('每日签到',content+`<div class="flow-links">${link('my-rewards?source=checkin','查看签到奖励记录')}</div>`);
+}
+document.addEventListener('change',event=>{
+ const t=event.target;
+ if(t.id==='draw-format'){demoFormat=t.value;render();}
+ if(t.id==='draw-sample'){sampleCount=Number(t.value);if(!sampleCount&&linkedPool)demoFormat=linkedPool.format;outcomeId='';render();}
+ if(t.id==='draw-outcome')outcomeId=t.value;
+});
+document.addEventListener('click',event=>{
+ if(event.target.closest('[data-draw-again]')){$('#dialog').close();startDraw($('[data-draw]'));}
+ if(event.target.closest('[data-reset-draws]')){state.draws=3;state.drawn=[];render();}
+});
+
+</script><script>
+/* Standalone review artifact. No application imports, APIs, real credentials or storage. */
+'use strict';
+const $ = (s, root = document) => root.querySelector(s);
+const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const money = value => new Intl.NumberFormat('zh-CN', {style:'currency', currency:'CNY', minimumFractionDigits:2, maximumFractionDigits:6}).format(value);
+const state = {checkin:false, makeup:false, draws:3, drawn:[], redeemed:false, disabled:false, saved:[], profileScene:'normal', lotteryScene:'normal', groups:[{id:'recharge',name:'充值优惠',members:[['充值满额礼',20],['首笔充值礼',10]]},{id:'checkin',name:'签到优惠',members:[['每日签到礼',10]]}]};
+const routes = [
+ ['审阅导航','overview','开始核对'],['管理员','activities','营销活动'],['管理员','registration','注册有礼'],['管理员','checkin','签到活动'],['管理员','recharge','充值活动'],['管理员','invitation','邀请活动'],['管理员','pools','抽奖管理'],['管理员','pool-edit','奖池配置'],['管理员','records','奖励记录'],['管理员','codes','付费兑换码'],['管理员','users','用户管理'],
+ ['用户','wallet','钱包与充值'],['用户','profile','个人资料'],['用户','usage','使用日志'],['活动','announcements','活动中心'],['活动','sign-in','签到'],['活动','lottery','抽奖'],['活动','invite','邀请有礼'],['活动','my-rewards','活动奖励'],['审阅导航','states','状态与中英文样例'],['审阅导航','coverage','需求覆盖与待定项']
+];
+const names = {...Object.fromEntries(routes.map(r => [r[1],r[2]])),gifts:'活动奖励 · 赠金明细'};
+let currentRoute = 'overview';
+let uniqueId = 0;
+const uid = prefix => `${prefix}-${++uniqueId}`;
+const link = (route, text, primary=false) => `<a class="button${primary?' primary':''}" href="#${route}">${text}</a>`;
+const note = (text, pending=false) => `<div class="note${pending?' pending':''}">${text}</div>`;
+const review = text => `<div class="review-only">原型核对说明 · ${text}</div>`;
+const card = (title, body) => `<section class="card"><h2>${title}</h2>${body}</section>`;
+const badge = (text, type='') => `<span class="pill ${type}">${text}</span>`;
+function field(label, control, help='') { return `<label class="field"><span>${label}</span>${control}${help?`<small>${help}</small>`:''}</label>`; }
+function displayDate(value) {
+ return String(value).replace(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}:\d{2}))?$/,(_,y,m,d,time)=>`${y}年${Number(m)}月${Number(d)}日${time?' '+time:''}`);
+}
+function syncDateDisplay(control) {
+ const output=control.closest('.date-control')?.querySelector('[data-date-display]');
+ if(output)output.textContent=control.value?displayDate(control.value):'选择日期';
+}
+function input(value='', type='text', attrs='') { const control=`<input type="${type}" value="${esc(value)}" ${attrs}>`;
+ if(type==='date'||type==='datetime-local')return `<span class="date-control"><span data-date-display aria-hidden="true">${esc(value?displayDate(value):'选择日期')}</span><span class="date-icon" aria-hidden="true">▦</span>${control}</span>`;
+ return control; }
+function num(value, attrs='') { return input(value,'number',`min="0.000001" step="any" required ${attrs}`); }
+function select(options, attrs='', selected='') { return `<select ${attrs}>${options.map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return `<option value="${esc(v)}"${v===selected?' selected':''}>${l}</option>`;}).join('')}</select>`; }
+function table(headers, rows, cls='') { return `<div class="table-wrap"><table class="${cls}"><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>`<tr>${row.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`; }
+function title(text, sub, actions='') { return `<div class="title-row"><div><h1>${text}</h1><p class="muted">${sub}</p></div>${actions}</div>`; }
+function toast(text) { $('#toast').textContent=text; $('#toast').style.display='block'; clearTimeout(toast.timer); toast.timer=setTimeout(()=>$('#toast').style.display='none',4500); }
+function modal(titleText, html) { $('#dialog-title').textContent=titleText; $('#dialog-body').innerHTML=html; $('#dialog').showModal(); }
+function actions() { return `<div class="actions"><a class="button" href="#activities">返回活动列表</a><button class="primary" type="submit">核对规则摘要</button></div>`; }
+function rewardRow(allowRatio=false, forced='', amount='2', duration=3, unit='天') {
+ return `<div class="reward-row"><div class="reward-fields">${field('奖励内容',select([['gift','固定赠金'],...(allowRatio?[['ratio','充值比例赠金']]:[]),['chance','抽奖机会']], 'data-reward-type', forced||'gift'))}<div data-gift-amount>${field('赠金金额（元）',num(amount,'data-amount'))}</div><div data-ratio-amount hidden>${field('赠送比例（%）',num('5','data-ratio disabled'),'基数：该笔到账付费金额，不含赠金')}</div><div data-lifetime>${field('赠金类型',select([['limited','限时赠金'],['permanent','永久赠金']],'data-life'))}</div><div data-duration><span class="field-label">有效期</span><div class="duration-fields">${field('时长',num(duration,'data-duration-value'))}${field('单位',select(['天','小时','分钟'],'data-duration-unit',unit))}</div></div><div data-chance-pool hidden>${field('指定奖池',select([['moon','月光礼盒 · 必得赠金'],['luck','幸运转盘 · 可未中奖']],'data-pool disabled'))}</div><div data-chance-count hidden>${field('赠送次数',input(1,'number','min="1" step="1" required data-count disabled'))}</div><button type="button" class="row-remove" data-remove-reward>移除这项</button></div></div>`;
+}
+function rewards(titleText='发放什么', ratio=false, initial='gift', amount=2, duration=3, unit='天', embedded=false) {
+ return `<section class="${embedded?'inline-rewards':'card'} reward-editor" data-ratio-allowed="${ratio}"><h2>${titleText}</h2><div class="reward-list">${rewardRow(ratio,initial,amount,duration,unit)}</div><div class="editor-footer"><button type="button" data-add-reward>＋ 添加一项奖励</button><small>可组合赠金和抽奖机会。赠金到账即生效、不可退款；永久赠金金额有限。</small></div></section>`;
+}
+function common(kind) {
+ return card('活动基本信息',`<div class="grid">${field('活动名称',input({registration:'新朋友见面礼',checkin:'十一月签到礼',recharge:'充值福利',invitation:'邀请好友礼'}[kind],'text','required name="活动名称" maxlength="80"'))}${field('活动有效期',select([['range','指定起止时间'],['forever','长期有效']],'data-time name="有效期"'))}<div data-date>${field('开始时间',input('2026-11-01T00:00','datetime-local','required name="开始时间"'))}</div><div data-date>${field('结束时间',input('2026-11-30T23:59','datetime-local','required name="结束时间"'))}</div></div>${note('金额按站点设置显示，本原型示例单位为元。日期和金额仅为演示，不是上线默认值。')}`);
+}
+function advanced() {
+ return `<details><summary>活动叠加与优先级</summary><div>${field('与其他活动的关系',select([['stack','允许叠加，独立发奖'],['exclusive','加入互斥组，同组只发一个活动']],'data-stack name="叠加方式"'))}<div data-exclusive hidden><div class="grid">${field('选择互斥组',select(state.groups.map(g=>[g.id,g.name]),'data-group name="互斥组" disabled'))}${field('本活动优先级（数值越大越优先）',input(10,'number','step="1" required name="优先级" disabled'))}</div><button type="button" data-new-group>＋ 新建互斥组</button><div class="new-group-row" data-new-group-fields hidden>${field('新组名称',input('','text','maxlength="40" data-group-name disabled placeholder="例如：节日充值优惠"'))}<button type="button" data-create-group>创建并选择</button><button type="button" data-cancel-group>取消</button></div><div data-group-members></div></div>${note('互斥只影响同组活动。A 允许叠加，B 和 C 属于同组：A 独立发奖，B/C 中选优先级更高的。B/C 若在不同组，则可各自发奖。')}<p class="editor-help">只比较本次行为确实满足条件的活动。同优先级按固定活动顺序决定。已确认最高优先级活动预算不足时允许尝试可发放的较低优先级活动；具体预算配置仍待确定。</p></div></details>`;
+}
+function showGroupMembers() {
+ const choice=$('[data-group]');if(!choice)return;
+ const group=state.groups.find(g=>g.id===choice.value);
+ const members=group?.members||[];
+ $('[data-group-members]').innerHTML=`<h3>组内已有活动（演示）</h3>${members.length?table(['活动','优先级'],members.map(m=>[esc(m[0]),m[1]])):'<p class="muted">此组暂时没有其他活动。</p>'}<small>选择同一个组才会互斥。组名用于识别和选择；已有关联不会因为改名而自动改变。本表不表示这些活动一定符合本次触发条件。</small>`;
+}
+function overview() {
+ return title('先看完整流程，再核对字段','P1.12 · 需求核对原型 / 2026-11-22')+review('这套导航是审阅目录，不代表正式网站要增加这么多侧栏菜单。仅演示本次变化；原系统其他设置保留。中文原型用于核对业务，正式实现仍须支持中英文等现有语言。外观切换只是配色样例。')+
+ `<div class="grid">${card('管理员：配置与追溯',`<div class="step"><b>1</b><div>创建注册、签到、充值或邀请活动，直接设置奖励。</div></div><div class="step"><b>2</b><div>需要送抽奖机会时，选择独立奖池。</div></div><div class="step"><b>3</b><div>核对规则摘要，启用活动；奖励记录关联触发事实。</div></div><div class="flow-links">${link('activities','查看活动列表',true)}${link('pool-edit','配置奖池')}${link('records','查看奖励来源')}</div>`)}${card('用户：参与与消费',`<div class="step"><b>1</b><div>注册、充值或邀请达标后自动得奖；从活动菜单进入签到。</div></div><div class="step"><b>2</b><div>获得的赠金直接可用；有机会时主动抽奖。</div></div><div class="step"><b>3</b><div>钱包看两类剩余金额，使用日志一条请求看费用拆分。</div></div><div class="flow-links">${link('wallet','查看钱包',true)}${link('sign-in','去签到')}${link('usage','查看使用日志')}</div>`)}</div>`+
+ card('建议按这三条路径检查',`<ol class="rule-list"><li><a href="#checkin">签到活动配置</a> → <a href="#sign-in">活动签到</a> → <a href="#gifts">赠金明细</a>：第七天每日 ¥1 ＋ 连续额外 ¥2 ＝ ¥3。</li><li><a href="#recharge">充值条件与组合奖励</a> → <a href="#lottery">抽奖</a> → <a href="#records">奖励记录</a>：先得到机会，再主动开奖。</li><li><a href="#codes">付费兑换码</a> → <a href="#wallet">兑换入账</a> → <a href="#usage">消费来源</a> → <a href="#users">人工退款时禁用账号</a>。</li></ol>`)+
+ note('<strong>尚未定稿的部分有明确标记</strong>预算与机会供给、补库存与改概率的轮次、机会截止与暂停联动、累计余数修改、退款后恢复账号。原型展示这些缺口，不用旧方案代替决定。',true)+link('coverage','逐项查看覆盖清单');
+}
+function activities() {
+ const rows=[['新朋友见面礼','注册','11月1日—11月30日','注册送 ¥2（有效期：3天）','启用','registration'],['十一月签到礼','签到','11月1日—11月30日','每日 ¥1，连续 7 天额外 ¥2','启用','checkin'],['充值福利','充值','11月1日—11月30日','累计每满实付 ¥100，得 1 次机会','暂停','recharge'],['邀请好友礼','邀请','长期','新好友注册，送 ¥2（有效期：3天）','启用','invitation']];
+ return title('营销活动','选择场景配置，奖励自动发放。')+`<div class="flow-links">${link('registration','＋ 注册有礼')}${link('checkin','＋ 签到奖励')}${link('recharge','＋ 充值奖励')}${link('invitation','＋ 邀请奖励')}</div>`+
+ card('活动列表',field('筛选活动',input('','search','data-filter placeholder="输入名称或类型"'))+table(['名称','类型','有效期','奖励摘要','状态','操作'],rows.map(r=>[r[0],r[1],r[2],r[3],`<span data-status>${badge(r[4],r[4]==='启用'?'success':'warn')}</span>`,`${link(r[5],'查看配置')} <button data-pause>${r[4]==='启用'?'暂停':'启用'}</button>`])))+
+ card('本次浏览中核对过的活动',state.saved.length?table(['活动','规则摘要'],state.saved.map(r=>[esc(r.name),`<div class="preview-value">${esc(r.summary)}</div>`])):'<p class="muted">尚未核对。打开任一活动，填写后点击“核对规则摘要”。刷新会清除演示数据。</p>')+
+ note('暂停后不接受该活动的新资格，暂停前已成立的奖励仍按原依据发放。编辑已发布规则如何生效、累计余数如何处理仍待明确。',true);
+}
+function activityEditor(kind) {
+ let body=common(kind);
+ if(kind==='registration') body+=note('新用户注册成功后自动发放。同一注册事实在本活动只奖励一次。')+rewards();
+ if(kind==='checkin') body+=card('签到参与条件',field('参与条件',select([['none','不要求充值'],['today','签到当天累计实付达标'],['yesterday','前一天累计实付达标']],'data-eligibility name="签到条件"'))+`<div data-eligibility-amount hidden>${field('当日累计实付门槛（人民币元）',num(10,'name="签到门槛" disabled'),'按相应日期内成功入账的在线支付和付费卡密合计，不看余额。')}</div>`)+rewards('每日签到奖励',false,'gift',1)+
+ card('连续签到额外奖励',field('连续奖励',select([['off','不启用'],['once','连续档位仅奖励一次'],['cycle','按固定天数循环奖励']],'data-streak name="连续模式"','once'))+`<div data-streak-content><div data-cycle hidden>${field('循环周期（天）',input(7,'number','min="1" step="1" name="循环天数" disabled'))}</div><div id="milestones">${milestone()}</div><button type="button" data-add-milestone>＋ 添加连续奖励档位</button>${note('连续奖励是每日奖励之外的额外奖励。每天 ¥1、连续 7 天额外 ¥2，第七天得 ¥3。断签重新计数；从活动开始计算。')}</div>`)+
+ card('补签',field('允许补签',select([['on','允许'],['off','不允许']],'data-makeup name="补签"'))+`<div data-makeup-content><div class="grid">${field('允许补最近几天',input(10,'number','min="1" step="1" required name="补签范围"'),'不能早于本活动开始日期。')}${field('每人在整个活动内最多补几次',input(2,'number','min="1" step="1" required name="补签总次数"'),'跨月不重置，不是每月次数。')}${field('补发漏签当日的每日奖励',select([['yes','补发'],['no','不补发，仅修复连续记录']],'name="补发每日奖励"'))}</div>${note('按漏签当天检查资格；补签修复连续记录，已发连续档位不重复发。')}</div>`);
+ if(kind==='recharge') body+=card('何时获得奖励',field('充值条件',select([['first','全站首笔成功充值达标'],['single','活动内单笔达标'],['total','活动内累计达标']],'data-recharge-condition name="充值条件"','total'))+`<div class="grid">${field('实际支付门槛（人民币元）',num(100,'name="实付门槛"'))}<div data-frequency>${field('奖励频率',select([['once','首次累计达标一次'],['repeat','每累计满额']],'data-frequency-select name="奖励频率"','repeat'))}</div></div><div data-recharge-explain class="note"></div>`)+
+ card('抽奖机会发放',field('机会发放方式',select([['direct','达标直接赠送'],['probability','达标按概率赠送']],'data-chance-method name="机会发放方式"'))+`<div data-chance-prob hidden>${field('每个达标档位获得机会的概率（%）',num(50,'max="100" name="获得机会概率" disabled'))}</div><small>仅控制是否发放机会，不决定开奖结果；奖品及是否允许未中奖由所选奖池设置。固定赠金不受机会发放概率影响。概率未命中不是系统发放失败。</small>`)+rewards('达标后发放的奖励',true,'chance');
+ if(kind==='invitation') body+=card('好友做什么，邀请人得到奖励',field('邀请奖励条件',select([['register','好友注册成功'],['total','好友活动内累计充值达标'],['ratio','好友充值按实付比例奖励']],'data-invite-condition name="邀请条件"'))+`<div data-invite-total hidden><div class="grid">${field('每位好友累计实付门槛（人民币元）',num(100,'name="好友门槛" disabled'))}${field('每位好友奖励频率',select([['once','每位好友首次达标一次'],['repeat','每位好友每累计满额']],'name="好友奖励频率" disabled'))}</div></div><div data-invite-ratio hidden><div class="grid">${field('按好友实际支付人民币赠送（%）',num(5,'name="邀请比例" disabled'))}${field('赠金类型',select(['限时赠金','永久赠金'],'data-invite-life name="邀请赠金类型" disabled'))}<div data-invite-duration>${field('有效期（天）',num(7,'name="邀请赠金天数" disabled'))}</div></div></div>${note('仅活动期间建立的邀请关系参与，充值也须在活动期间成功入账。好友分别累计，不能拼单。邀请奖励给邀请人，好友自己的注册/充值奖另算。')}`)+`<div data-invite-fixed>${rewards('邀请人获得什么')}</div>`;
+ return title(names[kind], '直接配置奖励，发布前核对完整规则。',link('activities','返回列表'))+review('“核对规则摘要 → 保存演示”只保存在当前页面内存。所有条件切换均可查看对应字段。')+`<form id="activity-form" data-kind="${kind}">${body}${advanced()}${actions()}</form>`;
+}
+function milestone() { return `<div class="milestone-row"><div class="milestone-heading">${field('连续达到第几天',input(7,'number','min="1" step="1" required data-milestone-day'))}<button type="button" data-remove-milestone>移除该档位</button></div>${rewards('该档额外奖励',false,'gift',2,7,'天',true)}</div>`; }
+// Independent operational examples; not the pool editor draft or personal draw ledger.
+const supplyExamples = [
+ {id:'moon',name:'月光礼盒',result:'必得赠金',cap:100,issued:60,unused:40,pending:0,prizes:80},
+ {id:'luck',name:'幸运转盘',result:'可未中奖',cap:100,issued:100,unused:20,pending:0,prizes:40}
+];
+const supplyAudit = [];
+function supplyCapacity(pool) {
+ const remaining=Math.max(0,pool.cap-pool.issued-pool.pending);
+ return {remaining,extra:Math.max(0,pool.prizes-pool.unused-pool.pending-remaining)};
+}
+function pools() {
+ return title('抽奖管理','奖池独立存在，多个活动共享同一奖池的名额。',link('pool-edit','＋ 配置奖池',true))+
+ review('以下为两个有限供给运营样例，与配置草稿、个人演示抽奖独立。追加只更新本次浏览的列表和钱包公开名额；刷新重置。')+
+ card('奖池列表',table(['奖池','结果','总名额','累计已发机会','已发未用机会','剩余奖品份数','剩余可发机会','可追加名额','操作'],supplyExamples.map(pool=>[pool.name,pool.result,pool.cap,pool.issued,pool.unused,pool.prizes,supplyCapacity(pool).remaining,supplyCapacity(pool).extra,`<button data-append-slots="${pool.id}">追加名额</button>`])))+
+ note('剩余可发机会：原总名额内，还能继续发出的次数。可追加名额：现有奖品供给支持在原总名额之外再增加的数量。追加只提高总名额，不增加奖品库存。')+
+ card('追加记录',supplyAudit.length?table(['奖池','原总名额','追加','新总名额','操作人','时间'],supplyAudit.map(entry=>[entry.name,entry.before,entry.amount,entry.after,'演示管理员',entry.time])):'<p class="muted">尚无追加记录。</p>')+
+ note('追加后是否补发历史资格、空奖／过期机会是否自动回收，以及改期／权重变更仍待确认。',true);
+}
+function appendSlotsDialog(id) {
+ const pool=supplyExamples.find(p=>p.id===id);if(!pool)return;
+ const {remaining,extra}=supplyCapacity(pool);
+ const explanation=extra
+  ?`现有奖品还能支持追加 ${extra} 个名额。追加后才能发出这部分机会，不会自动增加奖品库存。`
+  :remaining?`原总名额内仍可继续发放 ${remaining} 次机会；现有奖品刚好用于保障这些机会和已发／已确认待发的机会，因此目前可追加 0 个。`
+  :'现有供给没有可追加空间，请先核实奖品供给。';
+ modal('追加名额 · '+pool.name,`<p>当前总名额：<strong>${pool.cap}</strong>；剩余可发机会：<strong>${remaining}</strong> 次。</p><p>可追加名额：<strong>${extra}</strong> 个</p>${table(['计算项目','数量'],[['剩余奖品',`${pool.prizes} 份`],['减去：用户已获得、尚未使用的机会',`${pool.unused} 次`],...(pool.pending?[['减去：已确认、尚未发出的机会',`${pool.pending} 次`]]:[]),['减去：原总名额内仍可发出的机会',`${remaining} 次`],['可追加名额',`${extra} 个`]])}<p>${pool.prizes} − ${pool.unused}${pool.pending?` − ${pool.pending}`:''} − ${remaining} = ${extra}</p>${note(explanation)}${review(pool.id==='luck'?'此样例原有 100 份奖品，已使用 80 次机会，其中 60 次中奖、20 次未中奖，所以还剩 40 份奖品。未中奖不会自动增加总名额，由管理员主动追加。':'此样例原有 100 份奖品，已使用 20 次机会且全部中奖，所以还剩 80 份奖品。')}${extra?`<form id="append-slots-form" data-pool-id="${pool.id}">${field('追加数量',input(1,'number',`name="amount" min="1" max="${extra}" step="1" required`))}<p data-append-total>追加后总名额：${pool.cap+1}</p><div class="actions"><button type="submit" class="primary">确认追加（演示）</button></div></form>`:''}`);
+}
+function profile() {
+ return title('个人资料','原有账号、安全及通知设置保留。')+card('基本资料','<p>演示用户</p>')+card('签到',`<p>前往活动签到页面查看本期奖励、签到或补签。</p>${link('sign-in','去签到',true)}`);
+}
+// Fixed review fixtures; timestamps include an explicit offset and are not server data.
+const centerActivities = [
+ {id:'recharge',name:'充值抽奖礼',start:'2026-11-01T00:00:00+08:00',end:'2026-11-30T23:59:00+08:00',published:true},
+ {id:'checkin',name:'十一月签到礼',start:'2026-11-15T00:00:00+08:00',end:'2026-11-30T23:59:00+08:00',published:true},
+ {id:'registration',name:'新朋友见面礼',start:'2026-11-01T00:00:00+08:00',end:null,published:true,condition:'活动期间首次成功注册的新用户',reward:'限时赠金 ¥2.00（有效期：3天），注册成功后自动发放',route:'my-rewards',action:'查看活动奖励'},
+ {id:'invitation',name:'邀请好友礼',start:'2026-11-01T00:00:00+08:00',end:null,published:true,condition:'本活动内建立邀请关系的新好友成功注册',reward:'邀请人获得限时赠金 ¥2.00（有效期：3天），符合条件后自动发放',route:'invite',action:'去邀请有礼'},
+ {id:'upcoming',name:'十二月签到礼',start:'2026-12-01T00:00:00+08:00',end:'2026-12-15T23:59:00+08:00',published:true,condition:'活动开始后，登录并完成当天签到',reward:'每日限时赠金 ¥1.00（有效期：3天）'},
+ {id:'recent',name:'周末充值抽奖礼',start:'2026-11-15T00:00:00+08:00',end:'2026-11-20T12:00:00+08:00',published:true,condition:'活动期间每累计实付充值 ¥100',reward:'月光礼盒抽奖机会 × 1，受共享名额限制',drawEnd:'2026-12-05T23:59:00+08:00'},
+ {id:'older',name:'较早结束的活动（不应显示）',start:'2026-11-01T00:00:00+08:00',end:'2026-11-18T12:00:00+08:00',published:true},
+ {id:'draft',name:'未发布活动（不应显示）',start:'2026-11-01T00:00:00+08:00',end:null,published:false}
+];
+function centerActivityStatus(activity,now) {
+ if(!activity.published)return null;
+ if(now<Date.parse(activity.start))return 'upcoming';
+ if(activity.end&&now>=Date.parse(activity.end))return now-Date.parse(activity.end)<72*60*60*1000?'ended':null;
+ return 'active';
+}
+function centerActivityCard(activity,status,now) {
+ if(activity.id==='recharge')return limitedBenefits();
+ if(activity.id==='checkin')return checkinAnnouncement();
+ const statusLabel={active:'进行中',upcoming:'即将开始',ended:'已结束'}[status];
+ const start=displayDate(activity.start.slice(0,16));const end=activity.end?displayDate(activity.end.slice(0,16)):'长期有效';
+ let action=status==='active'?link(activity.route,activity.action,true):status==='upcoming'?'<button disabled>活动尚未开始</button>':link('my-rewards','查看活动奖励');
+ if(status==='ended'&&activity.drawEnd&&now<Date.parse(activity.drawEnd))action=link('lottery','使用已有抽奖机会',true)+action;
+ return `<section class="card announcement-card" data-center-activity="${activity.id}"><div class="announcement-heading"><h2>${esc(activity.name)}</h2>${badge(statusLabel,status==='active'?'success':'')}</div><dl class="announcement-facts"><dt>参与条件</dt><dd>${esc(activity.condition)}</dd><dt>获得奖励</dt><dd>${esc(activity.reward)}</dd><dt>活动时间</dt><dd>${esc(start)} — ${esc(end)}</dd>${activity.drawEnd?`<dt>抽奖截止</dt><dd>${esc(displayDate(activity.drawEnd.slice(0,16)))}</dd>`:''}</dl>${status==='ended'?note('活动已结束，不能再通过本活动获得新奖励。已到账赠金按自身有效期使用；已有抽奖机会按抽奖截止时间使用。'):''}<div class="flow-links">${action}</div></section>`;
+}
+function announcements() {
+ const now=Date.parse(state.centerTime||'2026-11-22T12:00:00+08:00');
+ const recharge=new URLSearchParams(location.hash.split('?')[1]||'').get('activity')==='recharge';
+ let content=title('活动中心','发现活动、了解奖励，从这里参与。')+
+ `<details class="announcement-review"><summary>原型审阅说明与时间演示</summary>${review('固定活动样例覆盖注册、签到、充值、邀请及各时间状态。正式页面读取已发布活动配置，时间以服务端为准。未发布和结束满72小时的活动不显示；隐藏不影响历史奖励及仍有效的抽奖机会。')}${field('演示时间',select([['2026-11-22T12:00:00+08:00','11月22日 12:00 · 结束48小时'],['2026-11-23T11:59:59+08:00','11月23日 11:59:59 · 距满72小时还有1秒'],['2026-11-23T12:00:00+08:00','11月23日 12:00 · 结束满72小时']],'id="center-time"',state.centerTime||'2026-11-22T12:00:00+08:00'))}</details>`+
+ (recharge?note('充值活动说明位于“进行中”的第一项。'):'');
+ for(const [status,label] of [['active','进行中'],['upcoming','即将开始'],['ended','近期结束']]) {
+  const activities=centerActivities.filter(activity=>centerActivityStatus(activity,now)===status);
+  content+=`<section class="activity-center-section" data-center-section="${status}"><h2>${label} <span class="pill">${activities.length}</span></h2>${status==='ended'?'<p class="muted">仅展示结束未满3天的活动。过往奖励可在活动奖励中查询。</p>':''}${activities.length?activities.map(activity=>centerActivityCard(activity,status,now)).join(''):'<p class="empty">'+({active:'暂无进行中的活动',upcoming:'暂无即将开始的活动',ended:'暂无近期结束的活动'}[status])+'</p>'}</section>`;
+ }
+ return content+`<div class="flow-links">${link('lottery','查看我的抽奖机会')}${link('my-rewards','查看活动奖励')}</div>`;
+}
+function checkinAnnouncement() {
+ return `<section class="card announcement-card"><div class="announcement-heading"><h2>十一月签到礼</h2>${badge('进行中','success')}</div>
+ <dl class="announcement-facts"><dt>参与条件</dt><dd>登录后，每天可签到一次</dd><dt>活动时间</dt><dd>11月15日—11月30日</dd></dl>
+ <h3>签到奖励</h3>${table(['奖励条件','奖励内容','有效期'],[['每日签到','限时赠金 ¥1.00','3天'],['连续签到满7天','额外限时赠金 ¥2.00','7天']],'announcement-rewards')}
+ <p class="announcement-highlight">第7天合计获得 <strong>¥3.00</strong></p><p class="muted">两份赠金分别按各自有效期生效，到账后自动可用。</p>
+ <dl class="announcement-facts announcement-secondary"><dt>补签范围</dt><dd>最近10天内，且处于活动期间、符合漏签当天条件的日期</dd><dt>补签次数</dt><dd>每人本活动最多2次，跨月不重置</dd></dl>
+ <div class="flow-links">${link('sign-in','去签到',true)}</div></section>`;
+}
+
+function limitedBenefits() {
+ const pool=supplyExamples.find(p=>p.id==='moon');const {remaining}=supplyCapacity(pool);
+ return `<section class="card announcement-card"><div class="announcement-heading"><h2>充值抽奖礼</h2><div>${badge('进行中','success')} ${badge('限量','warn')}</div></div>
+ <dl class="announcement-facts"><dt>参与条件</dt><dd>活动期间，每累计实付充值 <strong>¥100</strong></dd><dt>获得奖励</dt><dd><strong>${esc(pool.name)}抽奖机会 × 1</strong></dd><dt>发放方式</dt><dd>符合条件后自动判断并发放，无需手动领取，受剩余名额限制</dd></dl>
+ <dl class="announcement-facts announcement-secondary"><dt>充值活动时间</dt><dd>11月1日—11月30日</dd><dt>可抽奖时间</dt><dd>11月1日—12月5日</dd><dt>剩余可发机会</dt><dd><strong data-announcement-remaining>${remaining} 次</strong> / 总名额 ${pool.cap} 次${remaining===0?' · 暂无名额':''}<small>多个活动共享该奖池名额；不是您已拥有的机会。</small></dd></dl>
+ ${note('抽奖机会为限量附加福利，付款不预留名额。剩余数量可能变化，以实际获得的机会为准。')}<p class="muted">付费金额正常到账，其他独立赠金按对应活动规则发放。</p>
+ <div class="flow-links">${link('wallet','去充值',true)}${link('lottery','查看我的抽奖机会')}</div></section>`;
+}
+function prizeRow(name='月光赠金', amount=2, weight=80, stock='unlimited', duration=2, unit='小时') {
+ const id=uid('prize');
+ return `<section class="prize-row prize-card" data-prize-id="${id}"><div class="prize-heading"><div class="prize-heading-text"><span class="prize-number"></span><div><h3 data-prize-title>${esc(name)}</h3><p data-prize-summary></p></div></div><div class="prize-heading-actions"><span class="pill" data-prize-percent></span><span class="pill" data-prize-inventory></span><button type="button" data-copy-prize>复制</button><button type="button" data-prize-up aria-label="上移奖项">↑</button><button type="button" data-prize-down aria-label="下移奖项">↓</button><button type="button" data-remove-prize>移除</button><button type="button" data-fold-prize aria-expanded="true" aria-controls="${id}-body">收起</button></div></div><div class="prize-body" id="${id}-body"><div class="prize-rule-fields">${field('奖项名称',input(name,'text','required data-prize-name'))}${field('抽取权重',num(weight,'data-weight'),'对应概率随有效权重自动计算')}${field('库存限制',select([['unlimited','不限数量'],['limited','限制发放总份数']],'data-stock',stock))}<div data-stock-count${stock==='unlimited'?' hidden':''}>${field('发放总份数',input(1,'number',`min="1" step="1" required data-stock-value ${stock==='unlimited'?'disabled':''}`))}</div></div><div class="reward-editor inline-rewards" data-prize-gifts><h3>抽中该奖项后发放</h3><div class="reward-list">${rewardRow(false,'gift',amount,duration,unit)}</div><button type="button" data-add-prize-gift>＋ 添加组合奖品</button><small>抽中此奖项时，以下赠金将一起发放。每份赠金不单独参与抽奖。</small></div></div></section>`;
+}
+function poolEditor() {
+ return title('配置奖池','营销活动 / 独立奖池 / 奖项与奖励配置',`<div class="row">${badge('配置演示 · 尚未发布','warn')}<button type="button" data-pool-preview>用户效果预览</button></div>`)+
+ `<form id="pool-form" novalidate>${card('基础信息',`<div class="grid">${field('奖池名称',input('月光礼盒','text','required maxlength="80" name="奖池名称"'))}${field('用户抽奖展示',select([['wheel','转盘'],['box','盲盒']],'name="展示方式"'))}${field('开奖结果',select([['no','每次必得赠金'],['yes','允许未中奖（谢谢惠顾）']],'data-empty-prize name="空奖规则"'))}${field('抽奖开始时间',input('2026-11-01T00:00','datetime-local','required name="开始时间"'))}${field('抽奖结束时间',input('2026-12-05T23:59','datetime-local','required name="结束时间"'))}</div><div data-empty-weight hidden>${field('“谢谢惠顾”的抽取权重',num(20,'name="未中奖权重" disabled'),'作为独立结果参与概率计算；未中奖消耗机会，不产生赠金。')}</div><small data-pool-period></small>`)}
+ <section class="probability-overview" aria-labelledby="prob-title"><div class="title-row"><div><h2 id="prob-title">当前配置的概率分布</h2><p>按各奖项权重计算，修改后即时更新。</p></div><span class="probability-count"></span></div><div data-probability-bar class="probability-bar" aria-hidden="true"></div><div data-probability-legend class="probability-legend"></div><p class="probability-footnote">此处按配置奖项均有库存计算。库存耗尽的奖项会退出抽取，其他概率重新计算；下方可模拟查看。</p></section>
+ <div class="title-row prize-section-title"><div><h2>奖项配置</h2><small>每个奖项独立编辑，可组合多份赠金。上下调整只改变展示顺序。</small></div><div class="row"><button type="button" data-fold-all="open">全部展开</button><button type="button" data-fold-all="close">全部收起</button></div></div>
+ <div id="prizes">${prizeRow('月光赠金',2,80)}${prizeRow('星辉赠金',5,19,'unlimited',4)}${prizeRow('银月大奖',100,1,'limited',7,'天')}</div><button type="button" class="add-prize-wide" data-add-prize>＋ 添加新奖项</button>
+ <details class="pool-simulator"><summary>查看库存耗尽后的概率变化</summary><div>${field('模拟某个奖项库存耗尽',select([['','选择一个奖项']],'data-simulate-depleted'))}<div data-simulation-table></div><small>仅演示管理员计算视图，不修改奖项库存或权重。用户效果预览不展示后台概率。</small></div></details>
+ <details class="pool-pending"><summary>待确认的运营边界 · N01–N03</summary>${note('机会按供给限量、公开剩余名额、不设支付预留及支持追加已确认；整池金额限制、补库存和修改权重的生效轮次、机会截止及暂停联动仍待确定。当前页面只演示配置，不把“立即发布”作为已确认操作。',true)}</details>
+ <div class="pool-action-bar"><div><strong data-pool-validation></strong><small data-pool-save-status>仅演示配置，不连接业务接口</small></div><div class="row"><button type="button" data-pool-draft>保存演示草稿</button><button class="primary" type="submit">核对奖池摘要</button></div></div></form>`;
+}
+const poolColors=['#76adff','#57c4b7','#f2bc63','#bfa3ed','#ef9bb4','#9bca7d'];
+let poolDraft=null;
+function poolEntries() {
+ const entries=$$('.prize-row').map((row,i)=>({id:row.dataset.prizeId,name:$('[data-prize-name]',row).value.trim()||'未命名奖项',weight:Number($('[data-weight]',row).value),color:poolColors[i%poolColors.length],row}));
+ if($('[data-empty-prize]')?.value==='yes')entries.push({id:'empty',name:'谢谢惠顾',weight:Number($('#pool-form').elements.namedItem('未中奖权重').value),color:'#b3bccf'});
+ return entries;
+}
+function formatPercent(value){return `${new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2,minimumFractionDigits:2}).format(value)}%`;}
+function poolShares(entries) {
+ if(!entries.length||entries.some(e=>!Number.isFinite(e.weight)||e.weight<=0))return null;
+ const scale=Math.max(...entries.map(e=>e.weight));const sum=entries.reduce((n,e)=>n+e.weight/scale,0);
+ return entries.map(e=>({...e,percent:(e.weight/scale)/sum*100}));
+}
+function refreshPool() {
+ if(!$('#pool-form'))return;
+ const entries=poolEntries();const shares=poolShares(entries);
+ const rows=$$('.prize-row');
+ entries.filter(e=>e.row).forEach((e,i)=>{
+  const row=e.row;$('.prize-number',row).textContent=i+1;
+  $('[data-prize-title]',row).textContent=e.name;
+  const rewards=$$('.reward-row',row);$('[data-prize-summary]',row).textContent=rewards.length?rewards.map(rewardSummary).join(' ＋ '):'尚未配置赠金';
+  $('[data-prize-percent]',row).textContent=shares?`当前计算 ${formatPercent(shares[i].percent)}`:'权重待修正';
+  const limited=$('[data-stock]',row).value==='limited';row.classList.toggle('featured-prize',limited);
+  $('[data-prize-inventory]',row).textContent=limited?`总限量 ${$('[data-stock-value]',row).value||'—'} 份`:'不限数量';
+  $('[data-prize-up]',row).disabled=i===0;$('[data-prize-down]',row).disabled=i===rows.length-1;
+ });
+ $('.probability-count').textContent=`${rows.length} 个奖项${entries.some(e=>e.id==='empty')?' · 含未中奖结果':''}`;
+ $('[data-probability-bar]').innerHTML=shares?shares.map(e=>`<span style="width:${e.percent}%;background:${e.color}"></span>`).join(''):'';
+ $('[data-probability-legend]').innerHTML=shares?shares.map(e=>`<span><i style="background:${e.color}"></i>${esc(e.name)} <b>${formatPercent(e.percent)}</b></span>`).join(''):'请为每个结果填写有效的正数权重。';
+ const fields=$$('input,select,textarea',$('#pool-form')).filter(x=>!x.disabled);const start=$('#pool-form').elements.namedItem('开始时间').value;const end=$('#pool-form').elements.namedItem('结束时间').value;
+ const datesValid=start&&end&&start<end;
+ const valid=rows.length>0&&shares&&fields.every(x=>x.validity.valid)&&rows.every(row=>$('.reward-row',row))&&datesValid;
+ $('[data-pool-validation]').textContent=valid?`${rows.length} 个奖项，基础字段已填写`:'配置尚未完整，请核对字段';
+ $('[data-pool-period]').textContent=datesValid?`抽奖开放时间：${displayDate(start)} 至 ${displayDate(end)}`:'请填写有效的起止时间。';
+ const sim=$('[data-simulate-depleted]');const chosen=sim.value;
+ sim.innerHTML='<option value="">选择一个奖项</option>'+entries.filter(e=>e.row).map(e=>`<option value="${e.id}">${esc(e.name)}</option>`).join('');
+ if(entries.some(e=>e.id===chosen))sim.value=chosen;
+ refreshPoolSimulation();
+}
+function refreshPoolSimulation() {
+ const selector=$('[data-simulate-depleted]');if(!selector)return;
+ if(!selector.value){$('[data-simulation-table]').innerHTML='<p class="muted">选择奖项，比较发完前后的概率；不执行真实抽奖。</p>';return;}
+ const all=poolEntries();const before=poolShares(all);const after=poolShares(all.filter(e=>e.id!==selector.value));
+ if(!before){$('[data-simulation-table]').innerHTML=note('请先修正权重再查看模拟。');return;}
+ const rows=before.map(e=>[esc(e.name),formatPercent(e.percent),e.id===selector.value?'不参与抽取':after?formatPercent(after.find(x=>x.id===e.id).percent):'没有可抽取结果']);
+ $('[data-simulation-table]').innerHTML=table(['奖项 / 结果','库存充足时','所选奖项耗尽后'],rows)+(!after?note('没有可抽取结果，不能保证发奖；机会兑现和资源不足处理仍待 N01 确认。',true):!after.some(e=>e.row)?note('此时只剩谢谢惠顾，100% 仅为权重演算。全部赠金奖项耗尽后是否允许继续消耗机会，仍待 N01 确认，不能视为已批准的空奖兜底。',true):'');
+}
+function foldPrize(row,open) {
+ $('.prize-body',row).hidden=!open;const b=$('[data-fold-prize]',row);b.setAttribute('aria-expanded',String(open));b.textContent=open?'收起':'展开';
+}
+function copyFormValues(source,target) {
+ const originals=$$('input,select,textarea',source);
+ $$('input,select,textarea',target).forEach((input,i)=>{input.value=originals[i].value;input.disabled=originals[i].disabled;});
+}
+const rewardFacts = [
+ ['2026-10-29 09:00','演示用户','十月签到礼','正常签到','每日赠金 ¥1.00（有效期：3天）','已发放','checkin-oct29'],
+ ['2026-10-30 09:00','演示用户','十月签到礼','正常签到','每日赠金 ¥1.00（有效期：3天）','已发放','checkin-oct30'],
+ ['2026-10-31 09:00','演示用户','十月签到礼','补签 10月28日，修复连续第 7 天','补发每日 ¥1.00（有效期：3天） ＋ 连续额外 ¥2.00（有效期：7天）','已发放','checkin-oct31'],
+ ['2026-11-22 14:00','演示用户','新朋友见面礼','注册成功','限时赠金 ¥2.00（有效期：3天）','已发放','register'],
+ ['2026-11-22 14:10','演示用户','十一月签到礼','第 7 天签到','每日 ¥1.00 ＋ 连续额外 ¥2.00','已发放','checkin'],
+ ['2026-11-22 14:15','演示用户','充值福利','付费卡密兑换，实付 ¥100.00','赠金 ¥5.00 ＋ 月光礼盒 1 次','已发放','topup'],
+ ['2026-11-22 14:16','演示用户','邀请好友礼','好友小林实付 ¥100.00 × 5%','限时赠金 ¥5.00（有效期：7天）','已发放','invite'],
+ ['2026-11-22 14:20','演示用户','月光礼盒','消耗 1 次机会抽中月光赠金','限时赠金 ¥2.00（有效期：2小时）','已发放','draw'],
+ ['2026-11-22 14:21','另一演示用户','幸运转盘','消耗 1 次机会','未中奖，无赠金到账','未中奖','empty'],
+ ['2026-11-22 14:22','另一演示用户','充值机会礼','累计实付达标，机会概率未命中','未获得机会','未命中','chance-miss'],
+ ['2026-11-22 14:23','另一演示用户','新朋友见面礼','注册成功，发放异常','应发限时赠金 ¥2.00','发放异常','failed']
+];
+// Reward fixtures specify validity separately from the condition that earned the reward.
+const rewardGrants={
+ 'checkin-oct29':[{label:'每日奖励',amount:1,days:3}],
+ 'checkin-oct30':[{label:'每日奖励',amount:1,days:3}],
+ 'checkin-oct31':[{label:'补发每日奖励',amount:1,days:3},{label:'连续签到额外奖励',amount:2,days:7}],
+ register:[{label:'注册奖励',amount:2,days:3}],
+ checkin:[{label:'每日奖励',amount:1,days:3},{label:'连续签到额外奖励',amount:2,days:7}],
+ topup:[{label:'充值奖励',amount:5,days:7}],
+ invite:[{label:'邀请奖励',amount:5,days:7}],
+ draw:[{label:'抽奖奖励',amount:2,hours:2}],
+ failed:[{label:'应发注册奖励',amount:2,days:3}]
+};
+function rewardGrantText(grant) {
+ return `${grant.label}：限时赠金 ${money(grant.amount)}（有效期：${grant.days||grant.hours}${grant.days?'天':'小时'}）`;
+}
+function rewardContent(r) {
+ const grants=rewardGrants[r[6]];
+ if(!grants)return esc(r[4]);
+ return `<div class="reward-log-items">${grants.map(g=>`<div>${esc(rewardGrantText(g))}</div>`).join('')}${r[6]==='topup'?'<div>抽奖机会：月光礼盒 1 次</div>':''}</div>`;
+}
+function filterRewardRecords(container) {
+ const start=$('[data-record-start]',container),end=$('[data-record-end]',container);
+ const invalid=start.value&&end.value&&start.value>end.value;
+ end.setCustomValidity(invalid?'结束日期不能早于开始日期':'');
+ $('[data-range-error]',container).hidden=!invalid;
+ const term=$('[data-filter]',container).value.toLowerCase();
+ $$('tbody tr',container).forEach(row=>{
+  const date=$('time',row).getAttribute('datetime').slice(0,10);
+  row.hidden=invalid||!row.textContent.toLowerCase().includes(term)||(start.value&&date<start.value)||(end.value&&date>end.value);
+ });
+ $('[data-record-empty]',container).hidden=invalid||$$('tbody tr',container).some(row=>!row.hidden);
+}
+function records(user=false) {
+ return (user?'':title('奖励记录','从触发事实追溯奖励，不设置审核发奖。'))+card('奖励明细',`<div class="filters">${field('搜索名称、来源或状态',input('','search','data-filter placeholder="例如：签到、未中奖、异常"'))}${field('开始日期',input('2026-10-01','date','data-record-start'))}${field('结束日期',input('2026-11-30','date','data-record-end'))}</div><small>按记录时间筛选，含开始与结束当天。</small><p data-range-error hidden role="alert">结束日期不能早于开始日期，请重新选择。</p>`+table(['时间',...(user?[]:['用户']),'来源','触发原因','奖励内容','结果','详情'],rewardFacts.filter(r=>!user||r[1]==='演示用户').map(r=>[`<time datetime="${r[0].replace(' ','T')}">${esc(displayDate(r[0]))}</time>`,...(user?[]:[r[1]]),r[2],r[3],rewardContent(r),badge(r[5],r[5]==='已发放'?'success':'warn'),`<button data-reward-detail="${r[6]}">查看</button>`]))+'<p data-record-empty hidden>当前日期范围和筛选条件下暂无奖励记录。</p>')+note('“连续签到7天”是获奖条件；“有效期：7天”是赠金有效期。每份赠金分别计时，具体到账及到期时间在详情查看。');
+}
+function rewardDetail(key) {
+ const r=rewardFacts.find(x=>x[6]===key);
+ const descriptions={register:'注册成功 → 新朋友见面礼 → 自动到账 → 钱包赠金明细。',checkin:'11 月 22 日正常签到，连续第 7 天。每日 ¥1 与额外 ¥2 分别记录来源；本日合计 ¥3。',topup:'兑换入账，实付人民币 ¥100.00，到账付费金额 ¥100.00。来源：链动小铺 / 十一月批次。与在线支付共用充值资格。另发赠金不再触发充值活动。',invite:'邀请关系在活动期间建立。好友小林于活动内实付人民币 ¥100.00，比例 5%，奖励邀请人赠金 ¥5.00；好友自己的活动奖励另算。',draw:'机会来自充值福利 → 使用机会 → 抽中月光赠金 → 自动发放 ¥2.00。赠金有效期：2小时。',empty:'已完成一次抽奖，结果为谢谢惠顾。消耗一次机会，不生成赠金或零元到账记录。','chance-miss':'对应充值档位已处理，随机资格未命中。相同档位不重试、不重抽；不是发放故障。',failed:'注册资格已成立，但赠金尚未到账。保留原资格和异常记录，内部恢复，不要求用户重复注册或重新领取。'};
+ const grantRows=(rewardGrants[key]||[]).map(g=>{
+  // Fixed Shanghai fixture timestamps: arithmetic uses UTC only to avoid the viewer's timezone.
+  const expiry=new Date(Date.parse(r[0].replace(' ','T')+'Z')+((g.days||0)*24+(g.hours||0))*3600000).toISOString().slice(0,16);
+  return [esc(`${g.label} · 限时赠金 ${money(g.amount)}`),r[5]==='已发放'?displayDate(r[0]):'尚未到账',r[5]==='已发放'?displayDate(expiry):'到账后才开始计算'];
+ });
+ modal('奖励来源详情',table(['字段','内容'],[['来源',r[2]],['触发事实',r[3]],['奖励',rewardContent(r)],['结果',r[5]]])+(grantRows.length?table(['赠金项目','实际到账时间','到期时间'],grantRows,'grant-expiry'):'')+note(descriptions[key]||'签到奖励自动到账。活动结束不立即收回已到账赠金，每份赠金按自身有效期处理；补签修复连续记录后，已发过的连续奖励不重复发放。')+`<div class="flow-links">${link('gifts','查看赠金明细')}${link('usage','查看使用日志')}</div>`);
+}
+function codes() { return title('付费兑换码','保留原兑换码入口，兑换视为正式付费充值。')+review('生成与兑换只演示字段和反馈，不生成真实可兑换卡密。金额输入联动属于本稿呈现建议。')+
+ card('现有兑换码列表',table(['名称','实付售价','到账付费金额','销售来源','状态'],[['十一月充值卡','人民币 ¥100.00','¥100.00','链动小铺 / 11 月批次','已兑换'],['折价充值卡','人民币 ¥90.00','¥100.00','链动小铺 / 折价批次','未兑换']]))+
+ `<form id="code-form">${card('生成 / 登记付费兑换码',`<div class="grid">${field('名称',input('十一月充值卡','text','name="名称" required'))}${field('生成数量',input(10,'number','min="1" step="1" name="数量" required'))}${field('到账付费金额（元）',num(100,'name="到账付费金额"'))}${field('实际售价（人民币元）',num(100,'name="实际售价"'),'正常等额销售仍明确保存实付与到账两个事实；折价不能按面值判断活动门槛。')}${field('兑换截止',select([['never','无截止'],['date','指定日期']],'data-code-expiry name="兑换截止"'))}<div data-code-date hidden>${field('兑换截止日期',input('2026-12-31','date','name="兑换截止日期" disabled required'))}</div>${field('销售渠道',input('链动小铺','text','name="销售渠道"'))}${field('销售批次',input('2026 年 11 月','text','name="销售批次"'))}${field('销售凭据说明（选填）','<textarea name="销售凭据" placeholder="填写可用于人工核对的销售凭据说明；不连接店铺接口"></textarea>')}</div>${note('兑换码仅用于付费充值，没有赠送码类型。兑换成功计入全站首充顺序和活动资格；赠金由营销活动另行发放。码的兑换截止不是赠金有效期。')}<div class="actions"><button class="primary">核对登记内容</button></div>`)}</form>`; }
+function users() { return title('用户管理 · 原入口','退款人工沟通处理，复用禁用账号操作。')+card('演示用户',table(['用户','剩余付费金额','剩余赠金','账号状态','操作'],[['演示用户','¥100.00','¥15.00',badge(state.disabled?'已禁用':'正常',state.disabled?'warn':'success'),`<button data-disable-user ${state.disabled?'disabled':''}>禁用账号</button>`]]))+note('禁用后阻止该账号所有 SK 的新调用。禁用不等于现金退款、清空余额或即时中断所有已开始请求；在途费用仍需正常结算。')+note('退款完成后的清零规则已确认：在途结算后清零剩余付费金额、赠金、未使用机会及累计余数，保留历史；重新启用不恢复。此功能尚未实现，普通禁用不自动清零。',true)+`<div class="flow-links">${link('usage','查看使用日志')}${link('gifts','查看赠金来源')}${link('records','查看奖励来源')}</div>`; }
+function wallet() {
+ return title('钱包','付费金额和赠金分别记录，赠金自动使用。')+`<div class="grid"><section class="card stat"><h2>剩余付费金额</h2><div class="big">${state.redeemed?'¥200.00':'¥100.00'}</div><small>在线充值与付费卡密均计入付费金额。</small></section><section class="card stat"><h2>剩余赠金</h2><div class="big">¥15.00</div>${link('gifts','查看赠金明细')}<small>包含有效限时赠金和永久赠金；赠金不可退款。</small></section></div>`+
+ note(`当前有充值活动 · 抽奖机会限量，付款不预留名额。 ${link('announcements?activity=recharge','查看活动详情')}`)+
+ card('充值与兑换',`<div class="grid"><div><h3>在线充值</h3>${field('支付金额（人民币元）',num(100,'id="demo-topup"'))}<button data-online-pay>预览充值结果</button><small>原支付流程保留，本原型不发起支付。</small></div><form id="redeem-form"><h3>付费卡密兑换</h3>${field('兑换码',input('DEMO-PAID-100','text','required name="code"'))}<button class="primary" ${state.redeemed?'disabled':''}>${state.redeemed?'已兑换演示码':'兑换'}</button><small>演示码增加 ¥100.00 付费金额，计入充值活动；不会把卡密当赠金。</small></form></div>`)+
+ card('充值记录',table(['时间','方式','实际支付','到账付费金额','活动奖励'],[['11月22日 14:15','付费卡密','人民币 ¥100.00','¥100.00','另发赠金 ¥5.00 ＋ 1 次机会'],['11月21日 13:00','在线支付','人民币 ¥100.00','¥100.00','按当时活动资格判断']]))+
+ note('消费优先使用有效且最早到期的限时赠金，其次永久赠金，最后付费金额。每次调用的总费用与来源可以在使用日志查看。')+link('usage','查看使用日志');
+}
+const giftsData=[['注册有礼','¥2.00','¥0.50','¥1.50','2026年11月25日 14:00','使用中'],['充值赠送','¥10.00','¥3.00','¥7.00','2026年11月29日 14:15','使用中'],['抽奖奖励','¥8.00','¥1.50','¥6.50','永久','使用中'],['过去的签到奖励','¥3.00','¥1.00','¥0.00','2026年11月20日 23:59','已到期'],['之前的邀请奖励','¥5.00','¥5.00','¥0.00','永久','已用完']];
+function myRewards(view='records') {
+ return title('活动奖励','查看奖励来源，以及赠金的剩余金额和使用情况。',link('wallet','返回钱包'))+
+ `<div class="reward-view-switch" aria-label="活动奖励页面切换"><a href="#my-rewards" ${view==='records'?'aria-current="page"':''}>奖励记录</a><a href="#gifts" ${view==='gifts'?'aria-current="page"':''}>赠金明细</a></div>`+
+ (view==='gifts'?gifts():records(true));
+}
+function gifts() {return note('有效赠金剩余合计 ¥15.00。')+card('来源与使用情况',field('筛选来源或状态',input('','search','data-filter placeholder="注册、充值、已到期…"'))+table(['来源','获得金额','已消费','可用剩余','到期时间','状态','详情'],giftsData.map((g,i)=>[...g,`<button data-gift="${i}">查看</button>`])))+note('到期未消费部分不算消费，也不计入可用赠金；历史记录保留。赠金到账立即生效，不需要领取或激活。');}
+function giftDetail(i) {const g=giftsData[i];modal('赠金来源与去向',table(['字段','金额 / 信息'],[['来源',g[0]],['获得',g[1]],['已消费',g[2]],['可用剩余',g[3]],['到期失效',i===3?'¥2.00':'¥0.00'],['赠金类型',g[4]==='永久'?'永久赠金':'限时赠金'],['到期时间',g[4]==='永久'?'不过期':g[4]]])+note(i===3?'获得 ¥3.00 = 消费 ¥1.00 ＋ 到期失效 ¥2.00。到期失效不是模型消费。':'每次扣费关联原使用记录，保留本份赠金承担的金额。')+table(['时间','请求','本份赠金承担'],[[i===3?'11月19日 14:30':'11月22日 14:30','某模型调用（来源关联示例）',i===0?'¥0.03':'¥0.08']])+link('usage','查看原使用日志'));}
+function invite() { return title('邀请有礼','邀请好友，符合当前活动规则后自动获得奖励。')+review(`邀请活动状态：${select([['active','有进行中的活动'],['none','暂无活动']],'id="invite-scene"',state.inviteScene||'active')}`)+card('我的邀请链接',field('邀请链接',input('https://example.invalid/register?aff=demo','text','readonly'))+'<small>此为不可用的原型示例链接，不生成真实邀请关系。</small>')+
+ (state.inviteScene==='none'?card('邀请活动','<div class="empty">暂无进行中的邀请奖励活动</div><p>邀请关系与历史记录保留；当前邀请不承诺获得奖励。</p>'):card('正在进行的邀请福利',`<ul class="rule-list"><li>新好友注册：赠送邀请人 ¥2.00 限时赠金，有效期：3天。</li><li>好友在活动内首次累计实付 ¥100：赠送邀请人 ¥5.00 限时赠金。</li><li>好友充值比例活动：按好友活动内实付人民币的 5% 送赠金。</li></ul>${note('三条为不同活动的展示示例；是否同时发奖按管理员叠加与互斥设置。仅本活动内建立的邀请关系参加，充值也须在活动内入账。')}`))+
+ card('邀请与奖励记录',table(['好友','建立关系','奖励来源','已获得'],[['小林','11月2日','好友注册礼','¥2.00 赠金'],['小林','11月2日','好友首次累计达标','¥5.00 赠金'],['小月','11月4日','好友充值比例','¥3.00 赠金']]))+link('my-rewards','查看活动奖励'); }
+function usage() { return title('使用日志','保留现有调用记录，一次调用仍是一条。')+review('本页复用现有使用日志的结构，日期与汇总为独立固定样例。切换类型可查看充值、消费和任务返还的不同含义。')+
+ card('本页消费汇总',`<div class="grid three"><div>调用总费用<div class="reward-amount">¥0.12</div></div><div>赠金承担<div class="reward-amount">¥0.08</div></div><div>付费金额承担<div class="reward-amount">¥0.04</div></div></div><small>请求数 1；两种资金来源不重复计算总费用和请求数。</small>`)+
+ card('记录',`<div class="grid">${field('日志类型',select(['全部','消费','充值','任务费用返还'],'id="log-type"'))}${field('搜索模型或来源',input('','search','data-filter placeholder="模型 / 付费卡密"'))}</div><div data-log-kind="消费">${table(['时间','类型','模型','用量','耗时','费用','详情'],[['14:30','消费','某模型','输入 1,000 / 输出 200 Token','1.2 秒','¥0.12（赠金 ¥0.08）','<button data-usage-detail>展开详情</button>']])}</div><div data-log-kind="充值">${table(['时间','类型','来源','实际支付','到账'],[['14:15','充值','付费卡密','人民币 ¥100.00','付费金额 ¥100.00']])}</div><div data-log-kind="任务费用返还">${table(['时间','类型','原因','原路返还','说明'],[['13:00','任务费用返还','另一异步任务失败','赠金 ¥0.20','站内费用返还，不是现金退款']])}</div>`)+note('小额费用保留有效精度，例如 ¥0.00012，不能统一舍入成 ¥0.00。详细模型用量、调用分组等原字段在实际开发中保留。'); }
+function usageDetail() {modal('本次调用 · 费用详情',table(['字段','内容'],[['总费用','¥0.12'],['使用赠金','¥0.08'],['使用付费金额','¥0.04'],['模型','某模型'],['输入 / 输出','1,000 / 200 Token'],['耗时','1.2 秒']])+`<details open><summary>本次赠金来源</summary>${table(['来源','承担金额','赠金类型','到期时间'],[['注册有礼','¥0.03','限时赠金','2026年11月25日 14:00'],['签到奖励','¥0.05','限时赠金','2026年11月25日 14:10']])}</details>`+note('来源拆分放在本条详情内，不另增消费行。底层记录具体赠金来源，支持追溯和原路费用返还。')+link('gifts','查看赠金明细'));}
+function statesPage() {return title('状态与中英文布局样例','用于核对容易遗漏的反馈；不是新增的用户侧页面。')+
+ `<div class="grid">${card('没有可用赠金','<div class="empty">暂无赠金<br>符合活动条件后，奖励将自动到账。</div>')}${card('加载失败','<p>暂时无法加载奖励记录，请稍后重试。</p><button data-demo-retry>重新加载（演示）</button>')}${card('参与条件不满足',note('今天累计实付充值未达到本活动要求，暂不能签到。'))}${card('技术发放异常',note('本次奖励暂未到账，正在处理。请勿重复操作。')+'<small>不显示发放成功，也不要求审核或激活。</small>')}</div>`+
+ card('金额与赠金规则的中英文样例',table(['中文','English'],[['剩余付费金额 ¥100.00','Remaining paid balance ¥100.00'],['剩余赠金 ¥15.00','Remaining bonus balance ¥15.00'],['限时赠金 / 永久赠金','Expiring bonus / Permanent bonus'],['本次费用 ¥0.12（赠金 ¥0.08）','Cost ¥0.12 (bonus ¥0.08)'],['每日 ¥1，连续 7 天额外 ¥2','Daily ¥1, plus ¥2 for a 7-day streak'],['未中奖，本次消耗 1 次机会','No prize. One draw opportunity used.'],['已到期，未消费部分不再可用','Expired. Unspent bonus is no longer available.']]))+review('本静态原型为中文业务审阅稿，以上用于检查英文表达与布局。正式页面完整中英文及其他现有语言需按项目翻译机制实施和验收，当前不声称已经完成。'); }
+const coverageRows=[
+ ['注册','成功即发、一次注册事实、组合奖励','registration','my-rewards'],['签到','独立签到页、个人资料快捷入口、每日＋连续、补签活动总次数','checkin','sign-in'],['充值','首笔、单笔首次/每次、累计首次/每满额；累计禁止比例赠金','recharge','wallet'],['邀请','注册、每好友累计一次/循环、实付比例、时间范围','invitation','invite'],['奖池','机会发放与奖池结果独立组合、权重与库存、单次开奖、多赠金组合','pool-edit','lottery'],['奖励追溯','注册/签到/充值/邀请/抽奖、概率未命中、未中奖、发放异常','records','my-rewards'],['兑换码','仅付费、实付与到账分开、来源记录、共用充值资格','codes','wallet'],['钱包','两类余额、限时与永久、到期/用完、不出现激活审核','wallet','gifts'],['消费','原日志一条调用、总额与来源、具体赠金来源、任务返还','usage','usage'],['退款','人工处理、复用禁用账号、在途请求边界','users','users'],['金额','管理员和用户直接使用元；实付人民币单独标明；小额精度','recharge','usage'],['状态与适配','空数据、错误、未满足、已签到、无机会、结束；窄屏；英文样例','states','states']
+];
+function coverage() {return title('需求覆盖与待定项','不把原型当业务实现，也不把未定规则隐藏起来。')+card('页面覆盖',table(['范围','本稿覆盖内容','管理员 / 配置','用户 / 结果'],coverageRows.map(r=>[r[0],r[1],`<a href="#${r[2]}">${names[r[2]]}</a>`,`<a href="#${r[3]}">${names[r[3]]||'奖励记录'}</a>`]),'coverage'))+
+ card('还需要收口的运营规则',table(['编号','待决定内容','原型如何处理'],[['N01','公开限量、无支付预留、按供给追加已确认；历史资格及名额回收待定','钱包公开名额，抽奖管理可演示追加'],['N02','补库存、改权重与新轮次','无立即改概率或补库存的假定按钮'],['N03','机会截止、改期、暂停与来源时间','展示位置保留，期限政策标为待确认'],['N04','活动修改后的累计余数与规则切换','编辑只作新建场景，不模拟真实规则更新'],['N05 · 已确认','退款后清零剩余资金、赠金、机会及累计余数，保留历史','尚未实现；普通禁用不自动清零，重新启用不恢复']],'coverage'))+
+ card('开发时仍必须验收的底层行为',`<p>静态原型不能证明防重复发奖、库存并发、多实例一致性、数据库兼容、计费来源正确或账号禁用效果。正式实现仍需按新版 Issue 整体验收。</p><p>钱包与签到/抽奖等页面使用独立固定样例；局部演示操作不会自动重算整套资金账本。正式开发必须统一实际数据。</p>`);
+}
+function visibleSection(el, visible) {
+ if(!el)return;el.hidden=!visible;$$('input,select,textarea',el).forEach(x=>x.disabled=!visible);
+}
+function syncReward(row) {
+ const type=$('[data-reward-type]',row).value;
+ visibleSection($('[data-gift-amount]',row),type==='gift');
+ visibleSection($('[data-ratio-amount]',row),type==='ratio');
+ visibleSection($('[data-lifetime]',row),type!=='chance');
+ visibleSection($('[data-duration]',row),type!=='chance'&&$('[data-life]',row).value==='limited');
+ visibleSection($('[data-chance-pool]',row),type==='chance');
+ visibleSection($('[data-chance-count]',row),type==='chance');
+ if(row.closest('[data-prize-gifts]')){const option=$('[value="chance"]',$('[data-reward-type]',row));if(option)option.remove();}
+}
+function syncEditor(target) {
+ if(target.matches('[data-reward-type],[data-life]'))syncReward(target.closest('.reward-row'));
+ if(target.matches('[data-time]'))$$('[data-date]').forEach(x=>visibleSection(x,target.value==='range'));
+ if(target.matches('[data-stack]')){
+  visibleSection($('[data-exclusive]'),target.value==='exclusive');
+  visibleSection($('[data-new-group-fields]'),false);showGroupMembers();
+ }
+ if(target.matches('[data-group]'))showGroupMembers();
+ if(target.matches('[data-eligibility]'))visibleSection($('[data-eligibility-amount]'),target.value!=='none');
+ if(target.matches('[data-streak]')){
+  visibleSection($('[data-streak-content]'),target.value!=='off');
+  visibleSection($('[data-cycle]'),target.value==='cycle');
+  if(target.value!=='off')$$('.reward-row',$('[data-streak-content]')).forEach(syncReward);
+ }
+ if(target.matches('[data-makeup]'))visibleSection($('[data-makeup-content]'),target.value==='on');
+ if(target.matches('[data-recharge-condition]')){
+  const value=target.value;visibleSection($('[data-frequency]'),value!=='first');
+  const mode=$('[data-chance-method]');const c=$('option[value="probability"]',mode);
+  if(value!=='total'&&c){if(mode.value==='probability')mode.value='direct';c.remove();}
+  if(value==='total'&&!c)mode.add(new Option('达标按概率赠送','probability'));
+  const freq=$('[data-frequency-select]');freq.innerHTML=value==='single'?'<option value="once">首次单笔达标一次</option><option value="repeat">每笔达标</option>':'<option value="once">首次累计达标一次</option><option value="repeat" selected>每累计满额</option>';
+  $('[data-recharge-explain]').textContent={first:'只有全站第一笔成功付费入账在活动期间且达到门槛才奖励。第一笔实付 ¥30 不达标，后来实付 ¥100 也不算首笔。',single:'按每笔实际支付人民币判断。实付 ¥30 与 ¥70 不合并；可选择首次达标一次或每笔达标。',total:'从本活动开始累计，每位用户独立计算。门槛 ¥100：¥30＋¥70 达一档；之后 ¥250，首次模式不再发，循环模式再发两档、余 ¥50。'}[value];
+  $$('.reward-editor').forEach(editor=>editor.dataset.ratioAllowed=String(value!=='total'));
+  $$('[data-reward-type]').forEach(s=>{let option=$('[value="ratio"]',s);if(value==='total'&&option){if(s.value==='ratio')s.value='gift';option.remove();}else if(value!=='total'&&!option)s.add(new Option('充值比例赠金','ratio'));syncReward(s.closest('.reward-row'));});
+ }
+ if(target.matches('[data-chance-method]')){visibleSection($('[data-chance-prob]'),target.value==='probability');$$('.reward-row').forEach(syncReward);}
+ if(target.matches('[data-invite-condition]')){
+  visibleSection($('[data-invite-total]'),target.value==='total');visibleSection($('[data-invite-ratio]'),target.value==='ratio');visibleSection($('[data-invite-fixed]'),target.value!=='ratio');
+  if(target.value!=='ratio')$$('.reward-row',$('[data-invite-fixed]')).forEach(syncReward);else syncEditor($('[data-invite-life]'));
+ }
+ if(target.matches('[data-invite-life]'))visibleSection($('[data-invite-duration]'),target.value==='限时赠金');
+ if(target.matches('[data-stock]'))visibleSection($('[data-stock-count]',target.closest('.prize-row')),target.value==='limited');
+ if(target.matches('[data-empty-prize]'))visibleSection($('[data-empty-weight]'),target.value==='yes');
+ if(target.matches('[data-code-expiry]'))visibleSection($('[data-code-date]'),target.value==='date');
+ // Hide meaningless recharge lottery controls when the combination contains no opportunity.
+ const mode=$('[data-chance-method]');
+ if(mode){const hasChance=$$('[data-reward-type]').some(s=>s.value==='chance');visibleSection(mode.closest('.card'),hasChance);if(hasChance)visibleSection($('[data-chance-prob]'),mode.value==='probability');}
+}
+function rewardSummary(row) {
+ const type=$('[data-reward-type]',row).value;
+ if(type==='chance'){const p=$('[data-pool]',row);return `${p.options[p.selectedIndex].text}：${$('[data-count]',row).value} 次`;}
+ const amount=type==='gift'?`赠金 ${money(Number($('[data-amount]',row).value))}`:`按该笔到账付费金额的 ${$('[data-ratio]',row).value}% 赠金`;
+ const duration=$('[data-life]',row).value==='permanent'?'永久赠金，不限有效期，金额有限':`限时赠金，有效期：${$('[data-duration-value]',row).value}${$('[data-duration-unit]',row).value}`;
+ return `${amount}，${duration}，不可退款`;
+}
+function activitySummary(form) {
+ const lines=[];
+ for(const [key,value] of new FormData(form)){
+  const control=form.elements.namedItem(key);if(!value||!control)continue;
+  let text=['date','datetime-local'].includes(control.type)?displayDate(value):value;if(control.tagName==='SELECT')text=control.options[control.selectedIndex].text;
+  lines.push(`${key}：${text}`);
+ }
+ $$('.reward-editor',form).filter(e=>!e.closest('[hidden]')).forEach(e=>{
+  let heading=$('h2',e)?.textContent||'奖励';const milestoneRow=e.closest('.milestone-row');if(milestoneRow)heading=`连续第 ${$('[data-milestone-day]',milestoneRow).value} 天额外奖励`;
+  lines.push(`${heading}：${$$('.reward-row',e).map(rewardSummary).join('；')}`);
+ });
+ if(form.dataset.kind==='checkin')lines.push('每日奖励与连续额外奖励叠加；补签次数按整个活动限制；原签到奖励不再并行发放。');
+ if(form.dataset.kind==='invitation')lines.push('只计活动内建立的好友关系及活动内成功入账；每位好友独立累计。');
+ lines.push('奖励自动发放，赠金到账生效。所有充值门槛仅计实付人民币，在线支付与付费卡密统一判断。');
+ return lines.join('\n');
+}
+function validateCustom(form) {
+ if(form.id==='pool-form'&&!$('.prize-row',form)){toast('请至少配置一个真实奖项。');return false;}
+ const start=form.elements.namedItem('开始时间'),end=form.elements.namedItem('结束时间');
+ if(start&&!start.disabled&&end&&!end.disabled&&start.value>=end.value){toast('结束时间必须晚于开始时间。');end.focus();return false;}
+ for(const editor of $$('.reward-editor',form).filter(e=>form.id==='pool-form'||!e.closest('[hidden]'))){if(!$('.reward-row',editor)){const prize=editor.closest('.prize-row');if(prize)foldPrize(prize,true);toast('每个已启用的奖励区至少配置一项奖励。');editor.scrollIntoView({block:'center'});return false;}}
+ const days=$$('[data-milestone-day]',form).filter(x=>!x.disabled).map(x=>Number(x.value));
+ if(new Set(days).size!==days.length){toast('连续奖励的天数档位不能重复。');return false;}
+ if($('[data-streak]',form)?.value!=='off'&&$('[data-streak]',form)&&!days.length){toast('启用连续奖励后，至少配置一个天数档位。');return false;}
+ if($('[data-streak]',form)?.value==='cycle'&&days.some(n=>n>Number(form.elements.namedItem('循环天数').value))){toast('连续奖励档位不能超过循环周期。');return false;}
+ return true;
+}
+function render() {
+ cancelDrawAnimation();
+ const [route,query='']=location.hash.slice(1).split('?');
+ currentRoute=route||'overview';if(!names[currentRoute])currentRoute='overview';
+ const navigationRoute=currentRoute==='gifts'?'my-rewards':currentRoute;
+ if($('#dialog').open)$('#dialog').close();
+ let group='';$('#nav').innerHTML=routes.map(r=>{let s='';if(group!==r[0]){s=`<h3>${r[0]}</h3>`;group=r[0];}return s+`<a href="#${r[1]}" class="${r[1]===navigationRoute?'active':''}" ${r[1]===navigationRoute?'aria-current="page"':''}>${r[2]}</a>`;}).join('');
+ const page={overview,activities,registration:()=>activityEditor('registration'),checkin:()=>activityEditor('checkin'),recharge:()=>activityEditor('recharge'),invitation:()=>activityEditor('invitation'),pools,'pool-edit':poolEditor,records:()=>records(false),codes,users,wallet,gifts:()=>myRewards('gifts'),profile,announcements,'sign-in':signIn,lottery,invite,usage,'my-rewards':()=>myRewards('records'),states:statesPage,coverage};
+ $('#main').innerHTML=page[currentRoute]();
+ if(currentRoute==='my-rewards'&&new URLSearchParams(query).get('source')==='checkin'){const filter=$('[data-filter]');filter.value='签到';filter.dispatchEvent(new Event('input',{bubbles:true}));}
+ const i=routes.findIndex(r=>r[1]===navigationRoute);
+ $('#main').insertAdjacentHTML('beforeend',`<div class="next">${i>0?link(routes[i-1][1],`← ${routes[i-1][2]}`):'<span></span>'}${i<routes.length-1?link(routes[i+1][1],`${routes[i+1][2]} →`):link('overview','返回开始')}</div>`);
+ if(currentRoute==='pool-edit'&&poolDraft){const restored=poolDraft.cloneNode(true);copyFormValues(poolDraft,restored);$('#pool-form').replaceWith(restored);$('[data-pool-save-status]').textContent='已恢复本次浏览的演示草稿';}
+ $$('.reward-row').forEach(syncReward);
+ refreshPool();
+ $$('input[type=date],input[type=datetime-local]').forEach(syncDateDisplay);
+ if($('[data-record-start]'))filterRewardRecords($('[data-record-start]').closest('.card'));
+ if(currentRoute==='lottery')paintWheel();
+ const recharge=$('[data-recharge-condition]');if(recharge)syncEditor(recharge);
+ document.title=`${names[currentRoute]} · 银月营销原型 P1.12`;
+ window.scrollTo(0,0);$('#main').focus({preventScroll:true});
+}
+document.addEventListener('change',event=>{
+ const target=event.target;
+ syncDateDisplay(target);
+ if(target.matches('[data-record-start],[data-record-end]'))filterRewardRecords(target.closest('.card'));
+ syncEditor(target);
+ if(target.closest('#pool-form'))refreshPool();
+ if(target.id==='theme')document.body.dataset.theme=target.value;
+ if(target.id==='profile-scene'){state.profileScene=target.value;state.checkin=target.value==='signed';state.makeup=false;state.streakReward=state.checkin;render();}
+ if(target.id==='center-time'){state.centerTime=target.value;render();}
+ if(target.id==='invite-scene'){state.inviteScene=target.value;render();}
+ if(target.id==='lottery-scene'){state.lotteryScene=target.value;render();}
+ if(target.id==='log-type')$$('[data-log-kind]').forEach(el=>el.hidden=target.value!=='全部'&&el.dataset.logKind!==target.value);
+});
+document.addEventListener('input',event=>{
+ syncDateDisplay(event.target);
+ if(event.target.closest('#append-slots-form')){
+  const form=event.target.closest('form');const pool=supplyExamples.find(p=>p.id===form.dataset.poolId);
+  $('[data-append-total]',form).textContent=`追加后总名额：${pool.cap+Number(form.elements.namedItem('amount').value)}`;
+ }
+ const recordCard=event.target.closest('.card');
+ if(recordCard&&$('[data-record-start]',recordCard)&&event.target.matches('[data-filter],[data-record-start],[data-record-end]')){filterRewardRecords(recordCard);return;}
+ if(event.target.closest('#pool-form')){refreshPool();$('[data-pool-save-status]').textContent='演示配置已修改，尚未保存草稿';}
+ if(!event.target.matches('[data-filter]'))return;
+ const term=event.target.value.toLowerCase();const container=event.target.closest('.card');$$('tbody tr',container).forEach(row=>row.hidden=!row.textContent.toLowerCase().includes(term));
+});
+document.addEventListener('submit',event=>{
+ event.preventDefault();const form=event.target;if(!form.reportValidity()||!validateCustom(form))return;
+ if(form.id==='append-slots-form'){
+  const pool=supplyExamples.find(p=>p.id===form.dataset.poolId);const amount=Number(form.elements.namedItem('amount').value);
+  if(!pool||!Number.isSafeInteger(amount)||amount<1||amount>supplyCapacity(pool).extra||!Number.isSafeInteger(pool.cap+amount)){toast('追加数量超出现有供给，请重新核对。');return;}
+  const before=pool.cap;pool.cap+=amount;
+  supplyAudit.push({name:pool.name,before,amount,after:pool.cap,time:new Intl.DateTimeFormat('zh-CN',{month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(new Date())});
+  $('#dialog').close();render();toast('演示名额已追加，钱包公开名额已同步。');return;
+ }
+ if(form.id==='activity-form'){
+  const summary=activitySummary(form);const name=form.elements.namedItem('活动名称').value;
+  modal('核对活动规则',`<div class="preview-value">${esc(summary)}</div>${note('以下只保存为本次浏览的演示配置，不创建真实活动。')}<div class="actions"><button id="save-demo" class="primary">保存演示</button></div>`);
+  $('#save-demo').onclick=()=>{state.saved.push({name,summary});$('#dialog').close();location.hash='activities';toast('已保存本次浏览的演示配置；刷新后清除。');};
+ }
+ if(form.id==='pool-form'){
+  const prizes=$$('.prize-row',form);if(!prizes.length){toast('请至少配置一个真实奖项。');return;}
+  const rows=prizes.map(p=>[esc($('[data-prize-name]',p).value),esc($('[data-weight]',p).value),$('[data-stock]',p).value==='limited'?`${esc($('[data-stock-value]',p).value)} 份`:'不限数量',$$('.reward-row',p).map(r=>esc(rewardSummary(r))).join('<br>')]);
+  const empty=$('[data-empty-prize]').value==='yes';
+  modal('奖池规则摘要',`<p>${esc(form.elements.namedItem('奖池名称').value)}</p><p>开放时间：${esc(displayDate(form.elements.namedItem('开始时间').value))} — ${esc(displayDate(form.elements.namedItem('结束时间').value))}</p>${table(['奖项','权重','库存','赠金'],rows)}${note(empty?`允许未中奖；谢谢惠顾权重 ${esc(form.elements.namedItem('未中奖权重').value)}。未中奖消耗机会，不发赠金。`:'本奖池不含未中奖结果；活动可直接或按概率发放本奖池机会。')}${note('机会按供给限量并支持追加已确认；供给细节、轮次与截止政策仍待确认，本原型不模拟真实发布。',true)}`);
+ }
+ if(form.id==='code-form')modal('付费兑换码登记摘要',table(['字段','内容'],[...new FormData(form)].map(([k,v])=>[esc(k),esc(v)]))+note('兑换到账属于付费金额。营销奖励独立发放。此处没有生成真实兑换码。'));
+ if(form.id==='redeem-form'){
+  if(form.elements.namedItem('code').value!=='DEMO-PAID-100'){toast('演示码不存在，请使用预填的 DEMO-PAID-100。');return;}
+  if(state.redeemed){toast('此演示码已经兑换。');return;}state.redeemed=true;render();modal('兑换成功 · 演示',`<p>到账付费金额 <strong>¥100.00</strong></p><p>记录实际支付：人民币 ¥100.00。</p>${note('真实实现中会按本站成功入账时间判断注册以外的适用充值、签到资格、邀请和抽奖活动；不保证每次兑换必有奖励。')}${link('my-rewards','查看奖励记录')}`);
+ }
+});
+document.addEventListener('click',event=>{
+ if(event.target.matches('.date-control input')&&event.target.showPicker){try{event.target.showPicker();}catch{ /* Native input remains keyboard-operable. */ }}
+ const button=event.target.closest('button');if(!button)return;
+ if(button.matches('[data-append-slots]'))appendSlotsDialog(button.dataset.appendSlots);
+ if(button.id==='close-dialog')$('#dialog').close();
+ if(button.id==='reset'){location.reload();return;}
+ if(button.matches('[data-new-group]')){visibleSection($('[data-new-group-fields]'),true);$('[data-group-name]').focus();}
+ if(button.matches('[data-cancel-group]'))visibleSection($('[data-new-group-fields]'),false);
+ if(button.matches('[data-create-group]')){
+  const name=$('[data-group-name]').value.trim();
+  if(!name){toast('请填写新组名称。');return;}
+  if(state.groups.some(g=>g.name===name)){toast('已有同名互斥组，请直接选择已有组。');return;}
+  const group={id:uid('group'),name,members:[]};state.groups.push(group);
+  const choice=$('[data-group]');choice.add(new Option(name,group.id));choice.value=group.id;
+  visibleSection($('[data-new-group-fields]'),false);$('[data-group-name]').value='';showGroupMembers();
+  toast('已创建并选择演示互斥组；刷新后清除。');
+ }
+ if(button.matches('[data-add-reward],[data-add-prize-gift]')){
+  const editor=button.closest('.reward-editor');const rowHtml=rewardRow(editor.dataset.ratioAllowed==='true');$('.reward-list',editor).insertAdjacentHTML('beforeend',rowHtml);syncReward($('.reward-list',editor).lastElementChild);
+ }
+ if(button.matches('[data-remove-reward]'))button.closest('.reward-row').remove();
+ if(button.matches('[data-add-milestone]')){const list=$('#milestones');list.insertAdjacentHTML('beforeend',milestone());$$('.reward-row',list.lastElementChild).forEach(syncReward);}
+ if(button.matches('[data-remove-milestone]'))button.closest('.milestone-row').remove();
+ if(button.matches('[data-fold-prize]'))foldPrize(button.closest('.prize-row'),button.getAttribute('aria-expanded')!=='true');
+ if(button.matches('[data-fold-all]'))$$('.prize-row').forEach(row=>foldPrize(row,button.dataset.foldAll==='open'));
+ if(button.matches('[data-copy-prize]')){
+  const original=button.closest('.prize-row');const clone=original.cloneNode(true);copyFormValues(original,clone);
+  const id=uid('prize');clone.dataset.prizeId=id;$('.prize-body',clone).id=id+'-body';$('[data-fold-prize]',clone).setAttribute('aria-controls',id+'-body');
+  $('[data-prize-name]',clone).value+='（副本）';original.after(clone);foldPrize(clone,true);
+ }
+ if(button.matches('[data-prize-up]')){const row=button.closest('.prize-row');if(row.previousElementSibling)row.previousElementSibling.before(row);}
+ if(button.matches('[data-prize-down]')){const row=button.closest('.prize-row');if(row.nextElementSibling)row.nextElementSibling.after(row);}
+ if(button.matches('[data-pool-preview]'))poolPreview();
+ if(button.matches('[data-pool-draft]')){
+  poolDraft=$('#pool-form').cloneNode(true);copyFormValues($('#pool-form'),poolDraft);
+  if($('#pool-form').checkValidity()&&validateCustom($('#pool-form')))capturePool();
+  $('[data-pool-save-status]').textContent='演示草稿已保存，仅本次浏览有效';toast('演示草稿已保存，切换页面返回可继续编辑；刷新清除。');
+ }
+ if(button.matches('[data-add-prize]')){$('#prizes').insertAdjacentHTML('beforeend',prizeRow('新奖项',2,10,'limited'));$$('.reward-row',$('#prizes').lastElementChild).forEach(syncReward);}
+ if(button.matches('[data-remove-prize]'))button.closest('.prize-row').remove();
+ if(button.matches('[data-pause]')){const active=button.textContent==='暂停';button.textContent=active?'启用':'暂停';$('[data-status]',button.closest('tr')).innerHTML=badge(active?'暂停':'启用',active?'warn':'success');toast('演示状态已更新；未修改真实活动。');}
+ if(button.matches('[data-reward-detail]'))rewardDetail(button.dataset.rewardDetail);
+ if(button.matches('[data-gift]'))giftDetail(Number(button.dataset.gift));
+ if(button.matches('[data-usage-detail]'))usageDetail();
+ if(button.matches('[data-checkin]')){
+  if(button.disabled)return;
+  const extra=!state.streakReward;state.streakReward=true;state.checkin=true;render();
+  modal('签到成功 · 演示',`<p>每日奖励：限时赠金 ¥1.00（有效期：3天）${extra?' ＋ 连续第 7 天额外奖励：限时赠金 ¥2.00（有效期：7天）':''}</p><div class="big">合计 ${money(extra?3:1)}</div><p>赠金自动到账，无需领取；已获连续奖励不重复发放。</p>${state.profileScene==='multi'?note('周末签到礼另赠 ¥0.50，本活动独立记录。'):''}${link('gifts','查看赠金明细')}`);
+ }
+ if(button.matches('[data-day]')&&!button.disabled)modal('补签 11 月 15 日',`<p>符合漏签当天资格，处于本活动期间及最近 10 天范围内。</p><p>十一月签到礼：剩余 1 次，补签后剩余 0 次；补发每日赠金 ¥1.00（有效期：3天）。</p>${!state.checkin&&!state.streakReward?'<p>补签后连续 7 天，另发连续奖励 ¥2.00（有效期：7天）。</p>':'<p>已发过的连续奖励不重复发放。</p>'}${state.profileScene==='multi'?'<p>周末签到礼：剩余 2 次，补签后剩余 1 次；补发每日赠金 ¥0.50。</p>':''}<div class="actions"><button id="confirm-makeup" class="primary">确认补签（演示）</button></div>`);
+ if(button.id==='confirm-makeup'){state.makeup=true;state.streakReward=true;$('#dialog').close();render();toast('已补签，各活动独立扣次数；连续奖励不重复发放。');}
+ if(button.matches('[data-draw]'))startDraw(button);
+ if(button.matches('[data-disable-user]'))modal('禁用演示用户',`<p>禁用后，此用户所有 SK 的新调用将被拒绝。</p>${note('不会执行现金退款或清空余额；不保证立即中断已开始请求。真实禁用须由后台权限控制。')}<div class="actions"><button class="danger" id="confirm-disable">确认禁用（仅演示）</button></div>`);
+ if(button.id==='confirm-disable'){state.disabled=true;$('#dialog').close();render();toast('已切换演示账号状态，没有修改任何真实账号。');}
+ if(button.matches('[data-online-pay]')){
+  const amount=$('#demo-topup');if(!amount.reportValidity())return;
+  modal('充值结果示例',`<p>实际支付：人民币 ${esc(money(Number(amount.value)))}</p><p>到账付费金额按站点充值配置确定；活动赠金另行记录。</p>${note('本原型不发起支付、不假定实付与到账永远相等。支付成功入账后系统自动判断活动，用户无需再点击领取。')}`);
+ }
+ if(button.matches('[data-demo-retry]'))toast('这是加载失败状态样例；没有连接真实接口。');
+ if($('[data-chance-method]'))syncEditor($('[data-chance-method]'));
+ if($('#pool-form'))refreshPool();
+});
+document.addEventListener('invalid',event=>{const row=event.target.closest('.prize-row');if(row)foldPrize(row,true);},true);
+window.addEventListener('hashchange',render);
+render();
+
+</script></body></html>

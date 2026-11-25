@@ -49,7 +49,7 @@ const DEFAULT_MAX_RANGE_DAYS = 365
  * CSV file. Administrators in the all-users view export every user's logs.
  */
 export function ExportLogsDialog() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const searchParams = route.useSearch()
   const { canManageScope, isAdminView } = useLogsViewScope()
   const { status } = useStatus()
@@ -118,7 +118,9 @@ export function ExportLogsDialog() {
         {
           signal: controller.signal,
           onLog: (log) => {
-            lines.push(toCsvLine(getLogCsvRow(log, isAdminView, t)))
+            lines.push(
+              toCsvLine(getLogCsvRow(log, isAdminView, t, i18n.language))
+            )
             if (lines.length % 500 === 0) setExportedCount(lines.length - 1)
           },
         }

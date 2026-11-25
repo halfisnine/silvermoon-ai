@@ -24,15 +24,24 @@ import { z } from 'zod'
 
 export const redemptionSchema = z.object({
   id: z.number(),
-  user_id: z.number(),
   name: z.string(),
   key: z.string(),
   status: z.number(), // 1: enabled, 2: disabled, 3: used
-  quota: z.number(),
+  paid_amount_cny: z.string(),
+  credit_amount: z.string(),
+  credit_currency: z.string(),
+  money_revision: z.string(),
+  original_credit_amount: z.string(),
+  original_credit_currency: z.string(),
+  sales_channel: z.string(),
+  sales_batch: z.string(),
+  sales_evidence: z.string(),
+  sale_registered: z.boolean(),
+  redeemed: z.boolean(),
+  used_user_name: z.string(),
   created_time: z.number(),
   redeemed_time: z.number(),
   expired_time: z.number(), // 0 for never expires
-  used_user_id: z.number(),
 })
 
 export type Redemption = z.infer<typeof redemptionSchema>
@@ -73,7 +82,13 @@ export interface SearchRedemptionsParams {
 export interface RedemptionFormData {
   id?: number
   name: string
-  quota: number
+  paid_amount_cny: string
+  credit_amount: string
+  credit_currency: string
+  money_revision: string
+  sales_channel: string
+  sales_batch: string
+  sales_evidence: string
   expired_time: number
   count?: number // Only for create
   status?: number // Only for status update

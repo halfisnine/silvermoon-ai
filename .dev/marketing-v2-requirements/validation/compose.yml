@@ -1,0 +1,46 @@
+name: silvermoon-marketing-v2
+services:
+  postgres:
+    image: mirror.ccs.tencentyun.com/library/postgres@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994
+    environment:
+      POSTGRES_USER: marketing_test
+      POSTGRES_PASSWORD: local-marketing-test-only
+      POSTGRES_DB: marketing_test
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U marketing_test -d marketing_test']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  mysql:
+    image: mirror.ccs.tencentyun.com/library/mysql@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+    environment:
+      MYSQL_ROOT_PASSWORD: local-root-test-only
+      MYSQL_DATABASE: marketing_test
+      MYSQL_USER: marketing_test
+      MYSQL_PASSWORD: local-marketing-test-only
+    tmpfs:
+      - /var/lib/mysql
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h 127.0.0.1 -umarketing_test -plocal-marketing-test-only --silent']
+      interval: 2s
+      timeout: 2s
+      retries: 45
+  redis:
+    image: mirror.ccs.tencentyun.com/library/redis@sha256:5b816bb37d9707a70f10ef5002ecf8ee431750d397010fc4314c93dca887962f
+    command: [redis-server, --save, '', --appendonly, 'no']
+  clickhouse:
+    image: mirror.ccs.tencentyun.com/clickhouse/clickhouse-server@sha256:0152dd511befe6a2c2ef53e930726179669b08116da78500b37c51c96ff5ee77
+    environment:
+      CLICKHOUSE_USER: marketing_test
+      CLICKHOUSE_PASSWORD: local-marketing-test-only
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    tmpfs:
+      - /var/lib/clickhouse
+      - /var/log/clickhouse-server
+    healthcheck:
+      test: [CMD, clickhouse-client, --user, marketing_test, --password, local-marketing-test-only, --query, SELECT 1]
+      interval: 2s
+      timeout: 2s
+      retries: 45

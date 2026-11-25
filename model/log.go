@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -55,6 +56,9 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 }
 
 type Log struct {
+	UsageEventID  string `json:"usage_event_id,omitempty" gorm:"size:64;not null;default:'';index:idx_logs_usage_revision,priority:1"`
+	UsageRevision int64  `json:"usage_revision,omitempty" gorm:"not null;default:0;index:idx_logs_usage_revision,priority:2"`
+
 	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
 	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
 	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
@@ -135,12 +139,36 @@ func FormatRootLogs(logs []*Log) {
 	}
 }
 
+// effectiveLogs folds immutable consumption projections before filtering,
+// pagination or aggregation. Baseline logs have an empty event ID and retain
+// their original semantics, even when their request IDs happen to be equal.
+func effectiveLogs(db *gorm.DB) *gorm.DB {
+	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		current := db.Session(&gorm.Session{NewDB: true}).Table("logs").Where(`usage_event_id = '' OR NOT EXISTS (
+			SELECT 1 FROM logs newer WHERE newer.usage_event_id = logs.usage_event_id
+			AND (newer.usage_revision > logs.usage_revision OR
+			(newer.usage_revision = logs.usage_revision AND newer.id > logs.id)))`)
+		return db.Table("(?) AS logs", current)
+	}
+	// MergeTree does not deduplicate inserts. Whole-row argMax keeps all
+	// fields from the same immutable version, even after out-of-order delivery.
+	columns := []string{"id", "user_id", "created_at", "type", "content", "username", "token_name", "model_name", "quota", "prompt_tokens", "completion_tokens", "use_time", "is_stream", "channel_id", "token_id", "`group`", "ip", "request_id", "upstream_request_id", "other", "usage_event_id", "usage_revision"}
+	fields := strings.Join(columns, ", ")
+	latest := make([]string, len(columns))
+	for i, column := range columns {
+		latest[i] = fmt.Sprintf("tupleElement(snapshot, %d) AS %s", i+1, column)
+	}
+	sql := "SELECT " + fields + " FROM logs WHERE usage_event_id = '' UNION ALL SELECT " + strings.Join(latest, ", ") +
+		" FROM (SELECT argMax(tuple(" + fields + "), usage_revision) AS snapshot FROM logs WHERE usage_event_id <> '' GROUP BY usage_event_id)"
+	return db.Table("(?) AS logs", db.Session(&gorm.Session{NewDB: true}).Raw(sql))
+}
+
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
-	order := "id desc"
+	order := "created_at desc, id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("")
 	}
-	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	err = effectiveLogs(LOG_DB).Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -336,11 +364,8 @@ type RecordConsumeLogParams struct {
 	Other            *LogOther         `json:"other"`
 }
 
-func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
-	if !common.LogConsumeEnabled {
-		return
-	}
-	logger.LogInfo(c, common.LogText("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+// BuildConsumeLog freezes the shared log metadata without writing to a database.
+func BuildConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) *Log {
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
@@ -381,6 +406,17 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
 	}
+	ensureLogRequestId(log)
+	return log
+}
+
+func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	if !common.LogConsumeEnabled {
+		return
+	}
+	logger.LogInfo(c, common.LogText("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))
+	log := BuildConsumeLog(c, userId, params)
+	other := params.Other
 	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, common.LogText("failed to record log: %s", err.Error()))
@@ -395,10 +431,10 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}
 		LogQuotaData(QuotaDataLogParams{
 			UserID:              userId,
-			Username:            username,
+			Username:            log.Username,
 			ModelName:           params.ModelName,
 			Quota:               params.Quota,
-			CreatedAt:           createdAt,
+			CreatedAt:           log.CreatedAt,
 			TokenUsed:           params.PromptTokens + params.CompletionTokens,
 			CacheReadTokens:     int64(cacheReadTokens),
 			CacheCreationTokens: int64(cacheCreationTokens),
@@ -524,7 +560,7 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 }
 
 func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int64, err error) {
-	tx, err := filter.apply(LOG_DB)
+	tx, err := filter.apply(effectiveLogs(LOG_DB))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -590,7 +626,7 @@ func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*Log, total int64, err error) {
-	tx, err := filter.apply(LOG_DB.Where("logs.user_id = ?", userId))
+	tx, err := filter.apply(effectiveLogs(LOG_DB).Where("logs.user_id = ?", userId))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -599,7 +635,7 @@ func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*L
 		common.SysError(common.LogText("failed to count user logs: %s", err.Error()))
 		return nil, 0, common.NewMessage("Failed to query logs")
 	}
-	order := "logs.id desc"
+	order := "logs.created_at desc, logs.id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("logs.")
 	}
@@ -617,7 +653,7 @@ func GetUserLogs(userId int, filter LogFilter, startIdx int, num int) (logs []*L
 // administrator with role sees it. Rows are read one at a time, so an export
 // never holds the whole result in memory.
 func StreamAllLogs(ctx context.Context, filter LogFilter, role int, fn func(*Log) error) error {
-	tx, err := filter.apply(LOG_DB.WithContext(ctx))
+	tx, err := filter.apply(effectiveLogs(LOG_DB.WithContext(ctx)))
 	if err != nil {
 		return err
 	}
@@ -645,12 +681,12 @@ func StreamAllLogs(ctx context.Context, filter LogFilter, role int, fn func(*Log
 // StreamUserLogs is StreamAllLogs for one user's own logs, shaped like the
 // user log list.
 func StreamUserLogs(ctx context.Context, userId int, filter LogFilter, fn func(*Log) error) error {
-	tx, err := filter.apply(LOG_DB.WithContext(ctx).Where("logs.user_id = ?", userId))
+	tx, err := filter.apply(effectiveLogs(LOG_DB.WithContext(ctx)).Where("logs.user_id = ?", userId))
 	if err != nil {
 		return err
 	}
 	count := 0
-	return streamLogs(tx, "logs.id desc", func(log *Log) error {
+	return streamLogs(tx, "logs.created_at desc, logs.id desc", func(log *Log) error {
 		count++
 		log.Id = count
 		log.ChannelName = ""
@@ -687,10 +723,10 @@ type Stat struct {
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
-	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
+	tx := effectiveLogs(LOG_DB).Select("COALESCE(sum(quota), 0) quota")
 
 	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := LOG_DB.Table("logs").Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm")
+	rpmTpmQuery := effectiveLogs(LOG_DB).Select("count(*) rpm, COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0) tpm")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
 		return stat, err
@@ -749,7 +785,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 }
 
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
-	tx := LOG_DB.Table("logs").Select("COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0)")
+	tx := effectiveLogs(LOG_DB).Select("COALESCE(sum(prompt_tokens), 0) + COALESCE(sum(completion_tokens), 0)")
 	if username != "" {
 		tx = tx.Where("username = ?", username)
 	}
@@ -783,6 +819,12 @@ func DeleteOldLogBatch(ctx context.Context, targetTimestamp int64, limit int) (i
 	}
 	if nil != ctx.Err() {
 		return 0, ctx.Err()
+	}
+	// Wait for active per-account publications, then persist the cleanup
+	// boundary before touching the separate log store. A retry can no longer
+	// resurrect a deleted request, even after an acknowledgement/process loss.
+	if err := AdvanceMarketingUsageRetention(ctx, targetTimestamp); err != nil {
+		return 0, err
 	}
 
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {

@@ -337,3 +337,38 @@ it('shows loading placeholders without displaying stale log fields', () => {
     screen.queryByRole('button', { name: /^Model:/ })
   ).not.toBeInTheDocument()
 })
+
+it('mobile mixed consumption keeps one call card with frozen money and source details', async () => {
+  const accounting = {
+    id: 3,
+    user_id: 2,
+    request_id: 'mixed-mobile',
+    state: 'settled',
+    cost_known: true,
+    final_observed: true,
+    conversion_known: true,
+    total: { amount: '0.12', currency: 'CNY' },
+    actual: { amount: '0.12', currency: 'CNY' },
+    paid: { amount: '0.04', currency: 'CNY' },
+    gift: { amount: '0.08', currency: 'CNY' },
+    gift_sources: [
+      {
+        gift_id: 4,
+        source_name: 'Registration gift',
+        money: { amount: '0.08', currency: 'CNY' },
+        expires_at: 0,
+      },
+    ],
+  }
+  renderLogs({
+    admin: false,
+    logs: [{ ...log, other: JSON.stringify({ accounting }) }],
+  })
+  expect(screen.getByText('¥0.12')).toBeVisible()
+  expect(screen.getByText('Gift: ¥0.08')).toBeVisible()
+  expect(screen.getAllByRole('button', { name: /Model:/ })).toHaveLength(1)
+  await userEvent.click(screen.getByTitle('Click to view full details'))
+  const dialog = await screen.findByRole('dialog', { name: /Log Details/ })
+  expect(within(dialog).getByText('Registration gift')).toBeVisible()
+  expect(within(dialog).getByText('¥0.04')).toBeVisible()
+})

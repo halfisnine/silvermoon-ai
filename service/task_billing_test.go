@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 	}
 
 	if err := db.AutoMigrate(
+		&model.MarketingAccount{},
+		&model.MarketingUsageProjection{},
 		&model.Task{},
 		&model.User{},
 		&model.Token{},

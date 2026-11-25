@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -229,7 +230,7 @@ func zhipuHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
 	}
 	service.CloseResponseBodyGracefully(resp)
-	err = json.Unmarshal(responseBody, &zhipuResponse)
+	err = common.Unmarshal(responseBody, &zhipuResponse)
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
@@ -239,8 +240,21 @@ func zhipuHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 			Code:    zhipuResponse.Code,
 		}, resp.StatusCode)
 	}
+	// Keep the provider's quantities, but do not certify an omitted counter
+	// as zero after conversion to the OpenAI response structure.
+	for _, field := range []string{"prompt_tokens", "completion_tokens"} {
+		value, present := ojson.GetBytes(responseBody, "data.usage."+field).Value().(float64)
+		if !present || value < 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}
+	for _, choice := range zhipuResponse.Data.Choices {
+		if strings.Trim(choice.Content, "\"") != "" && zhipuResponse.Data.Usage.CompletionTokens <= 0 {
+			common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, true)
+		}
+	}
 	fullTextResponse := responseZhipu2OpenAI(&zhipuResponse)
-	jsonResponse, err := json.Marshal(fullTextResponse)
+	jsonResponse, err := common.Marshal(fullTextResponse)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeBadResponseBody)
 	}

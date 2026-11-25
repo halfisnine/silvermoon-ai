@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -291,6 +292,7 @@ func Register(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	processRegistrationRewards(c, cleanUser.Id)
 
 	// 获取插入后的用户ID
 	var insertedUser model.User
@@ -349,6 +351,18 @@ func GetAllUsers(c *gin.Context) {
 
 	common.ApiSuccess(c, pageInfo)
 	return
+}
+
+// Registration and its reward facts have already committed. A delivery error
+// must leave those facts recoverable, not tell the user to register again.
+func processRegistrationRewards(c *gin.Context, userID int) {
+	ctx := context.Background()
+	if c.Request != nil {
+		ctx = c.Request.Context()
+	}
+	if _, err := service.ProcessMarketingActivityFacts(ctx, userID); err != nil {
+		logger.LogError(ctx, common.LogText("Marketing registration reward processing failed for user %d", userID))
+	}
 }
 
 func SearchUsers(c *gin.Context) {
@@ -1055,6 +1069,7 @@ func CreateUser(c *gin.Context) {
 		}
 	}
 	cleanUser.FinishInsert(0)
+	processRegistrationRewards(c, cleanUser.Id)
 
 	auditParams["username"] = cleanUser.Username
 	recordManageAuditFor(c, cleanUser.Id, "user.create", auditParams)
@@ -1305,8 +1320,13 @@ func TopUp(c *gin.Context) {
 	if err != nil {
 		// 不向用户暴露兑换失败的细分原因，避免攻击者根据错误类型判断兑换码状态。
 		common.ApiErrorT(c, "Redemption failed, please try again later")
-		logger.LogError(c, common.LogText("failed to redeem key %s for user %d: %s", req.Key, id, err.Error()))
+		logger.LogError(c, common.LogText("Redemption failed for user %d: %s", id, err.Error()))
 		return
+	}
+	if _, rewardErr := service.ProcessMarketingActivityFacts(c.Request.Context(), id); rewardErr != nil {
+		// Payment has committed. Durable reward obligations remain recoverable;
+		// never tell the user to pay again because a reward delivery failed.
+		logger.LogError(c, common.LogText("Marketing reward processing failed for user %d: %s", id, rewardErr.Error()))
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

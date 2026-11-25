@@ -145,6 +145,10 @@ func RequestWaffoAmount(c *gin.Context) {
 
 // RequestWaffoPay 创建 Waffo 支付订单
 func RequestWaffoPay(c *gin.Context) {
+	if !isWaffoTopUpEnabled() {
+		paymentError(c, common.NewMessage("Unsupported payment channel"))
+		return
+	}
 	if !setting.WaffoEnabled {
 		paymentError(c, common.NewMessage("Waffo payment is not enabled"))
 		return

@@ -37,6 +37,9 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 		ctx = context.Background()
 	}
 
+	if err := service.RecoverMarketingMidjourney(ctx); err != nil {
+		logger.LogError(ctx, fmt.Sprintf("Midjourney financial recovery failed: %v", err))
+	}
 	tasks := model.GetAllUnFinishTasks()
 	if len(tasks) == 0 {
 		return summary
@@ -49,6 +52,12 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 	nullTaskIds := make([]int, 0)
 	for _, task := range tasks {
 		if task.MjId == "" {
+			if task.MarketingFundingID > 0 {
+				if err := service.MarkMarketingMidjourneyUnknown(task, "Upstream task identity is missing"); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("Midjourney missing-identity reconciliation failed: %v", err))
+				}
+				continue
+			}
 			// 统计失败的未完成任务
 			nullTaskIds = append(nullTaskIds, task.Id)
 			continue
@@ -90,7 +99,18 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 		midjourneyChannel, err := model.CacheGetChannel(channelId)
 		if err != nil {
 			logger.LogError(ctx, common.LogText("CacheGetChannel: %v", err))
-			err := model.MjBulkUpdate(taskIds, map[string]any{
+			legacyIDs := make([]string, 0, len(taskIds))
+			for _, taskID := range taskIds {
+				task := taskM[taskID]
+				if task.MarketingFundingID > 0 {
+					if err := service.MarkMarketingMidjourneyUnknown(task, "Task channel is unavailable"); err != nil {
+						logger.LogError(ctx, fmt.Sprintf("Midjourney missing-channel reconciliation failed: %v", err))
+					}
+				} else {
+					legacyIDs = append(legacyIDs, taskID)
+				}
+			}
+			err := model.MjBulkUpdate(legacyIDs, map[string]any{
 				"fail_reason": "Failed to get the channel information. Please contact the administrator",
 				"status":      "FAILURE",
 				"progress":    "100%",
@@ -152,14 +172,16 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 
 		for _, responseItem := range responseItems {
 			task := taskM[responseItem.MjId]
-			if task == nil {
+			if task == nil || task.ChannelId != channelId {
 				logger.LogWarn(ctx, common.LogText("Midjourney task response ignored: unknown mj_id=%s", responseItem.MjId))
 				continue
 			}
 
 			useTime := (time.Now().UnixNano() / int64(time.Millisecond)) - task.SubmitTime
 			// 如果时间超过一小时，且进度不是100%，则认为任务失败
-			if useTime > 3600000 && task.Progress != "100%" {
+			billingUnknown := false
+			if useTime > 3600000 && task.Progress != "100%" && (task.MarketingFundingID == 0 || (responseItem.Status != "SUCCESS" && responseItem.Status != "FAILURE")) {
+				billingUnknown = true
 				responseItem.FailReason = "Upstream task timed out (over 1 hour)"
 				responseItem.Status = "FAILURE"
 			}
@@ -209,9 +231,24 @@ func runMidjourneyTaskUpdateOnce(ctx context.Context, report func(processed, tot
 					shouldReturnQuota = true
 				}
 			}
+			if task.MarketingFundingID > 0 && (task.Status == "SUCCESS" || task.Status == "FAILURE" || task.Progress == "100%") {
+				if task.Status != "SUCCESS" && task.Status != "FAILURE" {
+					task.Status = "FAILURE"
+					billingUnknown = true
+				}
+				task.Progress = "100%"
+				if err := service.PrepareMarketingMidjourneyOutcome(task, !billingUnknown); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("Midjourney outcome snapshot failed: %v", err))
+					continue
+				}
+			}
 			won, err := task.UpdateWithStatus(preStatus)
 			if err != nil {
 				logger.LogError(ctx, common.LogText("UpdateMidjourneyTask task error: %s", err.Error()))
+			} else if won && task.MarketingFundingID > 0 && task.MarketingBillingData.MarketingOutcome != nil {
+				if err := service.FinalizeMarketingMidjourney(task); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("Midjourney financial settlement pending: %v", err))
+				}
 			} else if won && shouldReturnQuota {
 				service.RefundMidjourneyQuota(ctx, task, "Composition failed")
 			}

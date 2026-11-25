@@ -19,82 +19,118 @@ For commercial licensing, please contact support@quantumnous.com
 import type { TFunction } from 'i18next'
 import { z } from 'zod'
 
-import { parseQuotaFromDollars, quotaUnitsToEditableAmount } from '@/lib/format'
-
-import {
-  REDEMPTION_VALIDATION,
-  getRedemptionFormErrorMessages,
-} from '../constants'
 import type { RedemptionFormData, Redemption } from '../types'
 
-// ============================================================================
-// Form Schema (use getRedemptionFormSchema(t) in components for i18n messages)
-// ============================================================================
-
 export function getRedemptionFormSchema(t: TFunction) {
-  const msg = getRedemptionFormErrorMessages(t)
   return z.object({
     name: z
       .string()
-      .min(REDEMPTION_VALIDATION.NAME_MIN_LENGTH, msg.NAME_LENGTH_INVALID)
-      .max(REDEMPTION_VALIDATION.NAME_MAX_LENGTH, msg.NAME_LENGTH_INVALID),
-    quota_dollars: z.number().min(0, t('Quota must be a positive number')),
-    expired_time: z.date().nullable(),
+      .trim()
+      .refine(
+        (value) => [...value].length >= 1 && [...value].length <= 20,
+        t('Redemption code name length must be between 1-20')
+      ),
+    paid_amount_cny: z
+      .string()
+      .trim()
+      .regex(
+        /^(0|[1-9][0-9]{0,13})(\.[0-9]{1,2})?$/,
+        t(
+          'Enter a positive payment amount in CNY with up to two decimal places'
+        )
+      )
+      .refine(
+        (value) => Number(value) > 0,
+        t(
+          'Enter a positive payment amount in CNY with up to two decimal places'
+        )
+      ),
+    credit_amount: z
+      .string()
+      .trim()
+      .regex(
+        /^[0-9]{1,16}(\.[0-9]{1,12})?$/,
+        t('Enter a positive credit amount with up to twelve decimal places')
+      )
+      .refine(
+        (value) => Number(value) > 0,
+        t('Enter a positive credit amount with up to twelve decimal places')
+      ),
+    sales_channel: z
+      .string()
+      .trim()
+      .refine(
+        (value) => [...value].length >= 1 && [...value].length <= 80,
+        t('Enter a sales channel of 1 to 80 characters')
+      ),
+    sales_batch: z
+      .string()
+      .trim()
+      .refine(
+        (value) => [...value].length >= 1 && [...value].length <= 80,
+        t('Enter a sales batch of 1 to 80 characters')
+      ),
+    sales_evidence: z
+      .string()
+      .trim()
+      .refine(
+        (value) => [...value].length <= 1000,
+        t('Sales evidence must not exceed 1000 characters')
+      ),
+    expired_time: z
+      .date()
+      .nullable()
+      .refine(
+        (date) => date === null || date.getTime() > Date.now(),
+        t('Expiration time cannot be earlier than current time')
+      ),
     count: z
       .number()
-      .min(REDEMPTION_VALIDATION.COUNT_MIN, msg.COUNT_INVALID)
-      .max(REDEMPTION_VALIDATION.COUNT_MAX, msg.COUNT_INVALID)
-      .optional(),
+      .int(t('Select between 1 and 100 paid redemption codes'))
+      .min(1, t('Select between 1 and 100 paid redemption codes'))
+      .max(100, t('Select between 1 and 100 paid redemption codes')),
   })
 }
 
-export type RedemptionFormValues = {
-  name: string
-  quota_dollars: number
-  expired_time: Date | null
-  count?: number
-}
-
-// ============================================================================
-// Form Defaults
-// ============================================================================
-
+export type RedemptionFormValues = z.infer<
+  ReturnType<typeof getRedemptionFormSchema>
+>
 export const REDEMPTION_FORM_DEFAULT_VALUES: RedemptionFormValues = {
   name: '',
-  quota_dollars: 10,
+  paid_amount_cny: '',
+  credit_amount: '',
+  sales_channel: '',
+  sales_batch: '',
+  sales_evidence: '',
   expired_time: null,
   count: 1,
 }
 
-// ============================================================================
-// Form Data Transformation
-// ============================================================================
-
-/**
- * Transform form data to API payload
- */
 export function transformFormDataToPayload(
-  data: RedemptionFormValues
+  data: RedemptionFormValues,
+  currency: string,
+  moneyRevision: string
 ): RedemptionFormData {
   return {
-    name: data.name,
-    quota: parseQuotaFromDollars(data.quota_dollars),
+    ...data,
+    credit_currency: currency,
+    money_revision: moneyRevision,
     expired_time: data.expired_time
       ? Math.floor(data.expired_time.getTime() / 1000)
       : 0,
-    count: data.count || 1,
   }
 }
 
-/**
- * Transform redemption data to form defaults
- */
 export function transformRedemptionToFormDefaults(
   redemption: Redemption
 ): RedemptionFormValues {
   return {
     name: redemption.name,
-    quota_dollars: quotaUnitsToEditableAmount(redemption.quota),
+    paid_amount_cny: redemption.paid_amount_cny,
+    credit_amount: redemption.credit_amount,
+    sales_channel: redemption.sales_channel,
+    sales_batch: redemption.sales_batch,
+    sales_evidence: redemption.sales_evidence,
     expired_time:
       redemption.expired_time > 0
         ? new Date(redemption.expired_time * 1000)

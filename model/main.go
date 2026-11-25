@@ -380,6 +380,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateMarketingV2(DB); err != nil {
+		return err
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -416,6 +419,9 @@ func migrateClickHouseLogDB() error {
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
 		return err
 	}
+	if err := LOG_DB.Exec("ALTER TABLE logs ADD COLUMN IF NOT EXISTS usage_event_id String DEFAULT '', ADD COLUMN IF NOT EXISTS usage_revision Int64 DEFAULT 0").Error; err != nil {
+		return err
+	}
 	return syncClickHouseLogTTL(ttlDays)
 }
 
@@ -445,6 +451,8 @@ func clickHouseLogTTLClause(ttlDays int) string {
 func clickHouseLogCreateTableSQL(ttlDays int) string {
 	return fmt.Sprintf(`
 CREATE TABLE IF NOT EXISTS logs (
+	usage_event_id String DEFAULT '',
+	usage_revision Int64 DEFAULT 0,
 	id Int64 DEFAULT 0,
 	user_id Int32 DEFAULT 0,
 	created_at Int64 DEFAULT 0,

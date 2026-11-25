@@ -3,6 +3,7 @@ package model
 import (
 	"context"
 	"errors"
+	"github.com/shopspring/decimal"
 
 	"github.com/QuantumNous/new-api/common"
 	"gorm.io/gorm"
@@ -102,21 +103,67 @@ func cacheApplyTokenQuotaDelta(id int, key string, delta int64) (cacheQuotaResul
 	return quotaResultFromLua(result, err)
 }
 
-// persistUserQuotaDelta 把已在缓存侧预扣成功的增量落库；批量模式下入队，
-// 直写模式下要求行存在（用户已删除时报错，交由调用方补偿缓存）。
-func persistUserQuotaDelta(id int, delta int) error {
-	if common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, delta)
+// mutateLegacyUserQuota serializes the last baseline wallet writers against
+// source review. The user lock is also the source ledger's creation barrier.
+// Managed accounts may never fall back to an unrecorded refundable balance edit.
+func mutateLegacyUserQuota(id, delta, usedQuota, requestCount int, requireAvailable bool) (bool, error) {
+	changed := false
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).First(&user, id).Error; err != nil {
+			return err
+		}
+		var account MarketingAccount
+		err := lockForUpdate(tx).Where("user_id = ?", id).First(&account).Error
+		if err == nil {
+			return ErrMarketingBalanceEdit
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if user.Quota < 0 || user.Quota > common.MaxWalletQuota {
+			return ErrWalletQuotaLimitExceeded
+		}
+		next := decimal.NewFromInt(int64(user.Quota)).Add(decimal.NewFromInt(int64(delta)))
+		if next.IsNegative() {
+			if requireAvailable {
+				return nil
+			}
+			return ErrMarketingInsufficient
+		}
+		after, err := common.WalletQuotaFromDecimalStrict(next)
+		if err != nil {
+			return ErrWalletQuotaLimitExceeded
+		}
+		changes := map[string]any{"quota": after}
+		if usedQuota != 0 {
+			changes["used_quota"] = gorm.Expr("used_quota + ?", usedQuota)
+		}
+		if requestCount != 0 {
+			changes["request_count"] = gorm.Expr("request_count + ?", requestCount)
+		}
+		if err := tx.Model(&user).Updates(changes).Error; err != nil {
+			return err
+		}
+		changed = true
 		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	result := DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota + ?", delta))
-	if result.Error != nil {
-		return result.Error
+	if changed {
+		// Invalidate only after commit: queued/asynchronous cache increments can
+		// arrive after classification and resurrect a stale display balance.
+		if err := invalidateUserCache(id); err != nil {
+			common.SysLog(common.LogText("failed to increase user quota: %s", err.Error()))
+		}
 	}
-	if result.RowsAffected != 1 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+	return changed, nil
+}
+
+func persistUserQuotaDelta(id int, delta int) error {
+	_, err := mutateLegacyUserQuota(id, delta, 0, 0, false)
+	return err
 }
 
 func persistTokenQuotaDelta(id int, delta int) error {
@@ -141,10 +188,7 @@ func persistTokenQuotaDelta(id int, delta int) error {
 }
 
 func reserveUserQuotaDB(id int, quota int) (bool, error) {
-	result := DB.Model(&User{}).
-		Where("id = ? AND quota >= ?", id, quota).
-		Update("quota", gorm.Expr("quota - ?", quota))
-	return result.RowsAffected == 1, result.Error
+	return mutateLegacyUserQuota(id, -quota, 0, 0, true)
 }
 
 func reserveTokenQuotaDB(id int, quota int) (bool, error) {
@@ -158,43 +202,17 @@ func reserveTokenQuotaDB(id int, quota int) (bool, error) {
 	return result.RowsAffected == 1, result.Error
 }
 
-// TryReserveUserQuota atomically checks and deducts a user's wallet quota.
-// 缓存命中时以缓存余额为准（避免批量模式下过期的数据库余额放大并发超扣）；
-// Redis 异常或水合失败时降级为数据库条件更新，保证服务可用。
+// TryReserveUserQuota is retained for baseline task settlement only. New relay
+// calls use the source ledger. Authoritative DB writes avoid queued deltas that
+// could cross the account's source-review boundary.
 func TryReserveUserQuota(id int, quota int) (bool, error) {
 	if quota < 0 {
 		return false, errors.New("quota cannot be negative")
 	}
-	if quota == 0 {
-		return true, nil
-	}
-	if !common.RedisEnabled {
-		return reserveUserQuotaDB(id, quota)
-	}
-
-	result, err := cacheTryReserveUserQuota(id, int64(quota))
-	if err == nil && result == cacheQuotaMiss {
-		if _, hydrateErr := GetUserCache(id); hydrateErr == nil {
-			result, err = cacheTryReserveUserQuota(id, int64(quota))
-		}
-	}
-	if err != nil || result == cacheQuotaMiss {
-		if err != nil {
-			common.SysLog(common.LogText("user quota cache reserve unavailable, falling back to database: %s", err.Error()))
-		}
-		return reserveUserQuotaDB(id, quota)
-	}
-	if result == cacheQuotaInsufficient {
-		return false, nil
-	}
-	if err = persistUserQuotaDelta(id, -quota); err != nil {
-		compensated, compensateErr := cacheApplyUserQuotaDelta(id, int64(quota))
-		if compensateErr != nil || compensated != cacheQuotaOK {
-			common.SysError(common.LogText("failed to compensate reserved user quota: result=%d error=%v", compensated, compensateErr))
-		}
+	if err := common.ValidateWalletQuota(quota); err != nil {
 		return false, err
 	}
-	return true, nil
+	return reserveUserQuotaDB(id, quota)
 }
 
 // TryReserveTokenQuota atomically checks and deducts a token quota. Unlimited

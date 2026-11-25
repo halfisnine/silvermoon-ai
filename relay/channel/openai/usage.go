@@ -131,3 +131,17 @@ func extractLlamaCachedTokensFromBody(body []byte) (int, bool) {
 	}
 	return *payload.Timings.CachedTokens, true
 }
+
+// Nonempty generated output without any reported output tokens is incomplete
+// usage. Empty successful responses may legitimately report zero output.
+func hasPositiveOutputUsage(usage *dto.Usage) bool {
+	if usage == nil {
+		return false
+	}
+	if usage.BillingUsage != nil {
+		if canonical, ok := usage.BillingUsage.CanonicalUsage(); ok {
+			usage = canonical
+		}
+	}
+	return usage.CompletionTokens > 0 || usage.OutputTokens > 0
+}

@@ -1,6 +1,8 @@
 package model
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -115,19 +117,99 @@ func releaseAllExternalIdentitiesWithTx(tx *gorm.DB, userId int) error {
 	return tx.Where("user_id = ?", userId).Delete(&ExternalIdentityClaim{}).Error
 }
 
-// InitializeExternalIdentityClaims imports legacy Telegram bindings after the
-// claim table is migrated. Existing duplicate ownership fails migration rather
-// than preserving an ambiguous login identity.
-func InitializeExternalIdentityClaims() error {
-	var users []User
-	if err := DB.Unscoped().Select("id", "telegram_id").
-		Where("telegram_id <> ?", "").Find(&users).Error; err != nil {
+// Builtin subjects remain unchanged in users. A digest fits the existing claim
+// index even when an OIDC subject exceeds its 128-character storage limit.
+var builtinIdentityColumns = []string{"github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id"}
+
+func builtinIdentityValues(user *User) map[string]string {
+	return map[string]string{"github_id": user.GitHubId, "discord_id": user.DiscordId, "oidc_id": user.OidcId, "linux_do_id": user.LinuxDOId, "wechat_id": user.WeChatId}
+}
+
+func claimBuiltinIdentityWithTx(tx *gorm.DB, userID int, column, subject string) error {
+	if !userBindColumns[column] || subject == "" {
+		return ErrAccountBindingChanged
+	}
+	digest := sha256.Sum256([]byte(subject))
+	if err := ClaimExternalIdentityWithTx(tx, column, hex.EncodeToString(digest[:]), userID); err != nil {
 		return err
 	}
+	// Include soft-deleted identities, matching existing IsTaken semantics. This
+	// protects baseline owners whose claim has not yet been backfilled, using
+	// the database's original comparison/collation rather than changing IDs.
+	var owner User
+	err := lockForUpdate(tx.Unscoped()).Select("id").Where(column+" = ? AND id <> ?", subject, userID).First(&owner).Error
+	if err == nil {
+		return ErrExternalIdentityAlreadyClaimed
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	return nil
+}
+
+// updateBuiltinIdentityWithTx is the shared ownership boundary for binding,
+// replacement and unlinking. The user's lock serializes its provider slot;
+// the claim's unique indexes serialize competitors on other instances.
+func updateBuiltinIdentityWithTx(tx *gorm.DB, userID int, column, subject string) error {
+	if tx == nil || tx.Statement == nil {
+		return ErrAccountBindingChanged
+	}
+	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); !ok {
+		return ErrAccountBindingChanged
+	}
+	if !userBindColumns[column] || userID <= 0 {
+		return ErrAccountBindingChanged
+	}
+	var current User
+	if err := lockForUpdate(tx).First(&current, userID).Error; err != nil {
+		return err
+	}
+	old := builtinIdentityValues(&current)[column]
+	if old != subject {
+		if err := ReleaseExternalIdentityWithTx(tx, column, userID); err != nil {
+			return err
+		}
+	}
+	if subject != "" {
+		if err := claimBuiltinIdentityWithTx(tx, userID, column, subject); err != nil {
+			return err
+		}
+	} else {
+		if err := ReleaseExternalIdentityWithTx(tx, column, userID); err != nil {
+			return err
+		}
+	}
+	return tx.Model(&User{}).Where("id = ?", userID).Update(column, subject).Error
+}
+
+// InitializeExternalIdentityClaims imports baseline provider bindings after the
+// claim table is migrated. It never creates marketing facts or rewrites IDs.
+// Existing duplicate ownership fails migration rather than preserving an
+// ambiguous login identity. Deleted accounts retain ownership until hard delete.
+func InitializeExternalIdentityClaims() error {
 	return DB.Transaction(func(tx *gorm.DB) error {
-		for _, user := range users {
-			if err := ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id); err != nil {
-				return fmt.Errorf("backfill Telegram identity for user %d: %w", user.Id, err)
+		var users []User
+		if err := tx.Unscoped().Select("id", "telegram_id", "github_id", "discord_id", "oidc_id", "linux_do_id", "wechat_id").Order("id").Find(&users).Error; err != nil {
+			return err
+		}
+		for _, candidate := range users {
+			var user User
+			if err := lockForUpdate(tx.Unscoped()).First(&user, candidate.Id).Error; err != nil {
+				return err
+			}
+			if user.TelegramId != "" {
+				if err := ClaimExternalIdentityWithTx(tx, ExternalIdentityProviderTelegram, user.TelegramId, user.Id); err != nil {
+					return fmt.Errorf("backfill Telegram identity for user %d: %w", user.Id, err)
+				}
+			}
+			values := builtinIdentityValues(&user)
+			for _, column := range builtinIdentityColumns {
+				if values[column] == "" {
+					continue
+				}
+				if err := claimBuiltinIdentityWithTx(tx, user.Id, column, values[column]); err != nil {
+					return fmt.Errorf("backfill %s identity for user %d: %w", column, user.Id, err)
+				}
 			}
 		}
 		return nil

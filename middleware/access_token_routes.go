@@ -41,6 +41,19 @@ func accessTokenScopeRule(scope string) accessTokenRouteRule {
 // Casbin-guarded routes declare themselves through
 // DeclareAccessTokenPermissionRoute when they are registered.
 var accessTokenRouteRules = map[string]accessTokenRouteRule{
+	"GET /api/marketing/user/:resource":                       accessTokenSessionRule,
+	"GET /api/marketing/user/:resource/:id":                   accessTokenSessionRule,
+	"GET /api/marketing/user/rewards/:kind/:id":               accessTokenSessionRule,
+	"GET /api/marketing/user/draws/by-request/:operation_key": accessTokenSessionRule,
+	"POST /api/marketing/user/pools/:id/draw":                 accessTokenSessionRule,
+	"GET /api/marketing/admin/metadata":                       accessTokenSessionRule,
+	"GET /api/marketing/admin/:resource":                      accessTokenSessionRule,
+	"GET /api/marketing/admin/:resource/:id":                  accessTokenSessionRule,
+	"GET /api/marketing/admin/rewards/:kind/:id":              accessTokenSessionRule,
+	"POST /api/marketing/admin/:resource":                     accessTokenSessionRule,
+	"PUT /api/marketing/admin/:resource/:id":                  accessTokenSessionRule,
+	"POST /api/marketing/admin/:resource/:id/:action":         accessTokenSessionRule,
+
 	// router/api-router.go: top level
 	"GET /api/models":                     accessTokenScopeRule("profile:read"),
 	"GET /api/status/test":                accessTokenScopeRule("log:read"),
@@ -100,8 +113,9 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/user/2fa/enable":                    accessTokenScopeRule("account_security:write"),
 	"POST /api/user/2fa/disable":                   accessTokenScopeRule("account_security:write"),
 	"POST /api/user/2fa/backup_codes":              accessTokenScopeRule("account_security:write"),
-	"GET /api/user/checkin":                        accessTokenScopeRule("wallet:read"),
-	"POST /api/user/checkin":                       accessTokenScopeRule("wallet:write"),
+	"GET /api/user/checkin":                        accessTokenSessionRule,
+	"POST /api/user/checkin":                       accessTokenSessionRule,
+	"POST /api/user/checkin/makeup":                accessTokenSessionRule,
 	"GET /api/user/oauth/bindings":                 accessTokenScopeRule("account_security:read"),
 	"DELETE /api/user/oauth/bindings/:provider_id": accessTokenScopeRule("account_security:write"),
 

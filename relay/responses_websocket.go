@@ -3,6 +3,7 @@ package relay
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -113,14 +114,14 @@ type responsesWSSession struct {
 
 	// These fields belong to the serial request worker and describe the actual
 	// established connection. Per-request token/user data is never stored here.
-	lastResponseID  string
-	lockedModel     string
-	lockedChannelID int
-	lockedGroup     string
-	lockedKey       string
-	lockedKeyIndex  int
-	lockedContext   map[appconstant.ContextKey]any
-	lockedRoute     dto.AdvancedCustomRoute
+	completedResponses map[[sha256.Size]byte]struct{}
+	lockedModel        string
+	lockedChannelID    int
+	lockedGroup        string
+	lockedKey          string
+	lockedKeyIndex     int
+	lockedContext      map[appconstant.ContextKey]any
+	lockedRoute        dto.AdvancedCustomRoute
 }
 
 func ResponsesWebSocketHelper(c *gin.Context, client *websocket.Conn, runner ResponsesWSRequestRunner) *types.NewAPIError {
@@ -244,6 +245,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 	started := time.Now()
 	var info *relaycommon.RelayInfo
 	billingPrepared := false
+	prewarm := false
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			apiErr = types.NewError(fmt.Errorf("responses websocket call panic: %v", recovered), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
@@ -288,6 +290,13 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		payload, apiErr = buildResponsesWSCreatePayload(c, info, create.Request, create.Generate, create.StreamID)
 		if apiErr != nil {
 			return apiErr
+		}
+		prewarm = ojson.GetBytes(payload, "generate").Type == ojson.False
+		if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
+			if err := funding.BeginDispatch(); err != nil {
+				state.closeCode = websocket.ClosePolicyViolation
+				return types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			}
 		}
 		if err := s.writeTarget(websocket.TextMessage, payload); err != nil {
 			state.closeCode = websocket.CloseInternalServerErr
@@ -341,6 +350,15 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			if !s.setTarget(target) {
 				return types.NewError(context.Canceled, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
 			}
+			prewarm = ojson.GetBytes(payload, "generate").Type == ojson.False
+			// The WebSocket handshake itself does not execute a response. Commit
+			// this request's one-use dispatch before sending the business frame.
+			if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
+				if err := funding.BeginDispatch(); err != nil {
+					state.closeCode = websocket.ClosePolicyViolation
+					return types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+				}
+			}
 			if err := s.writeTarget(websocket.TextMessage, payload); err != nil {
 				state.closeCode = websocket.CloseInternalServerErr
 				return types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
@@ -385,6 +403,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 	var pendingControl []byte
 	var sentControl []byte
 	var responseID string
+	generated := false
+	prewarmUsageConflict := false
 	for {
 		select {
 		case incoming := <-state.inbox:
@@ -398,7 +418,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			info.SetFirstResponseTime()
 			var event struct {
 				dto.ResponsesStreamResponse
-				StreamID string `json:"stream_id"`
+				StreamID   string `json:"stream_id"`
+				ResponseID string `json:"response_id"`
 			}
 			if err := common.Unmarshal(incoming.body, &event); err != nil {
 				info.StreamStatus.RecordError("invalid upstream websocket event")
@@ -411,15 +432,27 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 				}
 				// A repeated terminal from the previous response must never finish
 				// a subsequent request on this persistent connection.
-				if event.Response != nil && event.Response.ID != "" && event.Response.ID == s.lastResponseID {
-					continue
+				incomingID := event.ResponseID
+				if event.Response != nil && event.Response.ID != "" {
+					incomingID = event.Response.ID
+				}
+				if incomingID != "" {
+					if _, completed := s.completedResponses[sha256.Sum256([]byte(incomingID))]; completed {
+						continue
+					}
+					if responseID != "" && incomingID != responseID && event.Type != "error" {
+						// A frame for a different generation cannot change this
+						// call's usage, terminal state or financial ownership.
+						if err := s.writeClient(incoming.kind, incoming.body); err != nil {
+							s.shutdown(websocket.CloseInternalServerErr, "")
+						}
+						continue
+					}
 				}
 				if event.Type == "error" {
 					var rejection responsesWSErrorEvent
 					_ = common.Unmarshal(incoming.body, &rejection)
-					if rejection.ResponseID != "" && rejection.ResponseID == s.lastResponseID {
-						continue
-					}
+
 					terminal, ambiguous, controlError := responsesWSErrorEndsRequest(rejection, create.StreamID, responseID, sentControl)
 					if !terminal {
 						if err := s.writeClient(incoming.kind, incoming.body); err != nil {
@@ -441,7 +474,7 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 						}
 						accumulator.Observe(&event.ResponsesStreamResponse, incoming.body)
 						info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
-						s.lastResponseID = responseID
+						s.rememberResponse(responseID)
 						state.terminal = &incoming
 						if ambiguous {
 							state.closeCode = websocket.CloseInternalServerErr
@@ -467,18 +500,40 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 					}
 					accepted = true
 					if event.Response != nil && event.Response.ID != "" {
-						responseID = event.Response.ID
+						if responseID == "" {
+							responseID = event.Response.ID
+						}
 					}
 				}
+				if strings.HasPrefix(event.Type, "response.output_") ||
+					strings.HasPrefix(event.Type, "response.content_part.") ||
+					strings.HasPrefix(event.Type, "response.function_call_arguments.") ||
+					strings.HasPrefix(event.Type, "response.custom_tool_call_input.") ||
+					strings.HasPrefix(event.Type, "response.reasoning_") ||
+					strings.HasPrefix(event.Type, "response.refusal.") || event.Delta != "" ||
+					(event.Response != nil && len(event.Response.Output) > 0) {
+					generated = true
+				}
 				accumulator.Observe(&event.ResponsesStreamResponse, incoming.body)
+				if prewarm {
+					usage := ojson.GetBytes(incoming.body, "response.usage")
+					if usage.Type != ojson.Null && !responsesWSZeroUsage(usage) {
+						prewarmUsageConflict = true
+					}
+				}
 			}
 			switch event.Type {
 			case "response.completed", "response.done", "response.incomplete", "response.failed", "response.cancelled", "response.canceled":
 				if event.Response != nil {
-					s.lastResponseID = event.Response.ID
+					s.rememberResponse(event.Response.ID)
 				}
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
 				state.terminal = &incoming
+				if prewarm && !generated {
+					if handled, err := settleResponsesWSPrewarm(c, info, &event.ResponsesStreamResponse, incoming.body, responseID, prewarmUsageConflict); handled {
+						return err
+					}
+				}
 				ConsumeResponsesQuota(c, info, accumulator.Finish())
 				return nil
 			}
@@ -516,6 +571,80 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			return nil
 		}
 	}
+}
+
+// A successful generate:false acknowledgement is not a model generation and
+// must not trigger a per-request fixed charge. Missing or conflicting evidence
+// stays unknown; real generation/usage still uses the ordinary pricing path.
+func settleResponsesWSPrewarm(c *gin.Context, info *relaycommon.RelayInfo, event *dto.ResponsesStreamResponse, raw []byte, responseID string, usageConflict bool) (bool, *types.NewAPIError) {
+	if event.Response != nil && event.Response.Usage != nil {
+		u := event.Response.Usage
+		if u.InputTokens > 0 || u.OutputTokens > 0 || u.PromptTokens > 0 || u.CompletionTokens > 0 || u.TotalTokens > 0 {
+			return false, nil
+		}
+	}
+	output := ojson.GetBytes(raw, "response.output")
+	usage := ojson.GetBytes(raw, "response.usage")
+	verified := !usageConflict && info.StreamStatus.OutcomeSnapshot().Response == relaycommon.ResponseOutcomeCompleted &&
+		!info.StreamStatus.HasErrors() && responseID != "" && output.IsArray() && len(output.Array()) == 0 &&
+		(usage.Type == ojson.Null || responsesWSZeroUsage(usage))
+	if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		var err error
+		if verified {
+			zero := int64(0)
+			evidence, encodeErr := common.Marshal(map[string]any{"generate": false, "response_id": responseID, "status": "completed", "output_empty": true, "usage": event.Response.Usage})
+			if encodeErr != nil {
+				return true, types.NewError(encodeErr, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+			}
+			err = funding.SettleEvidence(&zero, true, "upstream_terminal", string(evidence), 1)
+		} else {
+			err = funding.PreserveUnknown("Responses prewarm result has no verified empty terminal")
+		}
+		if err != nil && !errors.Is(err, appmodel.ErrMarketingReview) {
+			return true, types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+		return true, nil
+	}
+	if !verified {
+		return false, nil
+	}
+	if info.Billing != nil {
+		if err := info.Billing.Settle(0); err != nil {
+			return true, types.NewError(err, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
+		}
+	}
+	return true, nil
+}
+
+// If upstream provides usage, every fact (including nested details) must be
+// numeric zero or an object of zero facts. Null, negative, nonnumeric and future
+// nonzero fields are not proof of no charge. Top-level absence is handled by
+// the caller only alongside an explicitly empty successful prewarm terminal.
+func responsesWSZeroUsage(value ojson.Result) bool {
+	if value.Type == ojson.Number {
+		return value.Float() == 0
+	}
+	if !value.IsObject() {
+		return false
+	}
+	zero := true
+	value.ForEach(func(_, child ojson.Result) bool {
+		zero = responsesWSZeroUsage(child)
+		return zero
+	})
+	return zero
+}
+
+// Keep only identity hashes for this physical connection. A delayed terminal
+// from any earlier call must not be assigned to the current funding session.
+func (s *responsesWSSession) rememberResponse(id string) {
+	if id == "" {
+		return
+	}
+	if s.completedResponses == nil {
+		s.completedResponses = make(map[[sha256.Size]byte]struct{})
+	}
+	s.completedResponses[sha256.Sum256([]byte(id))] = struct{}{}
 }
 
 // A single generation is active, but a cancel can fail independently. Correlate

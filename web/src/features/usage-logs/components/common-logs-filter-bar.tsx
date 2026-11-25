@@ -48,6 +48,7 @@ import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
+import { AccountingQueryDialog } from './accounting-query-dialog'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
 import { ExportLogsDialog } from './dialogs/export-logs-dialog'
@@ -56,6 +57,7 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
+import { MonthlyPaidConsumption } from './monthly-paid-consumption'
 import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
@@ -297,7 +299,13 @@ export function CommonLogsFilterBar<TData>(
     'Only used to find historical logs. New records are available in Audit Logs.'
   )
 
-  const statsBar = <CommonLogsStats />
+  const statsBar = (
+    <div className='flex min-w-0 flex-wrap items-center gap-2'>
+      <CommonLogsStats />
+      <MonthlyPaidConsumption />
+      <AccountingQueryDialog />
+    </div>
+  )
   const sensitiveToggle = (
     <Tooltip>
       <TooltipTrigger

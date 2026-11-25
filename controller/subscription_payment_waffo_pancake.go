@@ -24,6 +24,10 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !isWaffoPancakeTopUpEnabled() {
+		common.ApiErrorT(c, "Unsupported payment channel")
+		return
+	}
 
 	var req SubscriptionWaffoPancakePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { formatMarketingMoney } from '@/features/marketing-admin/format'
 import { formatLogQuota, formatTimestampToDate } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
@@ -50,6 +51,8 @@ export function getLogCsvHeader(isAdmin: boolean, t: Translate): string[] {
     t('Duration'),
     t('IP'),
     t('Request ID'),
+    t('Gift amount used'),
+    t('Paid amount used'),
     t('Details'),
   ]
 }
@@ -58,7 +61,8 @@ export function getLogCsvHeader(isAdmin: boolean, t: Translate): string[] {
 export function getLogCsvRow(
   log: UsageLog,
   isAdmin: boolean,
-  t: Translate
+  t: Translate,
+  language = 'en'
 ): string[] {
   const other = parseLogOther(log.other ?? '')
   const usage = isDisplayableLogType(log.type)
@@ -73,6 +77,18 @@ export function getLogCsvRow(
       ? `#${log.channel} ${log.channel_name}`
       : `#${log.channel}`
   }
+  let cost = usage ? formatLogQuota(log.quota ?? 0) : ''
+  if (other?.accounting) {
+    cost = other.accounting.total
+      ? formatMarketingMoney(
+          other.accounting.total.amount,
+          other.accounting.total.currency,
+          language
+        )
+      : t('Amount unavailable')
+  }
+  const gift = other?.accounting?.gift
+  const paid = other?.accounting?.paid
   return [
     formatTimestampToDate(log.created_at),
     t(getLogTypeConfig(log.type).label),
@@ -86,10 +102,12 @@ export function getLogCsvRow(
     usage ? String(log.completion_tokens ?? 0) : '',
     usage ? String(other?.cache_tokens ?? 0) : '',
     usage ? String(cacheWrite) : '',
-    usage ? formatLogQuota(log.quota ?? 0) : '',
+    cost,
     isTimingLogType(log.type) ? `${log.use_time ?? 0}s` : '',
     log.ip ?? '',
     log.request_id ?? '',
+    gift ? formatMarketingMoney(gift.amount, gift.currency, language) : '',
+    paid ? formatMarketingMoney(paid.amount, paid.currency, language) : '',
     renderLogContent(other, t) ?? log.content ?? '',
   ]
 }

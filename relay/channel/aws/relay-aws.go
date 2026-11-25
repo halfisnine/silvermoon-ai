@@ -2,7 +2,6 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,6 +58,39 @@ func newAwsInvokeError(requestContext context.Context, err error, operation stri
 		getAwsErrorStatusCode(err),
 		options...,
 	)
+}
+
+// AWS InvokeModel performs network I/O in DoResponse, after DoRequest has only
+// prepared the SDK input. Commit dispatch here, before the SDK can send it.
+// Its internal retryer must not resend an execution with an unknown result.
+func beginAwsDispatch(c *gin.Context, info *relaycommon.RelayInfo) ([]func(*bedrockruntime.Options), *types.NewAPIError) {
+	funding, managed := info.Billing.(*service.MarketingBillingSession)
+	if !managed {
+		return nil, nil
+	}
+	if err := funding.BeginDispatch(); err != nil {
+		return nil, types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+	return []func(*bedrockruntime.Options){func(options *bedrockruntime.Options) {
+		options.Retryer = aws.NopRetryer{}
+		// Production uses the shared service HTTP client. A 307/308 redirect
+		// would resend the POST below the SDK retryer, so isolate its policy.
+		if client, ok := options.HTTPClient.(*http.Client); ok {
+			guarded := *client
+			guarded.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			}
+			options.HTTPClient = &guarded
+		}
+	}}, nil
+}
+
+func awsDispatchError(c *gin.Context, info *relaycommon.RelayInfo, err error, operation string) *types.NewAPIError {
+	if _, managed := info.Billing.(*service.MarketingBillingSession); managed {
+		// A transport/SDK error is not proof that execution never started.
+		return types.NewError(errors.New("AWS upstream request failed"), types.ErrorCodeAwsInvokeError, types.ErrOptionWithSkipRetry())
+	}
+	return newAwsInvokeError(c.Request.Context(), err, operation)
 }
 
 func newAwsClient(c *gin.Context, info *relaycommon.RelayInfo) (*bedrockruntime.Client, error) {
@@ -238,9 +270,13 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 	ctx, cancel := newAwsInvokeContext(requestContext)
 	defer cancel()
 
-	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
+	options, dispatchErr := beginAwsDispatch(c, info)
+	if dispatchErr != nil {
+		return dispatchErr, nil
+	}
+	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput), options...)
 	if err != nil {
-		return newAwsInvokeError(requestContext, err, "InvokeModel"), nil
+		return awsDispatchError(c, info, err, "InvokeModel"), nil
 	}
 
 	claudeInfo := &claude.ClaudeResponseInfo{
@@ -260,6 +296,14 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 	if handlerErr != nil {
 		return handlerErr, nil
 	}
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
+	switch ojson.GetBytes(awsResp.Body, "stop_reason").String() {
+	case "end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal":
+		info.StreamStatus.MarkCompleted()
+	}
 	return nil, claudeInfo.Usage
 }
 
@@ -268,9 +312,18 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	ctx, cancel := newAwsInvokeContext(requestContext)
 	defer cancel()
 
-	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
+	options, dispatchErr := beginAwsDispatch(c, info)
+	if dispatchErr != nil {
+		return dispatchErr, nil
+	}
+	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput), options...)
 	if err != nil {
-		return newAwsInvokeError(requestContext, err, "InvokeModelWithResponseStream"), nil
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, err)
+		return awsDispatchError(c, info, err, "InvokeModelWithResponseStream"), nil
 	}
 	stream := awsResp.GetStream()
 	defer stream.Close()
@@ -302,20 +355,45 @@ streamLoop:
 				info.SetFirstResponseTime()
 				respErr := claude.HandleStreamResponseData(c, info, claudeInfo, string(v.Value.Bytes))
 				if respErr != nil {
+					info.StreamStatus.MarkFailed("", "aws_stream_error", 0)
+					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, respErr)
 					return respErr, nil
 				}
 			case *bedrockruntimeTypes.UnknownUnionMember:
+				info.StreamStatus.MarkFailed("", "aws_stream_error", 0)
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, errors.New("unknown AWS stream event"))
 				fmt.Println(common.LogText("unknown tag: %v", v.Tag))
 				return types.NewError(errors.New("unknown response type"), types.ErrorCodeInvalidRequest), nil
 			default:
+				info.StreamStatus.MarkFailed("", "aws_stream_error", 0)
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, errors.New("invalid AWS stream event"))
 				fmt.Println(common.LogText("union is nil or unknown type"))
 				return types.NewError(errors.New("nil or unknown response type"), types.ErrorCodeInvalidRequest), nil
 			}
 		}
 	}
 
+	// SDK EOF is only transport closure. Claude message_stop is the terminal
+	// fact; finalizing a truncated stream would otherwise manufacture [DONE].
+	if ctx.Err() != nil {
+		if requestContext.Err() != nil {
+			info.StreamStatus.MarkCancelled()
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, ctx.Err())
+		} else {
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, ctx.Err())
+		}
+	} else if streamErr := stream.Err(); streamErr != nil {
+		info.StreamStatus.MarkFailed("", "aws_stream_error", 0)
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, streamErr)
+	} else if info.StreamStatus.OutcomeSnapshot().Response == relaycommon.ResponseOutcomeCompleted {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+	} else {
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+	}
 	_ = stream.Close()
-	claude.HandleStreamFinalResponse(c, info, claudeInfo)
+	if info.StreamStatus.OutcomeSnapshot().Response == relaycommon.ResponseOutcomeCompleted {
+		claude.HandleStreamFinalResponse(c, info, claudeInfo)
+	}
 	return nil, claudeInfo.Usage
 }
 
@@ -326,9 +404,13 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 	ctx, cancel := newAwsInvokeContext(requestContext)
 	defer cancel()
 
-	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
+	options, dispatchErr := beginAwsDispatch(c, info)
+	if dispatchErr != nil {
+		return dispatchErr, nil
+	}
+	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput), options...)
 	if err != nil {
-		return newAwsInvokeError(requestContext, err, "InvokeModel"), nil
+		return awsDispatchError(c, info, err, "InvokeModel"), nil
 	}
 
 	// 解析Nova响应
@@ -340,15 +422,45 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 				} `json:"content"`
 			} `json:"message"`
 		} `json:"output"`
-		Usage struct {
-			InputTokens  int `json:"inputTokens"`
-			OutputTokens int `json:"outputTokens"`
-			TotalTokens  int `json:"totalTokens"`
+		StopReason string `json:"stopReason"`
+		Usage      struct {
+			InputTokens  *int `json:"inputTokens"`
+			OutputTokens *int `json:"outputTokens"`
+			TotalTokens  *int `json:"totalTokens"`
 		} `json:"usage"`
 	}
 
-	if err := json.Unmarshal(awsResp.Body, &novaResp); err != nil {
+	if err := common.Unmarshal(awsResp.Body, &novaResp); err != nil {
 		return types.NewError(errors.Wrap(err, "unmarshal nova response"), types.ErrorCodeBadResponseBody), nil
+	}
+
+	var text strings.Builder
+	for _, content := range novaResp.Output.Message.Content {
+		text.WriteString(content.Text)
+	}
+	usage := dto.Usage{}
+	if novaResp.Usage.InputTokens != nil {
+		usage.PromptTokens = *novaResp.Usage.InputTokens
+	}
+	if novaResp.Usage.OutputTokens != nil {
+		usage.CompletionTokens = *novaResp.Usage.OutputTokens
+	}
+	if novaResp.Usage.TotalTokens != nil {
+		usage.TotalTokens = *novaResp.Usage.TotalTokens
+	}
+	if novaResp.Usage.InputTokens == nil || novaResp.Usage.OutputTokens == nil ||
+		usage.PromptTokens < 0 || usage.PromptTokens > common.MaxQuota ||
+		usage.CompletionTokens < 0 || usage.CompletionTokens > common.MaxQuota ||
+		(text.Len() > 0 && usage.CompletionTokens == 0) {
+		info.BillingUsageEstimated = true
+	}
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+	info.StreamStatus.RequireTerminal()
+	switch novaResp.StopReason {
+	case "end_turn", "max_tokens", "stop_sequence", "content_filtered", "guardrail_intervened":
+		info.StreamStatus.MarkCompleted()
 	}
 
 	// 构造OpenAI格式响应
@@ -361,15 +473,11 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 			Index: 0,
 			Message: dto.Message{
 				Role:    "assistant",
-				Content: novaResp.Output.Message.Content[0].Text,
+				Content: text.String(),
 			},
 			FinishReason: "stop",
 		}},
-		Usage: dto.Usage{
-			PromptTokens:     novaResp.Usage.InputTokens,
-			CompletionTokens: novaResp.Usage.OutputTokens,
-			TotalTokens:      novaResp.Usage.TotalTokens,
-		},
+		Usage: usage,
 	}
 
 	c.JSON(http.StatusOK, response)

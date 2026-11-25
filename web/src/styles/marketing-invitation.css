@@ -1,0 +1,44 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/* The feature card owns the surface; the shared empty state supplies content.
+   Keep themed empty headers from becoming a second, narrow card inside it. */
+.marketing-invitation-layout
+  .marketing-invitation-empty
+  [data-slot='empty-header'] {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* DataTablePage and its inline pager are siblings in the card. Give only the
+   table the remaining height so pagination stays visible while rows scroll. */
+@media (min-width: 1024px) {
+  .marketing-invitation-friends [data-slot='data-table-page'] {
+    height: auto;
+    flex: 1;
+  }
+
+  .marketing-invitation-friends
+    > :last-child:not([data-slot='data-table-page']) {
+    flex-shrink: 0;
+  }
+}

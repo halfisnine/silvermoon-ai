@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import timezone from 'dayjs/plugin/timezone'
+import utc from 'dayjs/plugin/utc'
 import { ChevronDownIcon } from 'lucide-react'
 import * as React from 'react'
 import { enUS, fr, ja, ru, vi, zhCN, zhTW } from 'react-day-picker/locale'
@@ -29,8 +31,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { toIntlLocale } from '@/i18n/languages'
 import dayjs from '@/lib/dayjs'
 import { cn } from '@/lib/utils'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 const calendarLocales = {
   en: enUS,
@@ -42,11 +48,18 @@ const calendarLocales = {
   vi,
 } as const
 
-interface DateTimePickerProps {
+interface DateTimePickerProps extends Omit<
+  React.ComponentProps<typeof Button>,
+  'value' | 'onChange' | 'children'
+> {
   value?: Date
   onChange?: (date: Date | undefined) => void
   placeholder?: string
   className?: string
+  timeZone?: string
+  hideTime?: boolean
+  compact?: boolean
+  displayFormat?: string
 }
 
 export function DateTimePicker({
@@ -54,34 +67,49 @@ export function DateTimePicker({
   onChange,
   placeholder,
   className,
+  displayFormat,
+  timeZone,
+  hideTime = false,
+  compact = false,
+  disabled,
+  ...triggerProps
 }: DateTimePickerProps) {
   const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.language)
   const placeholderText = placeholder ?? t('Select date')
   const calendarLocale =
     calendarLocales[i18n.language as keyof typeof calendarLocales] ?? enUS
   const currentYear = new Date().getFullYear()
   const [open, setOpen] = React.useState(false)
-  const [date, setDate] = React.useState<Date | undefined>(value)
-  const [month, setMonth] = React.useState<Date | undefined>(value)
+  const [date, setDate] = React.useState<Date | undefined>(() =>
+    pickerDate(value, timeZone)
+  )
+  const [month, setMonth] = React.useState<Date | undefined>(() =>
+    pickerDate(value, timeZone)
+  )
   const [time, setTime] = React.useState<string>('00:00:00')
+  const selectedDateText = dateLabel(date, displayFormat, locale)
 
   React.useEffect(() => {
-    setDate(value)
-    setMonth(value)
-    if (value) {
-      setTime(dayjs(value).format('HH:mm:ss'))
+    const displayed = pickerDate(value, timeZone)
+    setDate(displayed)
+    setMonth(displayed)
+    if (displayed) {
+      setTime(dayjs(displayed).format('HH:mm:ss'))
     }
-  }, [value])
+  }, [value, timeZone])
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     if (selectedDate) {
-      const [hours, minutes, seconds = 0] = time.split(':').map(Number)
+      const [hours, minutes, seconds = 0] = (hideTime ? '00:00:00' : time)
+        .split(':')
+        .map(Number)
       const newDate = new Date(selectedDate)
       newDate.setHours(hours, minutes, seconds, 0)
       setDate(newDate)
       setMonth(newDate)
-      onChange?.(newDate)
-      setOpen(false)
+      onChange?.(pickerInstant(newDate, timeZone))
+      if (!compact || hideTime) setOpen(false)
     } else {
       setDate(undefined)
       setMonth(undefined)
@@ -102,7 +130,7 @@ export function DateTimePicker({
       const newDate = new Date(date)
       newDate.setHours(hours, minutes, seconds, 0)
       setDate(newDate)
-      onChange?.(newDate)
+      onChange?.(pickerInstant(newDate, timeZone))
     }
   }
 
@@ -113,22 +141,53 @@ export function DateTimePicker({
     onChange?.(undefined)
   }
 
+  const timeControl = !hideTime && (
+    <Input
+      type='time'
+      step={1}
+      value={time}
+      aria-label={t('Time')}
+      onChange={handleTimeChange}
+      className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
+      disabled={disabled || !date}
+    />
+  )
+  const clearControl = date && (
+    <Button
+      type='button'
+      variant='outline'
+      size='icon'
+      onClick={handleClear}
+      className='shrink-0'
+      aria-label={t('Clear')}
+      disabled={disabled}
+    >
+      <span aria-hidden='true'>✕</span>
+    </Button>
+  )
+
   return (
     <div className={cn('flex gap-2', className)}>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
             <Button
+              {...triggerProps}
+              type='button'
+              disabled={disabled}
               variant='outline'
               className={cn(
-                'flex-1 justify-between font-normal',
+                'min-w-0 flex-1 justify-between font-normal',
                 !date && 'text-muted-foreground'
               )}
             />
           }
         >
-          {date ? dayjs(date).format('YYYY-MM-DD') : placeholderText}
-          <ChevronDownIcon className='h-4 w-4 opacity-50' />
+          <span className='truncate'>
+            {date ? selectedDateText : placeholderText}
+            {compact && date && !hideTime && ` ${time}`}
+          </span>
+          <ChevronDownIcon className='h-4 w-4 shrink-0 opacity-50' />
         </PopoverTrigger>
         <PopoverContent className='w-auto overflow-hidden p-0' align='start'>
           <Calendar
@@ -142,29 +201,57 @@ export function DateTimePicker({
             startMonth={new Date(currentYear - 100, 0)}
             endMonth={new Date(currentYear + 100, 11)}
           />
+          {compact && (
+            <div className='flex items-center gap-2 border-t p-3'>
+              {timeControl}
+              {clearControl}
+              <Button
+                type='button'
+                className='ml-auto'
+                onClick={() => setOpen(false)}
+              >
+                {t('Done')}
+              </Button>
+            </div>
+          )}
         </PopoverContent>
       </Popover>
-      <Input
-        type='time'
-        step={1}
-        value={time}
-        aria-label={t('Time')}
-        onChange={handleTimeChange}
-        className='w-32 appearance-none [&::-webkit-calendar-picker-indicator]:hidden [&::-webkit-calendar-picker-indicator]:appearance-none'
-        disabled={!date}
-      />
-      {date && (
-        <Button
-          type='button'
-          variant='outline'
-          size='icon'
-          onClick={handleClear}
-          className='shrink-0'
-          aria-label='Clear'
-        >
-          <span aria-hidden='true'>✕</span>
-        </Button>
-      )}
+      {!compact && timeControl}
+      {!compact && clearControl}
     </div>
   )
+}
+
+function dateLabel(
+  value: Date | undefined,
+  displayFormat: string | undefined,
+  locale: Intl.LocalesArgument | undefined
+): string {
+  if (!value) return ''
+  if (displayFormat) return dayjs(value).format(displayFormat)
+  return new Intl.DateTimeFormat(locale, {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(value)
+}
+
+function pickerDate(
+  value: Date | undefined,
+  timeZone?: string
+): Date | undefined {
+  if (!value || !timeZone) return value
+  const zoned = dayjs(value).tz(timeZone)
+  return new Date(
+    zoned.year(),
+    zoned.month(),
+    zoned.date(),
+    zoned.hour(),
+    zoned.minute(),
+    zoned.second()
+  )
+}
+function pickerInstant(value: Date, timeZone?: string): Date {
+  if (!timeZone) return value
+  return dayjs.tz(dayjs(value).format('YYYY-MM-DD HH:mm:ss'), timeZone).toDate()
 }

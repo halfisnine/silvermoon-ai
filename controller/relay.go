@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -520,7 +521,8 @@ func executeTaskSubmissionWith(
 	defer func() {
 		// The client of a relayed event stream already holds the vendor's
 		// work, so the submission is billed instead of refunded.
-		if !durable && relayInfo.Billing != nil && !c.Writer.Written() {
+		_, marketing := relayInfo.Billing.(*service.MarketingBillingSession)
+		if !durable && relayInfo.Billing != nil && (marketing || !c.Writer.Written()) {
 			diagnostics.refund(stage)
 			relayInfo.Billing.Refund(c)
 		}
@@ -582,8 +584,10 @@ func executeTaskSubmissionWith(
 		c.Request.Body = io.NopCloser(bodyStorage)
 
 		stage = "submit"
+		relayInfo.RetryIndex = retryParam.GetRetry()
 		result, taskErr = submit(c, relayInfo)
-		if requestErr := c.Request.Context().Err(); requestErr != nil {
+		_, marketing := relayInfo.Billing.(*service.MarketingBillingSession)
+		if requestErr := c.Request.Context().Err(); requestErr != nil && !(marketing && result != nil && taskErr == nil) {
 			diagnostics.cancelled("after_submit", retryParam.GetRetry()+1)
 			taskErr = service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
 			break
@@ -627,7 +631,8 @@ func executeTaskSubmissionWith(
 		diagnostics.failed("submit", "missing_result", taskErr, false)
 		return nil, taskErr
 	}
-	if requestErr := c.Request.Context().Err(); requestErr != nil {
+	_, marketing := relayInfo.Billing.(*service.MarketingBillingSession)
+	if requestErr := c.Request.Context().Err(); requestErr != nil && !marketing {
 		diagnostics.cancelled("before_reserve", retryParam.GetRetry()+1)
 		return nil, service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
 	}
@@ -642,7 +647,7 @@ func executeTaskSubmissionWith(
 		diagnostics.reserve("reserve_start", result.Quota)
 		if reserveErr := relayInfo.Billing.Reserve(result.Quota); reserveErr != nil {
 			common.SysError(common.LogText("reserve adjusted task billing error: %s", reserveErr.Error()))
-			if !c.Writer.Written() {
+			if !marketing && !c.Writer.Written() {
 				taskErr = service.TaskErrorWrapperLocal(errors.New("insufficient quota for adjusted task cost"), string(types.ErrorCodeInsufficientUserQuota), http.StatusForbidden)
 				diagnostics.failed("reserve", "insufficient_quota", taskErr, false)
 				return nil, taskErr
@@ -651,7 +656,7 @@ func executeTaskSubmissionWith(
 			diagnostics.reserve("reserve_complete", result.Quota)
 		}
 	}
-	if requestErr := c.Request.Context().Err(); requestErr != nil {
+	if requestErr := c.Request.Context().Err(); requestErr != nil && !marketing {
 		diagnostics.cancelled("before_insert", retryParam.GetRetry()+1)
 		return nil, service.TaskErrorWrapperLocal(requestErr, "request_cancelled", http.StatusRequestTimeout)
 	}
@@ -721,14 +726,25 @@ func executeTaskSubmissionWith(
 			insertOmits = append(insertOmits, "data")
 		}
 	}
+	insertContext := c.Request.Context()
+	if service.AttachMarketingTask(c, relayInfo, task) {
+		// Upstream has accepted the work. Client cancellation cannot discard its
+		// durable task/financial recovery identity.
+		insertContext = context.WithoutCancel(insertContext)
+		if immediateTerminal {
+			if err := service.PrepareMarketingTaskOutcome(task, result.Immediate, nil, &result.Quota); err != nil {
+				return nil, service.TaskErrorWrapperLocal(err, "task_billing_settlement_failed", http.StatusInternalServerError)
+			}
+		}
+	}
 	diagnostics.insertStart(task)
-	if insertErr := task.InsertWithContext(c.Request.Context(), insertOmits...); insertErr != nil {
+	if insertErr := task.InsertWithContext(insertContext, insertOmits...); insertErr != nil {
 		common.SysError(common.LogText("insert task error: %s", insertErr.Error()))
 		taskErr = service.TaskErrorWrapperLocal(errors.New("failed to persist task"), "task_insert_failed", http.StatusInternalServerError)
 		diagnostics.failed("insert", "database_error", taskErr, false)
 		// The client of a relayed event stream already holds the vendor's
 		// work, so it is settled and logged without a task row.
-		if c.Writer.Written() {
+		if !marketing && c.Writer.Written() {
 			if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
 				common.SysError(common.LogText("settle task billing error: %s", settleErr.Error()))
 				return nil, taskErr
@@ -742,7 +758,15 @@ func executeTaskSubmissionWith(
 	diagnostics.durable(task)
 	diagnostics.settleStart(task, result.Quota)
 
-	if settleErr := service.SettleBilling(c, relayInfo, result.Quota); settleErr != nil {
+	var settleErr error
+	if marketing {
+		if immediateTerminal {
+			settleErr = service.FinalizeMarketingTask(task)
+		}
+	} else {
+		settleErr = service.SettleBilling(c, relayInfo, result.Quota)
+	}
+	if settleErr != nil {
 		common.SysError(common.LogText("settle task billing error: %s", settleErr.Error()))
 		taskErr = service.TaskErrorWrapperLocal(errors.New("failed to settle task billing"), "task_billing_settlement_failed", http.StatusInternalServerError)
 		diagnostics.failed("settle", "billing_error", taskErr, true)

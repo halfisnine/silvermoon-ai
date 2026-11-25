@@ -170,6 +170,13 @@ it('applies mobile drawer filters only when Search is pressed', async () => {
   )
 })
 
+it('exposes monthly paid consumption from the active logs toolbar', async () => {
+  await renderMobileFilter()
+  expect(
+    screen.getByRole('button', { name: 'My monthly paid consumption' })
+  ).toBeVisible()
+})
+
 it('keeps all quick actions visible without opening a menu', async () => {
   await renderMobileFilter()
   const user = userEvent.setup()

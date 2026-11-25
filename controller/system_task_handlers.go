@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -119,7 +120,7 @@ type midjourneyPollHandler struct{}
 func (midjourneyPollHandler) Type() string { return model.SystemTaskTypeMidjourneyPoll }
 
 func (midjourneyPollHandler) Enabled() bool {
-	return constant.UpdateTask && model.HasUnfinishedMidjourneyTasks()
+	return (constant.UpdateTask && model.HasUnfinishedMidjourneyTasks()) || model.HasPendingMarketingMidjourney()
 }
 
 func (midjourneyPollHandler) Interval() time.Duration { return 15 * time.Second }
@@ -127,6 +128,15 @@ func (midjourneyPollHandler) Interval() time.Duration { return 15 * time.Second 
 func (midjourneyPollHandler) NewPayload() any { return nil }
 
 func (midjourneyPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	if !constant.UpdateTask {
+		err := service.RecoverMarketingMidjourney(ctx)
+		status := model.SystemTaskStatusSucceeded
+		if err != nil {
+			status = model.SystemTaskStatusFailed
+		}
+		finishSystemTaskHandler(task, runnerID, status, nil, err)
+		return
+	}
 	summary := runMidjourneyTaskUpdateOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
@@ -139,7 +149,7 @@ type asyncTaskPollHandler struct{}
 func (asyncTaskPollHandler) Type() string { return model.SystemTaskTypeAsyncTaskPoll }
 
 func (asyncTaskPollHandler) Enabled() bool {
-	return constant.UpdateTask && model.HasUnfinishedSyncTasks()
+	return (constant.UpdateTask && model.HasUnfinishedSyncTasks()) || model.HasPendingMarketingRecovery() || model.HasPendingMarketingRewardRecovery()
 }
 
 func (asyncTaskPollHandler) Interval() time.Duration { return 15 * time.Second }
@@ -147,7 +157,21 @@ func (asyncTaskPollHandler) Interval() time.Duration { return 15 * time.Second }
 func (asyncTaskPollHandler) NewPayload() any { return nil }
 
 func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	if !constant.UpdateTask {
+		// Financial/log recovery is independent of the upstream polling switch.
+		err := errors.Join(service.RecoverMarketingTasks(ctx), model.RecoverMarketingUsage(ctx, 100), service.RecoverMarketingRewards(ctx))
+		if err != nil {
+			finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		} else {
+			finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, nil, nil)
+		}
+		return
+	}
 	summary := service.RunTaskPollingOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
+	if err := service.RecoverMarketingRewards(ctx); err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, summary, err)
+		return
+	}
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 

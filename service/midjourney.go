@@ -61,7 +61,7 @@ func PrepareMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.
 
 // SettleMidjourneyTaskBilling charges a persisted legacy task and records the applied stages.
 func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.Midjourney, prepared bool) (bool, error) {
-	if !prepared {
+	if !prepared && (task == nil || task.MarketingFundingID == 0) {
 		return false, nil
 	}
 	if relayInfo == nil {
@@ -71,6 +71,12 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 		return false, errors.New("Midjourney task must be persisted before billing")
 	}
 
+	if task.MarketingFundingID > 0 {
+		if task.MarketingBillingData.MarketingOutcome != nil {
+			return false, FinalizeMarketingMidjourney(task)
+		}
+		return false, nil
+	}
 	result, billingErr := postConsumeQuotaWithResult(relayInfo, task.Quota, 0, true)
 	if !result.FundingApplied {
 		task.Quota = 0
@@ -94,6 +100,10 @@ func SettleMidjourneyTaskBilling(relayInfo *relaycommon.RelayInfo, task *model.M
 
 // RefundMidjourneyQuota reverses every accounting element recorded for a billed legacy task.
 func RefundMidjourneyQuota(ctx context.Context, task *model.Midjourney, reason string) bool {
+	if task.MarketingFundingID > 0 {
+		// Only the persisted provider outcome may release managed funds.
+		return FinalizeMarketingMidjourney(task) == nil
+	}
 	quota := task.Quota
 	if quota == 0 {
 		return true
@@ -296,7 +306,7 @@ func RecordMidjourneyPolicyResponse(c *gin.Context, response *dto.MidjourneyResp
 	return false
 }
 
-func DoMidjourneyHttpRequest(c *gin.Context, timeout time.Duration, fullRequestURL string) (*dto.MidjourneyResponseWithStatusCode, []byte, error) {
+func DoMidjourneyHttpRequest(c *gin.Context, timeout time.Duration, fullRequestURL string, billing ...*MarketingBillingSession) (*dto.MidjourneyResponseWithStatusCode, []byte, error) {
 	var nullBytes []byte
 	//var requestBody io.Reader
 	//requestBody = c.Request.Body
@@ -345,12 +355,23 @@ func DoMidjourneyHttpRequest(c *gin.Context, timeout time.Duration, fullRequestU
 		req.Header.Set("mj-api-secret", auth)
 	}
 	defer cancel()
+	if len(billing) > 0 && billing[0] != nil {
+		if err := billing[0].BeginDispatch(); err != nil {
+			return MidjourneyErrorWithStatusCodeWrapper(constant.MjErrorUnknown, MarketingBillingMessage(c, err), http.StatusConflict), nullBytes, err
+		}
+	}
 	resp, err := GetHttpClient().Do(req)
 	if err != nil {
 		common.SysLog(common.LogText("do request failed: %s", err.Error()))
 		return MidjourneyErrorWithStatusCodeWrapper(constant.MjErrorUnknown, "do_request_failed", http.StatusInternalServerError), nullBytes, err
 	}
+	defer resp.Body.Close()
 	statusCode := resp.StatusCode
+	if len(billing) > 0 && billing[0] != nil && (statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden || statusCode == http.StatusTooManyRequests) {
+		if err := billing[0].RejectDispatch(fmt.Sprintf("midjourney HTTP rejection %d", statusCode)); err != nil {
+			return MidjourneyErrorWithStatusCodeWrapper(constant.MjErrorUnknown, MarketingBillingMessage(c, err), http.StatusInternalServerError), nullBytes, err
+		}
+	}
 	//if statusCode != 200  {
 	//	return MidjourneyErrorWithStatusCodeWrapper(constant.MjErrorUnknown, "bad_response_status_code", statusCode), nullBytes, nil
 	//}

@@ -1,62 +1,194 @@
 package controller
 
 import (
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 )
 
-// GetCheckinStatus 获取用户签到状态和历史记录
+// Only display amounts cross the console boundary. Conversion ratios, stored
+// balances, qualification proofs and activity decision internals stay private.
+type marketingCheckinRewardView struct {
+	PoolName     string `json:"pool_name,omitempty"`
+	Kind         string `json:"kind"`
+	Amount       string `json:"amount,omitempty"`
+	Currency     string `json:"currency,omitempty"`
+	ValidSeconds int64  `json:"valid_seconds"`
+	PoolID       int64  `json:"pool_id,omitempty"`
+	Count        int64  `json:"count,omitempty"`
+}
+type marketingCheckinMilestoneView struct {
+	Days    int                          `json:"days"`
+	Rewards []marketingCheckinRewardView `json:"rewards"`
+}
+type marketingCheckinDayView struct {
+	Date   string `json:"date"`
+	Makeup bool   `json:"makeup"`
+}
+type marketingCheckinActivityView struct {
+	State              string                          `json:"state"`
+	ID                 int64                           `json:"id"`
+	Name               string                          `json:"name"`
+	StartsAt           int64                           `json:"starts_at"`
+	EndsAt             int64                           `json:"ends_at"`
+	Paused             bool                            `json:"paused"`
+	Condition          string                          `json:"condition"`
+	RequiredPaymentCNY string                          `json:"required_payment_cny"`
+	CycleDays          int                             `json:"cycle_days"`
+	MakeupDays         int                             `json:"makeup_days"`
+	MakeupLimit        int                             `json:"makeup_limit"`
+	MakeupDaily        bool                            `json:"makeup_daily"`
+	MakeupUsed         int                             `json:"makeup_used"`
+	MakeupRemaining    int                             `json:"makeup_remaining"`
+	MakeupDates        []string                        `json:"makeup_dates"`
+	Streak             int                             `json:"streak"`
+	TodayEligibility   string                          `json:"today_eligibility"`
+	DailyRewards       []marketingCheckinRewardView    `json:"daily_rewards"`
+	Milestones         []marketingCheckinMilestoneView `json:"milestones"`
+	Records            []marketingCheckinDayView       `json:"records"`
+}
+
+func marketingCheckinRewardsView(rewards []model.MarketingActivityRewardSpec) ([]marketingCheckinRewardView, error) {
+	result := make([]marketingCheckinRewardView, 0, len(rewards))
+	for _, reward := range rewards {
+		item := marketingCheckinRewardView{Kind: reward.Kind, ValidSeconds: reward.ValidSeconds, PoolID: reward.PoolID, Count: reward.Count}
+		if reward.Kind == "gift" {
+			quota, err := reward.Money.Quota()
+			if err != nil {
+				return nil, err
+			}
+			item.Amount, item.Currency, err = service.MarketingWalletDisplayAmount(quota)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if reward.Kind == "chance" {
+			var pool model.MarketingLotteryPool
+			if err := model.DB.Select("id", "name").First(&pool, reward.PoolID).Error; err != nil {
+				return nil, err
+			}
+			item.PoolName = pool.Name
+		}
+		result = append(result, item)
+	}
+	return result, nil
+}
+
 func GetCheckinStatus(c *gin.Context) {
-	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
-		common.ApiErrorT(c, "Check-in feature is not enabled")
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
 		return
 	}
-	userId := c.GetInt("id")
-	// 获取月份参数，默认为当前月份
-	month := c.DefaultQuery("month", time.Now().Format("2006-01"))
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
+		return
+	}
 
-	stats, err := model.GetUserCheckinStats(userId, month)
+	calendar, err := model.GetMarketingCheckinCalendar(c.Request.Context(), c.GetInt("id"), c.Query("month"), time.Now().Unix())
 	if err != nil {
-		common.ApiError(c, err)
+		marketingAPIError(c, err)
 		return
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"data": gin.H{
-			"enabled":   setting.Enabled,
-			"min_quota": setting.MinQuota,
-			"max_quota": setting.MaxQuota,
-			"stats":     stats,
-		},
+	activities := make([]marketingCheckinActivityView, 0, len(calendar.Activities))
+	for _, activity := range calendar.Activities {
+		rule := activity.Spec.Checkin
+		item := marketingCheckinActivityView{
+			ID: activity.Activity.ID, Name: activity.Activity.Name, StartsAt: activity.Activity.StartsAt, EndsAt: activity.Activity.EndsAt, Paused: activity.Activity.Paused,
+			Condition: rule.Condition, RequiredPaymentCNY: decimal.NewFromInt(rule.ThresholdCents).Shift(-2).StringFixed(2), CycleDays: rule.CycleDays,
+			MakeupDays: rule.MakeupDays, MakeupLimit: rule.MakeupLimit, MakeupDaily: rule.MakeupDaily, MakeupUsed: activity.MakeupUsed, MakeupRemaining: activity.MakeupRemaining,
+			MakeupDates: activity.MakeupDates, Streak: activity.Streak, TodayEligibility: activity.TodayEligibility,
+			Milestones: []marketingCheckinMilestoneView{}, Records: []marketingCheckinDayView{},
+		}
+		item.DailyRewards, err = marketingCheckinRewardsView(activity.Spec.Rewards)
+		if err != nil {
+			marketingAPIError(c, err)
+			return
+		}
+		for _, milestone := range rule.Milestones {
+			rewards, err := marketingCheckinRewardsView(milestone.Rewards)
+			if err != nil {
+				marketingAPIError(c, err)
+				return
+			}
+			item.Milestones = append(item.Milestones, marketingCheckinMilestoneView{Days: milestone.Days, Rewards: rewards})
+		}
+		for _, record := range activity.Records {
+			item.Records = append(item.Records, marketingCheckinDayView{Date: record.Day, Makeup: record.Makeup})
+		}
+		item.State = "active"
+		if time.Now().Unix() < item.StartsAt {
+			item.State = "scheduled"
+		}
+		if item.Paused {
+			item.State = "paused"
+		}
+		if item.EndsAt > 0 && time.Now().Unix() >= item.EndsAt {
+			item.State = "ended"
+		}
+		activities = append(activities, item)
+	}
+	common.ApiSuccess(c, gin.H{
+		"server_now": time.Now().Unix(), "month": calendar.Month, "today": calendar.Today, "activities": activities,
+		"can_checkin": calendar.CanCheckin, "checked_in_today": calendar.CheckedInToday,
 	})
 }
 
-// DoCheckin 执行用户签到
 func DoCheckin(c *gin.Context) {
-	setting := operation_setting.GetCheckinSetting()
-	if !setting.Enabled {
-		common.ApiErrorT(c, "Check-in feature is not enabled")
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
+		return
+	}
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
 		return
 	}
 
-	userId := c.GetInt("id")
+	submitActivityCheckin(c, "")
+}
 
-	checkin, err := model.UserCheckin(userId)
+func DoMakeupCheckin(c *gin.Context) {
+	if _, ok := middleware.GetSessionAuthIdentity(c); !ok {
+		common.ApiErrorStatus(c, http.StatusUnauthorized, common.NewMessage("a dashboard login session is required"))
+		return
+	}
+	if _, ok := c.GetQuery("user_id"); ok {
+		marketingAPIError(c, model.ErrMarketingInput)
+		return
+	}
+
+	var request struct {
+		Date string `json:"date"`
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, 1024))
+	if err != nil || common.Unmarshal(body, &request) != nil || len(request.Date) != 10 {
+		common.ApiErrorT(c, "Invalid check-in date")
+		return
+	}
+	submitActivityCheckin(c, request.Date)
+}
+
+func submitActivityCheckin(c *gin.Context, targetDay string) {
+	result, err := service.SubmitMarketingCheckin(c.Request.Context(), c.GetInt("id"), targetDay)
+	if result == nil {
+		marketingAPIError(c, err)
+		return
+	}
 	if err != nil {
-		common.ApiError(c, err)
-		return
+		// The calendar and obligations committed. Never report a failed check-in
+		// or leak a database error when only automatic delivery needs recovery.
+		logger.LogError(c.Request.Context(), common.LogText("Marketing check-in reward processing failed for user %d", c.GetInt("id")))
 	}
-	model.RecordLog(userId, model.LogTypeSystem, common.NewMessage("Daily check-in, received {{quota}}", map[string]any{"quota": logger.FormatQuota(checkin.QuotaAwarded)}))
-	common.ApiSuccessT(c, "Check-in successful", gin.H{
-		"quota_awarded": checkin.QuotaAwarded,
-		"checkin_date":  checkin.CheckinDate,
+	common.ApiSuccess(c, gin.H{
+		"date": result.Checkin.Day, "makeup": result.Checkin.Makeup,
+		"already_recorded": result.Checkin.AlreadyRecorded, "activity_ids": result.Checkin.ActivityIDs,
+		"rewards_pending": result.Pending,
 	})
 }

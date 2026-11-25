@@ -24,6 +24,10 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !isStripeTopUpEnabled() {
+		common.ApiErrorT(c, "Unsupported payment channel")
+		return
+	}
 
 	var req SubscriptionStripePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {

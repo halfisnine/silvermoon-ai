@@ -119,16 +119,7 @@ func UpdateUserBindColumnForSessionWithTx(tx *gorm.DB, identity AuthSessionIdent
 	if err := ValidateAuthSessionWithTx(tx, identity); err != nil {
 		return err
 	}
-	// Preserve the existing ownership check within the transaction and update
-	// only the chosen binding column, never a complete user snapshot.
-	var count int64
-	if err := tx.Model(&User{}).Where(column+" = ? AND id <> ?", value, identity.UserID).Count(&count).Error; err != nil {
-		return err
-	}
-	if count != 0 {
-		return ErrExternalIdentityAlreadyClaimed
-	}
-	return tx.Model(&User{}).Where("id = ?", identity.UserID).Update(column, value).Error
+	return updateBuiltinIdentityWithTx(tx, identity.UserID, column, value)
 }
 
 func UpdateUserOAuthBindingForSessionWithTx(tx *gorm.DB, identity AuthSessionIdentity, providerID int, subject string) error {
@@ -158,16 +149,15 @@ func MigrateLegacyGitHubBindingWithTx(tx *gorm.DB, userID int, legacyID, gitHubI
 	if userID <= 0 || legacyID == "" || gitHubID == "" {
 		return false, ErrAccountBindingChanged
 	}
-	var count int64
-	if err := tx.Model(&User{}).Where("github_id = ? AND id <> ?", gitHubID, userID).Count(&count).Error; err != nil {
+	var current User
+	if err := lockForUpdate(tx).First(&current, userID).Error; err != nil {
 		return false, err
 	}
-	if count != 0 {
-		return false, ErrExternalIdentityAlreadyClaimed
+	if current.GitHubId != legacyID {
+		return false, nil
 	}
-	result := tx.Model(&User{}).Where("id = ? AND github_id = ?", userID, legacyID).Update("github_id", gitHubID)
-	if result.Error != nil {
-		return false, result.Error
+	if err := updateBuiltinIdentityWithTx(tx, userID, "github_id", gitHubID); err != nil {
+		return false, err
 	}
-	return result.RowsAffected == 1, nil
+	return true, nil
 }

@@ -706,3 +706,52 @@ func TestAzureHostedWebSearch(t *testing.T) {
 		})
 	}
 }
+
+func TestResponsesUsageDimensionsRemainUnknownWhenMissing(t *testing.T) {
+	previous := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = previous })
+	for _, mode := range []string{"native", "converted", "compact", "stream"} {
+		for _, tc := range []struct {
+			name, usage, text string
+			incomplete        bool
+		}{
+			{"input only", `{"input_tokens":4,"total_tokens":4}`, "hello", true},
+			{"output only", `{"output_tokens":2,"total_tokens":2}`, "hello", true},
+			{"complete", `{"input_tokens":4,"output_tokens":2,"total_tokens":6}`, "hello", false},
+			{"empty output", `{"input_tokens":4,"output_tokens":0,"total_tokens":4}`, "", false},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+				ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+				info := &relaycommon.RelayInfo{RelayFormat: types.RelayFormatOpenAI, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-4o"}}
+				info.SetEstimatePromptTokens(4)
+				body := fmt.Sprintf(`{"id":"resp-test","object":"response","model":"gpt-4o","status":"completed","usage":%s,"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":%q}]}]}`, tc.usage, tc.text)
+				if mode == "stream" {
+					body = "data: {\"type\":\"response.completed\",\"response\":" + body + "}\n\n"
+					info.IsStream = true
+				}
+				resp := &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}
+				var usage *dto.Usage
+				var apiErr *types.NewAPIError
+				switch mode {
+				case "native":
+					usage, apiErr = OaiResponsesHandler(ctx, info, resp)
+				case "converted":
+					usage, apiErr = OaiResponsesToChatHandler(ctx, info, resp)
+				case "compact":
+					usage, apiErr = OaiResponsesCompactionHandler(ctx, resp)
+				case "stream":
+					usage, apiErr = OaiResponsesStreamHandler(ctx, info, resp)
+				}
+				require.Nil(t, apiErr)
+				require.NotNil(t, usage)
+				incomplete := common.GetContextKeyBool(ctx, constant.ContextKeyEstimatedBillingUsage) || info.BillingUsageEstimated
+				assert.Equal(t, tc.incomplete, incomplete)
+				if mode == "native" || mode == "converted" {
+					assert.Equal(t, relaycommon.ResponseOutcomeCompleted, info.StreamStatus.OutcomeSnapshot().Response)
+				}
+			})
+		}
+	}
+}

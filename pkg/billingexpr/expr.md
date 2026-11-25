@@ -274,6 +274,33 @@ Settlement copies the actual run's traces into the consume log as:
 
 The usage-log UI treats `request_rules` as the authoritative rule list and renders directly from it. It parses `cond` only to produce a friendly label and falls back to the canonical condition text when that parser does not recognize the condition. Pricing pages without log context continue to parse the stored expression for display.
 
+### Durable request pricing evidence
+
+Marketing funding records preserve the original expression and a versioned
+`RequestPricingEvidence`. Before upstream dispatch, request-only AST subtrees
+are evaluated into finite numbers, booleans, or nil. This includes branches not
+selected by estimated token counts. Raw custom header/body strings are not
+persisted; string comparisons can instead retain their derived boolean result.
+The original expression still supplies token normalization and request-rule
+trace labels. Recovery substitutes the retained values and reevaluates the
+remaining token, image-count, or task-usage dependencies against actual facts.
+
+A dependency that requires retaining raw text or querying a request path chosen
+by future usage cannot be captured safely. Marketing reservation/dispatch must
+fail before sending it upstream rather than accept incomplete recovery evidence.
+The error identifies an expression position without printing request values.
+This does not change the stored expression language or legacy billing behavior.
+
+Clock functions remain settlement-time functions, not submission-time constants.
+Marketing expression settlement captures its evaluation timestamp and uses that
+same timestamp for all clock probes and persisted recovery evidence. Replaying a
+clock-dependent expression requires that timestamp, or an explicit reconciliation
+timestamp when no prior actual evaluation exists; it never silently uses the
+recovery machine's current clock. Legacy evaluation without an explicit clock
+retains its existing behavior. Task snapshots store the actual settlement clock
+alongside merged usage facts. Authoritative recovered image counts remain an
+independent input and never overwrite frozen request `param("n")`.
+
 ---
 
 ## Task Usage Expressions

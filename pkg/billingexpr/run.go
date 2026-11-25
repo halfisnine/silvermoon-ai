@@ -2,6 +2,7 @@ package billingexpr
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"strings"
 	"time"
@@ -32,7 +33,7 @@ func RunExprWithRequest(exprStr string, params TokenParams, request RequestInput
 	if err != nil {
 		return 0, TraceResult{}, err
 	}
-	return runProgram(entry.prog, entry.requestRules, entry.usedVars, params, request)
+	return runEntryWithRequest(entry, exprStr, params, request)
 }
 
 // RunExprByHash is like RunExpr but accepts a pre-computed hash for the cache
@@ -47,7 +48,7 @@ func RunExprByHashWithRequest(exprStr, hash string, params TokenParams, request 
 	if err != nil {
 		return 0, TraceResult{}, err
 	}
-	return runProgram(entry.prog, entry.requestRules, entry.usedVars, params, request)
+	return runEntryWithRequest(entry, exprStr, params, request)
 }
 
 func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, usedVars map[string]bool, params TokenParams, request RequestInput) (float64, TraceResult, error) {
@@ -55,7 +56,6 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, usedVars map[
 		BillingUnit:  BillingUnitToken,
 		RequestRules: append([]RequestRuleTrace(nil), requestRules...),
 	}
-	headers := normalizeHeaders(request.Headers)
 	imageCount := 1
 	if usedVars["image_count"] {
 		if request.ImageCount != nil {
@@ -109,37 +109,19 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, usedVars map[
 			}
 			return 1
 		},
-		"header": func(key string) string {
-			return headers[strings.ToLower(strings.TrimSpace(key))]
-		},
-		"param": func(path string) any {
-			path = strings.TrimSpace(path)
-			if path == "" || len(request.Body) == 0 {
-				return nil
-			}
-			result := ojson.GetBytes(request.Body, path)
-			if !result.Exists() {
-				return nil
-			}
-			return result.Value()
-		},
+
 		"u": func(name string) any {
 			if request.Usage == nil {
 				return nil
 			}
 			return request.Usage[strings.TrimSpace(name)]
 		},
-		"has": func(source any, substr string) bool {
-			if source == nil || substr == "" {
-				return false
-			}
-			return strings.Contains(fmt.Sprint(source), substr)
-		},
-		"hour":    func(tz string) int { return timeInZone(tz).Hour() },
-		"minute":  func(tz string) int { return timeInZone(tz).Minute() },
-		"weekday": func(tz string) int { return int(timeInZone(tz).Weekday()) },
-		"month":   func(tz string) int { return int(timeInZone(tz).Month()) },
-		"day":     func(tz string) int { return timeInZone(tz).Day() },
+
+		"hour":    func(tz string) int { return requestTimeInZone(request, tz).Hour() },
+		"minute":  func(tz string) int { return requestTimeInZone(request, tz).Minute() },
+		"weekday": func(tz string) int { return int(requestTimeInZone(request, tz).Weekday()) },
+		"month":   func(tz string) int { return int(requestTimeInZone(request, tz).Month()) },
+		"day":     func(tz string) int { return requestTimeInZone(request, tz).Day() },
 		"max":     math.Max,
 		"min":     math.Min,
 		"abs":     math.Abs,
@@ -147,6 +129,7 @@ func runProgram(prog *vm.Program, requestRules []RequestRuleTrace, usedVars map[
 		"floor":   math.Floor,
 	}
 
+	maps.Copy(env, requestProbeEnvironment(request))
 	out, err := expr.Run(prog, env)
 	if err != nil {
 		return 0, trace, fmt.Errorf("expr run error: %w", err)
@@ -184,4 +167,47 @@ func normalizeHeaders(headers map[string]string) map[string]string {
 		normalized[k] = v
 	}
 	return normalized
+}
+
+// requestProbeEnvironment is shared by live evaluation and privacy-safe evidence capture.
+func requestProbeEnvironment(request RequestInput) map[string]any {
+	headers := normalizeHeaders(request.Headers)
+	return map[string]any{
+		"has": func(source any, substr string) bool {
+			if source == nil || substr == "" {
+				return false
+			}
+			return strings.Contains(fmt.Sprint(source), substr)
+		},
+		"header": func(key string) string {
+			return headers[strings.ToLower(strings.TrimSpace(key))]
+		},
+		"param": func(path string) any {
+			path = strings.TrimSpace(path)
+			if path == "" || len(request.Body) == 0 {
+				return nil
+			}
+			result := ojson.GetBytes(request.Body, path)
+			if !result.Exists() {
+				return nil
+			}
+			return result.Value()
+		},
+	}
+}
+
+func requestTimeInZone(request RequestInput, tz string) time.Time {
+	if request.EvaluationTime == nil {
+		return timeInZone(tz)
+	}
+	now := *request.EvaluationTime
+	tz = strings.TrimSpace(tz)
+	if tz == "" {
+		return now.UTC()
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return now.UTC()
+	}
+	return now.In(loc)
 }

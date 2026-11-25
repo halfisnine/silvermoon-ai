@@ -545,28 +545,13 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 		// Perform post-transaction tasks (logs, sidebar config, inviter rewards)
 		user.FinalizeOAuthUserCreation(inviterId)
+		processRegistrationRewards(c, user.Id)
 	} else {
-		// Built-in provider: create user and update provider ID in a transaction
+		// The database identity claim and the account's registration fact must
+		// commit together, including when the earlier existence check was stale.
+		provider.SetProviderUserID(user, oauthUser.ProviderUserID)
 		err := model.DB.Transaction(func(tx *gorm.DB) error {
-			// Create user
-			if err := user.InsertWithTx(tx, inviterId); err != nil {
-				return err
-			}
-
-			// Set the provider user ID on the user model and update
-			provider.SetProviderUserID(user, oauthUser.ProviderUserID)
-			if err := tx.Model(user).Updates(map[string]any{
-				"github_id":   user.GitHubId,
-				"discord_id":  user.DiscordId,
-				"oidc_id":     user.OidcId,
-				"linux_do_id": user.LinuxDOId,
-				"wechat_id":   user.WeChatId,
-				"telegram_id": user.TelegramId,
-			}).Error; err != nil {
-				return err
-			}
-
-			return nil
+			return user.InsertWithTx(tx, inviterId)
 		})
 		if err != nil {
 			return nil, nil, err
@@ -574,6 +559,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 
 		// Perform post-transaction tasks
 		user.FinalizeOAuthUserCreation(inviterId)
+		processRegistrationRewards(c, user.Id)
 	}
 
 	return user, nil, nil

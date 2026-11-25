@@ -1,6 +1,11 @@
 package model
 
 type Midjourney struct {
+	MarketingLegacyReviewed bool            `json:"-" gorm:"not null;default:false"`
+	MarketingFundingID      int64           `json:"-" gorm:"not null;default:0;index"`
+	MarketingBillingPending bool            `json:"-" gorm:"not null;default:false;index"`
+	MarketingBillingData    TaskPrivateData `json:"-" gorm:"type:text"`
+
 	Id          int    `json:"id"`
 	Code        int    `json:"code"`
 	UserId      int    `json:"user_id" gorm:"index"`
@@ -111,7 +116,7 @@ func GetAllUnFinishTasks() []*Midjourney {
 func HasUnfinishedMidjourneyTasks() bool {
 	var id int
 	err := DB.Model(&Midjourney{}).
-		Where("progress != ?", "100%").
+		Where("progress != ? OR marketing_billing_pending = ?", "100%", true).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0
@@ -246,4 +251,10 @@ func CountAllUserTask(userId int, queryParams TaskQueryParams) int64 {
 	}
 	_ = query.Count(&total).Error
 	return total
+}
+
+func HasPendingMarketingMidjourney() bool {
+	var id int
+	err := DB.Model(&Midjourney{}).Where("marketing_billing_pending = ? AND status IN ?", true, []string{"SUCCESS", "FAILURE"}).Limit(1).Pluck("id", &id).Error
+	return err == nil && id != 0
 }

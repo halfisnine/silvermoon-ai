@@ -24,7 +24,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func buildUsageFromGeminiMetadata(metadata *dto.GeminiUsageMetadata, fallbackPromptTokens int) dto.Usage {
+func buildUsageFromGeminiMetadata(c *gin.Context, metadata *dto.GeminiUsageMetadata, fallbackPromptTokens int) dto.Usage {
+	common.SetContextKey(c, constant.ContextKeyEstimatedBillingUsage, metadata == nil ||
+		(metadata.PromptTokenCount+metadata.ToolUsePromptTokenCount <= 0 && fallbackPromptTokens > 0))
 	usage := relayconvert.UsageFromGeminiMetadata(metadata, fallbackPromptTokens)
 	if usage == nil {
 		return dto.Usage{}
@@ -148,7 +150,7 @@ func countGeminiBillableFunctionCalls(info *relaycommon.RelayInfo, response *dto
 func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
 	metadata := response.GetUsageMetadata()
 	if dto.HasGeminiUsageMetadataTokens(metadata) {
-		usage := buildUsageFromGeminiMetadata(metadata, info.GetEstimatePromptTokens())
+		usage := buildUsageFromGeminiMetadata(c, metadata, info.GetEstimatePromptTokens())
 		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), geminiResponseInlineImageCount(response))
 		return usage
 	}
@@ -252,7 +254,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		// 更新使用量统计
 		if metadata := geminiResponse.GetUsageMetadata(); dto.HasGeminiUsageMetadataTokens(metadata) {
 			accumulatedUsageMetadata = dto.MergeGeminiUsageMetadataNonZero(accumulatedUsageMetadata, metadata)
-			mappedUsage := buildUsageFromGeminiMetadata(accumulatedUsageMetadata, info.GetEstimatePromptTokens())
+			mappedUsage := buildUsageFromGeminiMetadata(c, accumulatedUsageMetadata, info.GetEstimatePromptTokens())
 			*usage = mappedUsage
 			hasBillableUsageMetadata = true
 		}
@@ -528,7 +530,7 @@ func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	// https://platform.openai.com/docs/guides/embeddings#what-are-embeddings
 	var usage *dto.Usage
 	if upstream := geminiResponse.UsageMetadata.GeminiUsageMetadata(); upstream != nil {
-		upstreamUsage := buildUsageFromGeminiMetadata(upstream, info.GetEstimatePromptTokens())
+		upstreamUsage := buildUsageFromGeminiMetadata(c, upstream, info.GetEstimatePromptTokens())
 		usage = &upstreamUsage
 	} else {
 		usage = service.ResponseText2Usage(c, "", info.UpstreamModelName, info.GetEstimatePromptTokens())

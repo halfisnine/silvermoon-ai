@@ -144,6 +144,7 @@ func SetApiRouter(router *gin.Engine) {
 				// Check-in routes
 				selfRoute.GET("/checkin", controller.GetCheckinStatus)
 				selfRoute.POST("/checkin", middleware.TurnstileCheck(), controller.DoCheckin)
+				selfRoute.POST("/checkin/makeup", middleware.TurnstileCheck(), controller.DoMakeupCheckin)
 
 				// Custom OAuth bindings
 				selfRoute.GET("/oauth/bindings", controller.GetUserOAuthBindings)
@@ -305,6 +306,22 @@ func SetApiRouter(router *gin.Engine) {
 				tokenUsageRoute.GET("/", controller.GetTokenUsage)
 			}
 		}
+
+		marketingUser := apiRouter.Group("/marketing/user", middleware.UserAuth(), middleware.DisableCache())
+		marketingUser.GET("/:resource", controller.MarketingUserRead)
+		marketingUser.GET("/:resource/:id", controller.MarketingUserRead)
+		marketingUser.GET("/rewards/:kind/:id", controller.MarketingUserRead)
+		marketingUser.GET("/draws/by-request/:operation_key", controller.MarketingUserRead)
+		marketingUser.POST("/pools/:id/draw", controller.MarketingUserDraw)
+
+		marketingAdmin := apiRouter.Group("/marketing/admin", middleware.AdminAuth(), middleware.DisableCache())
+		marketingAdmin.GET("/metadata", controller.MarketingAdminRead)
+		marketingAdmin.GET("/:resource", controller.MarketingAdminRead)
+		marketingAdmin.GET("/:resource/:id", controller.MarketingAdminRead)
+		marketingAdmin.GET("/rewards/:kind/:id", controller.MarketingAdminRead)
+		marketingAdmin.POST("/:resource", controller.MarketingAdminWrite)
+		marketingAdmin.PUT("/:resource/:id", controller.MarketingAdminWrite)
+		marketingAdmin.POST("/:resource/:id/:action", controller.MarketingAdminWrite)
 
 		redemptionRoute := apiRouter.Group("/redemption")
 		redemptionRoute.Use(middleware.AdminAuth())

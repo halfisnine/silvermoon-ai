@@ -23,7 +23,7 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterAll, afterEach, beforeAll, expect, test } from 'vitest'
 
@@ -36,7 +36,7 @@ import { CommandMenu } from '../command-menu'
 import { Search } from '../search'
 
 const adminEntries = ['Channels', 'Models', 'Users', 'Redemption Codes']
-const superAdminEntries = ['System Info', 'Task Plugins', 'System Settings']
+const superAdminEntries = ['System Info', 'Task Plugins']
 
 // jsdom lacks the Web Animations API the menu's scroll area waits on.
 const getAnimationsDescriptor = Object.getOwnPropertyDescriptor(
@@ -96,31 +96,58 @@ async function searchEntriesFor(role: number, sidebarModulesAdmin = '') {
 
   await userEvent.click(await screen.findByRole('button', { name: 'Search' }))
   const options = await screen.findAllByRole('option')
-  return options.map((option) => option.textContent)
+  return { entries: options.map((option) => option.textContent), router }
 }
 
 test('regular users only find their own console pages in search', async () => {
-  const entries = await searchEntriesFor(ROLE.USER)
+  const { entries } = await searchEntriesFor(ROLE.USER)
 
   expect(entries).toEqual(
     expect.arrayContaining(['API Keys', 'Usage Logs', 'Wallet', 'Profile'])
   )
-  for (const entry of [...adminEntries, ...superAdminEntries]) {
+  for (const entry of [
+    ...adminEntries,
+    ...superAdminEntries,
+    'System Settings',
+  ]) {
     expect(entries).not.toContain(entry)
   }
 })
 
-test('admins find admin pages in search but not super admin pages', async () => {
-  const entries = await searchEntriesFor(ROLE.ADMIN)
+test('admins find admin pages and enter settings through marketing only', async () => {
+  const { entries, router } = await searchEntriesFor(ROLE.ADMIN)
 
   expect(entries).toEqual(expect.arrayContaining(adminEntries))
   for (const entry of superAdminEntries) {
     expect(entries).not.toContain(entry)
   }
+  await userEvent.click(screen.getByRole('option', { name: 'System Settings' }))
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/marketing-admin/activities')
+  })
+})
+
+test('super admins enter the full system settings from search', async () => {
+  const { entries, router } = await searchEntriesFor(ROLE.SUPER_ADMIN)
+
+  expect(entries).toEqual(expect.arrayContaining(superAdminEntries))
+  await userEvent.click(screen.getByRole('option', { name: 'System Settings' }))
+  await waitFor(() => {
+    expect(router.state.location.pathname).toBe('/system-settings/site')
+  })
+})
+
+test('admins cannot find the settings entrance when marketing is hidden', async () => {
+  const { entries } = await searchEntriesFor(
+    ROLE.ADMIN,
+    JSON.stringify({ admin: { enabled: true, marketing: false } })
+  )
+
+  expect(entries).not.toContain('System Settings')
 })
 
 test('pages hidden in the sidebar settings stay out of search', async () => {
-  const entries = await searchEntriesFor(
+  const { entries } = await searchEntriesFor(
     ROLE.USER,
     JSON.stringify({ personal: { enabled: true, topup: false } })
   )

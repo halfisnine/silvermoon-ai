@@ -23,6 +23,10 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	if !requirePaymentCompliance(c) {
 		return
 	}
+	if !isCreemTopUpEnabled() {
+		common.ApiErrorT(c, "Unsupported payment channel")
+		return
+	}
 
 	var req SubscriptionCreemPayRequest
 

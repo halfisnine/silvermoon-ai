@@ -11,6 +11,8 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +21,78 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+func TestPaidRedemptionAmountsUseTrustedSettings(t *testing.T) {
+	previousSettings := *operation_setting.GetGeneralSetting()
+	previousQuota, previousRate := common.QuotaPerUnit, operation_setting.USDExchangeRate
+	t.Cleanup(func() {
+		*operation_setting.GetGeneralSetting() = previousSettings
+		common.QuotaPerUnit, operation_setting.USDExchangeRate = previousQuota, previousRate
+	})
+	common.QuotaPerUnit = 500000
+	operation_setting.USDExchangeRate = 2.5
+	for _, tc := range []struct {
+		mode, currency, amount string
+		customRate             float64
+		quota                  int64
+	}{
+		{"CNY", "CNY", "10", 1, 2000000},
+		{"USD", "USD", "10", 1, 5000000},
+		{"CUSTOM", "¤", "6", 3, 1000000},
+		{"TOKENS", "USD", "10", 1, 5000000},
+	} {
+		t.Run(tc.mode, func(t *testing.T) {
+			settings := operation_setting.GetGeneralSetting()
+			settings.QuotaDisplayType = tc.mode
+			settings.CustomCurrencySymbol = "¤"
+			settings.CustomCurrencyExchangeRate = tc.customRate
+			configuration, err := service.CurrentMarketingMoneyContext()
+			require.NoError(t, err)
+			spec, err := (paidRedemptionRequest{
+				Name: "Paid card", PaidAmountCNY: "0.01", CreditAmount: tc.amount,
+				CreditCurrency: tc.currency, MoneyRevision: configuration.Revision, SalesChannel: "shop", SalesBatch: "november",
+			}).saleSpec()
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, spec.PaidCents, "sale proceeds never come from the wallet conversion")
+			assert.Equal(t, tc.currency, spec.Money.Currency)
+			quota, err := spec.Money.Quota()
+			require.NoError(t, err)
+			assert.Equal(t, tc.quota, quota)
+			common.QuotaPerUnit = 17
+			frozen, err := spec.Money.Quota()
+			require.NoError(t, err)
+			assert.Equal(t, quota, frozen, "later settings cannot reinterpret the code credit")
+			common.QuotaPerUnit = 500000
+		})
+	}
+	for _, amount := range []string{"0", "-1", "0.001", "1.001", "1e2", "NaN", "Inf", " 1", "1 ", "90071992547409.92"} {
+		_, err := service.ParseMarketingPaidCNY(amount)
+		assert.Error(t, err, amount)
+	}
+	maxCents, err := service.ParseMarketingPaidCNY("90071992547409.91")
+	require.NoError(t, err)
+	assert.EqualValues(t, common.MaxWalletQuota, maxCents)
+	settings := operation_setting.GetGeneralSetting()
+	settings.QuotaDisplayType = "CNY"
+	_, err = (paidRedemptionRequest{Name: "Card", PaidAmountCNY: "1", CreditAmount: "10", CreditCurrency: "USD"}).saleSpec()
+	require.Error(t, err, "stale browser currency cannot silently change the credited amount")
+
+	configuration, err := service.CurrentMarketingMoneyContext()
+	require.NoError(t, err)
+	request := paidRedemptionRequest{Name: "Paid", PaidAmountCNY: "1", CreditAmount: "2", CreditCurrency: "CNY", MoneyRevision: configuration.Revision, SalesChannel: "shop", SalesBatch: "batch"}
+	operation_setting.USDExchangeRate = 3
+	_, err = request.saleSpec()
+	require.Error(t, err, "same currency with changed exchange rate must reject the stale editor")
+	configuration, err = service.CurrentMarketingMoneyContext()
+	require.NoError(t, err)
+	request.MoneyRevision = configuration.Revision
+	common.QuotaPerUnit = 100000
+	_, err = request.saleSpec()
+	require.Error(t, err, "changed accounting conversion must reject the stale editor")
+	operation_setting.USDExchangeRate = 0
+	_, err = service.MarketingDisplayMoney("10")
+	require.Error(t, err, "invalid conversion cannot default to a fabricated rate")
+}
 
 func TestDeleteRedemptionBatch(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
@@ -76,16 +150,18 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			t.Cleanup(func() { require.NoError(t, logSQL.Close()) })
 			previousDB, previousLogDB := model.DB, model.LOG_DB
 			previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
-			previousRedis := common.RedisEnabled
+			previousRedis, previousSecret := common.RedisEnabled, common.SessionSecret
 			model.DB, model.LOG_DB = db, logDB
 			common.SetDatabaseTypes(dbType, dbType)
 			common.RedisEnabled = false
+			common.SessionSecret = "redemption-batch-session-fixture"
 			t.Cleanup(func() {
 				model.DB, model.LOG_DB = previousDB, previousLogDB
 				common.SetDatabaseTypes(previousMain, previousLog)
 				common.RedisEnabled = previousRedis
+				common.SessionSecret = previousSecret
 			})
-			for _, table := range []any{&model.User{}, &model.Redemption{}} {
+			for _, table := range []any{&model.User{}, &model.Redemption{}, &model.UserSession{}} {
 				require.False(t, db.Migrator().HasTable(table), "use an empty test database")
 				require.NoError(t, db.AutoMigrate(table))
 				t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(table)) })
@@ -93,9 +169,11 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			require.False(t, logDB.Migrator().HasTable(&model.AuditLog{}), "use an empty test log database")
 			require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}))
 			t.Cleanup(func() { require.NoError(t, logDB.Migrator().DropTable(&model.AuditLog{})) })
-			token := "redemption-audit-test-token"
-			admin := model.User{Username: "redemption-audit-admin", Password: "unused", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Group: "default", AccessToken: &token}
+			admin := model.User{Username: "redemption-audit-admin", Password: "unused", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1}
 			require.NoError(t, db.Create(&admin).Error)
+			bundle, err := service.CreateLoginSession(admin.Id, "password", "127.0.0.1", "redemption-batch-test")
+			require.NoError(t, err)
+			token := bundle.AccessToken
 			codes := make([]model.Redemption, 16)
 			for index := range codes {
 				codes[index] = model.Redemption{Name: "selected", Key: fmt.Sprintf("%032d", index+1), Quota: 100, Status: common.RedemptionCodeStatusEnabled}
@@ -108,6 +186,49 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			router.Use(middleware.RequestId())
 			router.POST("/api/redemption/batch", middleware.AdminAuth(), DeleteRedemptionBatch)
 
+			t.Run("display_and_current_authorization", func(t *testing.T) {
+				previousSettings := *operation_setting.GetGeneralSetting()
+				previousQuota, previousRate := common.QuotaPerUnit, operation_setting.USDExchangeRate
+				t.Cleanup(func() {
+					*operation_setting.GetGeneralSetting() = previousSettings
+					common.QuotaPerUnit, operation_setting.USDExchangeRate = previousQuota, previousRate
+				})
+				common.QuotaPerUnit, operation_setting.USDExchangeRate = 500000, 2.5
+				operation_setting.GetGeneralSetting().QuotaDisplayType = "CNY"
+				original := model.MarketingMoneySnapshot{Amount: "0.0002", Currency: "CNY", QuotaPerUnit: "500000", CurrencyPerUnit: "1"}
+				snapshot, err := common.Marshal(original)
+				require.NoError(t, err)
+				require.NoError(t, db.Model(&codes[0]).Updates(map[string]any{"paid_cents": 1, "credited_conversion": string(snapshot), "sales_channel": "shop", "sales_batch": "launch", "sales_evidence": "receipt"}).Error)
+				readRouter := gin.New()
+				// A stale session's cached admin role must never authorize the read.
+				readRouter.GET("/codes/:id", func(c *gin.Context) { c.Set("id", admin.Id); c.Set("role", common.RoleAdminUser) }, GetRedemption)
+				response := httptest.NewRecorder()
+				readRouter.ServeHTTP(response, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/codes/%d", codes[0].Id), nil))
+				var result struct {
+					Success bool               `json:"success"`
+					Data    paidRedemptionView `json:"data"`
+				}
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+				require.True(t, result.Success, response.Body.String())
+				assert.Equal(t, "0.01", result.Data.PaidAmountCNY)
+				assert.Equal(t, "0.0005", result.Data.CreditAmount)
+				assert.Equal(t, "0.0002", result.Data.OriginalCreditAmount)
+				assert.True(t, result.Data.SaleRegistered)
+				assert.Equal(t, "receipt", result.Data.SalesEvidence)
+				assert.NotEmpty(t, result.Data.MoneyRevision)
+				var envelope map[string]any
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &envelope))
+				fields := envelope["data"].(map[string]any)
+				for _, hidden := range []string{"quota", "paid_cents", "payment_id", "credited_conversion", "user_id", "used_user_id"} {
+					assert.NotContains(t, fields, hidden)
+				}
+				require.NoError(t, db.Model(&admin).Update("role", common.RoleCommonUser).Error)
+				response = httptest.NewRecorder()
+				readRouter.ServeHTTP(response, httptest.NewRequest(http.MethodGet, fmt.Sprintf("/codes/%d", codes[0].Id), nil))
+				require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+				assert.False(t, result.Success)
+				require.NoError(t, db.Model(&admin).Update("role", common.RoleAdminUser).Error)
+			})
 			overLimit := make([]int, 1001)
 			for index := range overLimit {
 				overLimit[index] = codes[0].Id
@@ -135,7 +256,10 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 					assert.Equal(t, "redemption.delete_batch", events[0].Action)
 				})
 			}
-			_, err = model.BatchDeleteRedemptions(nil)
+			err = model.WithMarketingTransaction(t.Context(), func(tx *gorm.DB) error {
+				_, err := model.DeletePaidRedemptions(tx, admin.Id, nil)
+				return err
+			})
 			require.Error(t, err)
 			requestedIDs := make([]int, 0, 17)
 			for _, code := range codes[:15] {
@@ -197,5 +321,21 @@ func TestDeleteRedemptionBatch(t *testing.T) {
 			}
 			assert.False(t, all[15].DeletedAt.Valid)
 		})
+	}
+}
+
+func TestPaidWalletRejectsUnrecordedBalanceEdits(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{Username: "paid-wallet-managed", Quota: 1000, Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&model.MarketingAccount{UserID: user.Id, OriginState: "verified", PaidReserved: 100}).Error)
+	for _, mode := range []string{"add", "subtract", "override"} {
+		_, err := model.AdjustUserQuota(user.Id, common.RoleRootUser, mode, 200)
+		require.ErrorIs(t, err, model.ErrMarketingBalanceEdit, mode)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, 1000, user.Quota, "an old editor must not mint or erase paid funds")
+		var account model.MarketingAccount
+		require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+		assert.EqualValues(t, 100, account.PaidReserved)
 	}
 }

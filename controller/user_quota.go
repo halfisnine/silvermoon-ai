@@ -62,6 +62,9 @@ func manageUserQuota(c *gin.Context, req ManageRequest) {
 		case errors.Is(err, model.ErrWalletQuotaLimitExceeded):
 			params["failure_reason"] = "quota_limit_exceeded"
 			common.ApiError(c, err)
+		case errors.Is(err, model.ErrMarketingBalanceEdit):
+			params["failure_reason"] = "recorded_funding_required"
+			common.ApiError(c, err)
 		default:
 			params["failure_reason"] = "database_error"
 			common.ApiError(c, err)
