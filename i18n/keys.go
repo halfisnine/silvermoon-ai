@@ -120,6 +120,8 @@ const (
 const (
 	MsgFundingInsufficient = "funding.insufficient"
 	MsgFundingReview       = "funding.review"
+	MsgFundingOrigin       = "funding.origin"
+	MsgFundingDebt         = "funding.debt"
 	MsgFundingAccess       = "funding.access"
 	MsgFundingConflict     = "funding.conflict"
 	MsgFundingInput        = "funding.input"

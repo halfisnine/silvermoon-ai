@@ -1118,19 +1118,19 @@ func TestMarketingSingleWebSocketDatabase(t *testing.T) {
 			require.NoError(t, db.Model(&model.MarketingDispatch{}).Where("funding_id = ?", funding.ID).Count(&dispatches).Error)
 			assert.EqualValues(t, 1, dispatches)
 			require.NoError(t, db.First(&token, token.Id).Error)
-			if scenario == "confirmed" {
-				assert.Equal(t, "settled", funding.State)
-				assert.EqualValues(t, 4, funding.SettledQuota)
-				assert.Equal(t, 96, token.RemainQuota)
-			} else {
-				assert.Equal(t, "review", funding.State)
-				assert.False(t, funding.CostKnown)
-				assert.EqualValues(t, 20, funding.ReservedQuota)
-				assert.Equal(t, 100, token.RemainQuota)
-				var hold model.MarketingTokenHold
-				require.NoError(t, db.Where("token_id = ?", token.Id).First(&hold).Error)
-				assert.EqualValues(t, 20, hold.ReservedQuota)
+			charge := int64(4)
+			if scenario == "disconnect" {
+				charge = 0
 			}
+			assert.Equal(t, "settled", funding.State)
+			assert.True(t, funding.CostKnown)
+			assert.Equal(t, charge, funding.SettledQuota)
+			assert.Zero(t, funding.ReservedQuota)
+			assert.EqualValues(t, 100-charge, token.RemainQuota)
+			var hold model.MarketingTokenHold
+			require.NoError(t, db.Where("token_id = ?", token.Id).First(&hold).Error)
+			assert.Zero(t, hold.ReservedQuota)
+
 			_, apiErr = adaptor.DoResponse(ctx, nil, info)
 			require.NotNil(t, apiErr)
 			assert.EqualValues(t, 1, accepted.Load(), "retries must not send another synthesis request")

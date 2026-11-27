@@ -331,27 +331,18 @@ func runRealtimeGatewayScenarios(f *realtimeGatewayFixture) {
 	})
 	check(!funding.CostKnown && funding.SettledQuota == 0 && funding.ReservedQuota > 0, "unknown realtime cost released as zero")
 	before := f.connections.Load()
-	blocked, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:18372/v1/realtime?model=realtime-fixture", http.Header{"Authorization": []string{"Bearer sk-" + token.Key}})
-	if err == nil {
-		must(blocked.SetReadDeadline(time.Now().Add(10 * time.Second)))
-		_, raw, readErr := blocked.ReadMessage()
-		if readErr == nil {
-			var event struct {
-				Type string `json:"type"`
-			}
-			must(common.Unmarshal(raw, &event))
-			check(event.Type == "error", "review account opened a new realtime generation")
-		} else {
-			var timeout net.Error
-			check(!errors.As(readErr, &timeout) || !timeout.Timeout(), "review rejection was only an idle timeout")
-		}
-		_ = blocked.Close()
-	}
-	check(f.connections.Load() == before, "unresolved realtime account dispatched on other process")
+	independent, independentProvider := realtimeDial(f, "18372", token.Key)
+	check(f.connections.Load() == before+1, "unresolved cost alone blocked an independent connection")
+	realtimeCloseAndCheck(independent, independentProvider)
+	eventually("independent empty connection settled", func() bool {
+		var settled int64
+		must(model.DB.Model(&model.MarketingFunding{}).Where("user_id = ? AND realtime = ? AND state = ?", user.Id, true, "settled").Count(&settled).Error)
+		return settled == 1
+	})
 	must(model.DB.First(&user, user.Id).Error)
 	must(model.DB.First(&token, token.Id).Error)
 	check(user.Quota == 5000 && user.UsedQuota == 0 && token.RemainQuota == 10000 && token.UsedQuota == 0, "unknown realtime usage consumed an estimate")
-	fmt.Println("GATEWAY_REALTIME_OK case=unknown_disconnect review=true other_process_blocked=true actual_upstream_closed=true")
+	fmt.Println("GATEWAY_REALTIME_OK case=unknown_disconnect review=true other_process_allowed_with_available_funds=true actual_upstream_closed=true")
 
 	// A separate trusted validation process supplies the provider's saved final
 	// record to the internal reconciliation entry point. This is deliberately
@@ -384,7 +375,7 @@ func runRealtimeGatewayScenarios(f *realtimeGatewayFixture) {
 	newResponse := realtimeStartRound(newClient)
 	realtimeFinishRound(newClient, newProvider, newResponse)
 	realtimeCloseAndCheck(newClient, newProvider)
-	realtimeSettled(user.Id, 2, 240)
+	realtimeSettled(user.Id, 3, 240)
 	must(model.DB.First(&gift, gift.ID).Error)
 	must(model.DB.First(&user, user.Id).Error)
 	must(model.DB.First(&token, token.Id).Error)

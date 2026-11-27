@@ -15,6 +15,8 @@ import (
 var (
 	ErrMarketingInsufficient = errors.New("marketing funds insufficient")
 	ErrMarketingReview       = errors.New("marketing funding requires reconciliation")
+	ErrMarketingOrigin       = errors.New("initial funding sources have not been verified")
+	ErrMarketingDebt         = errors.New("confirmed consumption remains unpaid")
 	ErrMarketingAccess       = errors.New("marketing funding access denied")
 )
 
@@ -288,7 +290,7 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 		return nil, ErrMarketingAccess
 	}
 	if book.account.OriginState != "verified" {
-		return nil, ErrMarketingReview
+		return nil, ErrMarketingOrigin
 	}
 	var prior MarketingFunding
 	err = lockForUpdate(tx).Where("request_key = ?", key).First(&prior).Error
@@ -301,13 +303,8 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	// A current locking read avoids a previously established MySQL snapshot.
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", input.UserID, "review").Limit(1).Find(&unresolved).Error; err != nil {
+	if err = CheckMarketingFundingDebt(tx, input.UserID); err != nil {
 		return nil, err
-	}
-	if len(unresolved) > 0 {
-		return nil, ErrMarketingReview
 	}
 	// Exhausted limited tokens cannot start another request, even when input
 	// estimation is zero or a stale shared cache still shows funds.
@@ -373,7 +370,7 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 		if !input.Final || input.ActualQuota == nil {
 			return nil, ErrMarketingInput
 		}
-	case "pre_dispatch_cancel":
+	case "pre_dispatch_cancel", "request_failure":
 		if !input.Final || input.ActualQuota == nil || *input.ActualQuota != 0 {
 			return nil, ErrMarketingInput
 		}
@@ -432,9 +429,18 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 	if funding.FinalObserved && !input.Final {
 		return nil, ErrMarketingConflict
 	}
-	if input.EvidenceKind == "pre_dispatch_cancel" {
+	if input.EvidenceKind == "pre_dispatch_cancel" || input.EvidenceKind == "request_failure" {
 		if err = marketingRequestCanDispatch(tx, &funding); err != nil {
 			return nil, err
+		}
+		if input.EvidenceKind == "pre_dispatch_cancel" {
+			var failed []MarketingDispatch
+			if err = lockForUpdate(tx).Where("funding_id = ? AND state = ?", funding.ID, "failed").Limit(1).Find(&failed).Error; err != nil {
+				return nil, err
+			}
+			if len(failed) != 0 {
+				return nil, ErrMarketingConflict
+			}
 		}
 	}
 
@@ -718,4 +724,18 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 		}
 	}
 	return ErrMarketingReview
+}
+
+// CheckMarketingFundingDebt is called under the account lock before admitting
+// new work. An unknown remainder is not itself debt; its holds still reduce
+// available funds. Confirmed unpaid usage blocks even with CostKnown=false.
+func CheckMarketingFundingDebt(tx *gorm.DB, userID int) error {
+	var unpaid []MarketingFunding
+	if err := lockForUpdate(tx).Where("user_id = ? AND state = ? AND actual_quota > settled_quota", userID, "review").Limit(1).Find(&unpaid).Error; err != nil {
+		return err
+	}
+	if len(unpaid) != 0 {
+		return ErrMarketingDebt
+	}
+	return nil
 }

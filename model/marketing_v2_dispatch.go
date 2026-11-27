@@ -9,8 +9,8 @@ import (
 )
 
 // A committed dispatch is permission for exactly one sender, not a retry lease.
-// Losing the response or the process never makes it safe to send again. Only a
-// positively identified rejection before execution permits another attempt.
+// Recovery never resends an attempt. The live relay may finish a failed attempt
+// and start a different one when its existing retry policy permits it.
 type MarketingDispatch struct {
 	ID              int64  `gorm:"primaryKey"`
 	FundingID       int64  `gorm:"not null;index"`
@@ -76,7 +76,7 @@ func (book *fundingBook) authorizeRequest() error {
 		return ErrMarketingAccess
 	}
 	if book.account.OriginState != "verified" {
-		return ErrMarketingReview
+		return ErrMarketingOrigin
 	}
 	return nil
 }
@@ -86,7 +86,7 @@ func marketingRequestCanDispatch(tx *gorm.DB, funding *MarketingFunding) error {
 		return ErrMarketingConflict
 	}
 	var attempts []MarketingDispatch
-	if err := lockForUpdate(tx).Where("funding_id = ? AND state <> ?", funding.ID, "rejected").Limit(1).Find(&attempts).Error; err != nil {
+	if err := lockForUpdate(tx).Where("funding_id = ? AND state NOT IN ?", funding.ID, []string{"rejected", "failed"}).Limit(1).Find(&attempts).Error; err != nil {
 		return err
 	}
 	if len(attempts) != 0 {
@@ -203,14 +203,8 @@ func BeginMarketingDispatch(tx *gorm.DB, input MarketingDispatchInput) (*Marketi
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
-	// A reservation may predate another connection's unknown outcome. Recheck
-	// the account-wide stop at the last durable boundary before sending.
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", input.UserID, "review").Limit(1).Find(&unresolved).Error; err != nil {
+	if err = CheckMarketingFundingDebt(tx, input.UserID); err != nil {
 		return nil, false, err
-	}
-	if len(unresolved) > 0 {
-		return nil, false, ErrMarketingReview
 	}
 	// Include this request's own hold; funds already reserved for it remain
 	// usable, but an earlier zero reservation is not permission after exhaustion.
@@ -259,6 +253,33 @@ func RejectMarketingDispatch(tx *gorm.DB, userID int, fundingID, dispatchID int6
 		return ErrMarketingConflict
 	}
 	if err = tx.Model(&attempt).Updates(map[string]any{"state": "rejected", "result_evidence": evidence}).Error; err != nil {
+		return err
+	}
+	return book.save(tx, funding)
+}
+
+// FailMarketingDispatch records the live relay's ordinary failure policy. This
+// does not claim the upstream never executed. Accepted task receipts and any
+// already observed charge remain protected from zero-cost cancellation.
+func FailMarketingDispatch(tx *gorm.DB, userID int, fundingID, dispatchID int64) error {
+	book, funding, err := lockMarketingRequest(tx, userID, fundingID)
+	if err != nil {
+		return err
+	}
+	if funding.Realtime || funding.Revision != 0 || funding.State != "reserved" {
+		return ErrMarketingConflict
+	}
+	var attempt MarketingDispatch
+	if err = lockForUpdate(tx).Where("id = ? AND funding_id = ?", dispatchID, fundingID).First(&attempt).Error; err != nil {
+		return err
+	}
+	if attempt.State == "rejected" || attempt.State == "failed" {
+		return nil
+	}
+	if attempt.State != "dispatched" || attempt.ResultEvidence != "" {
+		return ErrMarketingConflict
+	}
+	if err = tx.Model(&attempt).Updates(map[string]any{"state": "failed", "result_evidence": "ordinary request attempt failed; baseline refund/retry policy"}).Error; err != nil {
 		return err
 	}
 	return book.save(tx, funding)

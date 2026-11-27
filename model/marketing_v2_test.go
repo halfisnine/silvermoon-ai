@@ -954,10 +954,9 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		assert.Equal(t, *funding, *again)
 		require.NoError(t, db.First(&user, user.Id).Error)
 		assert.Equal(t, common.MaxWalletQuota, user.Quota)
-		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
-			_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: "capacity-blocked", QualifiedAt: 102, Quota: 1, PricingEvidence: "fixed:test"})
-			return err
-		}), ErrMarketingReview)
+		independent := reserveMarketingTest(t, other, user, token, "capacity-independent", 102, 1)
+		refund := int64(0)
+		settleMarketingTest(t, other, independent, &refund, true, "pre_dispatch_cancel")
 		settleMarketingTest(t, other, otherFunding, &actual, true, "upstream_terminal")
 		funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
 		assert.Equal(t, "settled", funding.State)
@@ -1035,10 +1034,9 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 			_, err := SettleMarketingFunding(tx, MarketingSettlementInput{UserID: user.Id, FundingID: funding.ID, Version: 2, ActualQuota: &zero, Final: true, EvidenceKind: "pre_dispatch_cancel", Evidence: "cannot pretend it was never dispatched"})
 			return err
 		}), ErrMarketingConflict)
-		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
-			_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: "blocked-unknown", QualifiedAt: 101, Quota: 1, PricingEvidence: "fixed:test"})
-			return err
-		}), ErrMarketingReview)
+		independent := reserveMarketingTest(t, other, user, token, "independent-unknown", 102, 1)
+		refund := int64(0)
+		settleMarketingTest(t, other, independent, &refund, true, "pre_dispatch_cancel")
 		actual := int64(10)
 		funding = settleMarketingTest(t, other, funding, &actual, true, "upstream_terminal")
 		assert.Equal(t, "settled", funding.State)
@@ -1476,10 +1474,10 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		first := realtimeMarketingTestRound(t, db, funding, "first", 190, 5, false)
 		waiting := reserveMarketingTest(t, db, user, token, "rt-waiting-before-unknown", 190, 1)
 		result := realtimeMarketingTestFact(t, db, funding, first.Round, "missing", nil, nil, true)
-		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
-			_, _, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: waiting.ID, Reference: "must-not-dispatch", PricingEvidence: "frozen:test"})
+		require.NoError(t, other.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: waiting.ID, Reference: "independent-must-not-dispatch", PricingEvidence: "frozen:test"})
 			return err
-		}), ErrMarketingReview)
+		}))
 		assert.True(t, result.Stop)
 		assert.Equal(t, "review", result.Funding.State)
 		assert.EqualValues(t, 5, result.Funding.ReservedQuota)
@@ -1747,10 +1745,10 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 			assert.EqualValues(t, 2, result.Funding.ReservedQuota)
 			assert.True(t, result.Stop)
 		}
-		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
-			_, _, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: waiting.ID, Reference: "still-blocked", PricingEvidence: "frozen:test"})
+		require.NoError(t, other.Transaction(func(tx *gorm.DB) error {
+			_, _, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: waiting.ID, Reference: "independent-still-blocked", PricingEvidence: "frozen:test"})
 			return err
-		}), ErrMarketingReview)
+		}))
 		require.NoError(t, db.First(&user, user.Id).Error)
 		assert.Equal(t, 97, user.Quota)
 		assertMarketingSources(t, db, user.Id)

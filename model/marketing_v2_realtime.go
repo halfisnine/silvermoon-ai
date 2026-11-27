@@ -213,11 +213,11 @@ func BeginMarketingRealtimeRound(tx *gorm.DB, input MarketingRealtimeRoundInput)
 		}
 		stopped = true
 	}
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", input.UserID, "review").Limit(1).Find(&unresolved).Error; err != nil {
-		return nil, err
+	debtErr := CheckMarketingFundingDebt(tx, input.UserID)
+	if debtErr != nil && !errors.Is(debtErr, ErrMarketingDebt) {
+		return nil, debtErr
 	}
-	stopped = stopped || len(unresolved) > 0
+	stopped = stopped || errors.Is(debtErr, ErrMarketingDebt)
 	if stopped && !input.Observed {
 		return &MarketingRealtimeResult{Funding: funding, Stop: true}, nil
 	}
@@ -433,11 +433,11 @@ func ReserveMarketingRealtimeRound(tx *gorm.DB, userID int, fundingID, roundID, 
 	if err = book.authorizeRequest(); err != nil {
 		return &MarketingRealtimeResult{Funding: funding, Round: &round, Stop: true}, nil
 	}
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", userID, "review").Limit(1).Find(&unresolved).Error; err != nil {
-		return nil, err
+	debtErr := CheckMarketingFundingDebt(tx, userID)
+	if debtErr != nil && !errors.Is(debtErr, ErrMarketingDebt) {
+		return nil, debtErr
 	}
-	if len(unresolved) > 0 {
+	if errors.Is(debtErr, ErrMarketingDebt) {
 		return &MarketingRealtimeResult{Funding: funding, Round: &round, Stop: true}, nil
 	}
 	if err = lockForUpdate(tx).Where("funding_id = ?", fundingID).Find(&book.allocations).Error; err != nil {
@@ -801,8 +801,8 @@ func ApplyMarketingRealtimeFact(tx *gorm.DB, input MarketingRealtimeFactInput) (
 	previousReason := funding.ReviewReason
 	previousReview := funding.State == "review"
 	// A late terminal can resolve its own generation while independent input
-	// on the closed socket is still unresolved. That input must keep the account
-	// blocked, but it is not an excuse to discard or defer this known charge.
+	// on the closed socket is still unresolved. Keep that connection under review
+	// without discarding this known charge or blocking independent requests.
 	closedInputUnknown := funding.RealtimeClosed && funding.RealtimeInputPending
 	funding.CostKnown = !unknown && !unpriced && !closedInputUnknown
 	funding.State = "active"
@@ -950,11 +950,11 @@ func ReserveMarketingRealtimeInput(tx *gorm.DB, userID int, fundingID, target, q
 		if err = book.authorizeRequest(); err != nil {
 			return &MarketingRealtimeResult{Funding: funding, Stop: true}, nil
 		}
-		var unresolved []MarketingFunding
-		if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", userID, "review").Limit(1).Find(&unresolved).Error; err != nil {
-			return nil, err
+		debtErr := CheckMarketingFundingDebt(tx, userID)
+		if debtErr != nil && !errors.Is(debtErr, ErrMarketingDebt) {
+			return nil, debtErr
 		}
-		if len(unresolved) > 0 {
+		if errors.Is(debtErr, ErrMarketingDebt) {
 			return &MarketingRealtimeResult{Funding: funding, Stop: true}, nil
 		}
 	}
@@ -1005,11 +1005,11 @@ func AttachMarketingRealtimeInput(tx *gorm.DB, userID int, fundingID, roundID, r
 	if err = book.authorizeRequest(); err != nil {
 		stopped = true
 	}
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", userID, "review").Limit(1).Find(&unresolved).Error; err != nil {
-		return nil, err
+	debtErr := CheckMarketingFundingDebt(tx, userID)
+	if debtErr != nil && !errors.Is(debtErr, ErrMarketingDebt) {
+		return nil, debtErr
 	}
-	stopped = stopped || len(unresolved) > 0
+	stopped = stopped || errors.Is(debtErr, ErrMarketingDebt)
 	if err = lockForUpdate(tx).Where("funding_id = ?", fundingID).Find(&book.allocations).Error; err != nil {
 		return nil, err
 	}

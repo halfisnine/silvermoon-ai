@@ -17,14 +17,14 @@ def run(args, **kwargs):
     subprocess.run([str(a) for a in args], cwd=ROOT, check=True, **kwargs)
 
 
-if len(sys.argv) != 2 or sys.argv[1] not in ('build', 'run', 'all', 'capacity'):
-    raise SystemExit('usage: gateway_process.py build|run|all|capacity (capacity uses the built binaries)')
+if len(sys.argv) != 2 or sys.argv[1] not in ('build', 'run', 'all', 'capacity', 'failure'):
+    raise SystemExit('usage: gateway_process.py build|run|all|capacity|failure (capacity uses the built binaries)')
 if sys.argv[1] in ('build', 'all'):
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     run([ROOT / '.dev/run', 'go', 'build', '-o', '/artifacts/marketing-v2-validation/marketing-gateway', '.'])
     run([ROOT / '.dev/run', 'go', 'build', '-o', '/artifacts/marketing-v2-validation/gateway-process', './.dev/marketing-v2-requirements/validation/gateway_process'])
-if sys.argv[1] in ('run', 'all', 'capacity'):
-    suite = 'capacity' if sys.argv[1] == 'capacity' else 'functional'
+if sys.argv[1] in ('run', 'all', 'capacity', 'failure'):
+    suite = sys.argv[1] if sys.argv[1] in ('capacity', 'failure') else 'functional'
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S.%fZ')
     log = ARTIFACTS / f'gateway-{suite}-{stamp}.log'
     run(COMPOSE + ['exec', '-T', 'postgres', 'psql', '-U', 'marketing_test', '-d', 'marketing_test', '-v', 'ON_ERROR_STOP=1', '-c', 'DROP DATABASE IF EXISTS marketing_v2_gateway_process', '-c', 'CREATE DATABASE marketing_v2_gateway_process'])
