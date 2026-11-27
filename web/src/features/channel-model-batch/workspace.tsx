@@ -58,6 +58,7 @@ import {
   validateDrafts,
   draftEntry,
 } from './draft'
+import { endpointCatalog } from './endpoints'
 import { ModelTable } from './model-table'
 import { ReviewDialog } from './review-dialog'
 
@@ -99,6 +100,10 @@ function DraftWorkspace(props: {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const client = useQueryClient()
+  const endpointOptions = useMemo(
+    () => endpointCatalog(props.snapshot),
+    [props.snapshot]
+  )
   const [rows, setRows] = useState(() => createDrafts(props.snapshot))
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [activeSource, setActiveSource] = useState<string | null>(null)
@@ -289,17 +294,6 @@ function DraftWorkspace(props: {
             </Button>
             <Button
               size='sm'
-              variant='outline'
-              disabled={!selected.size || busy}
-              onClick={() => {
-                setEditRows(rows.filter((row) => selected.has(row.source_name)))
-                setEditMode('token')
-              }}
-            >
-              {t('Batch pricing')}
-            </Button>
-            <Button
-              size='sm'
               variant='ghost'
               onClick={() =>
                 setSelected(
@@ -356,6 +350,7 @@ function DraftWorkspace(props: {
           <ModelTable
             rows={visible}
             snapshot={props.snapshot}
+            endpointOptions={endpointOptions}
             onActiveRowChange={setActiveSource}
             selected={selected}
             onSelectionChange={setSelected}
@@ -401,6 +396,8 @@ function DraftWorkspace(props: {
           initialMode={editMode}
           rows={editRows}
           vendors={props.snapshot.vendors}
+          snapshot={props.snapshot}
+          endpointOptions={endpointOptions}
           pricing={pricing.data}
           onClose={() => setEditRows(null)}
           onApply={(updates) =>

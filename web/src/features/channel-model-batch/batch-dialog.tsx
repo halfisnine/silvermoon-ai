@@ -41,8 +41,14 @@ import { handleServerError } from '@/lib/handle-server-error'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { previewBatchPricing, type DraftRow } from './api'
+import { previewBatchPricing, type BatchSnapshot, type DraftRow } from './api'
 import { draftEntry, multiplyPrice } from './draft'
+import { EndpointSelect } from './endpoint-select'
+import {
+  parseEndpointConfig,
+  updateEndpointConfig,
+  type EndpointConfig,
+} from './endpoints'
 import { CachePriceFields, QuickPriceFields } from './inline-pricing'
 import { PricingSummary } from './pricing-summary'
 import { quickPriceValues, type QuickPrice } from './quick-pricing'
@@ -51,6 +57,8 @@ export function BatchDialog(props: {
   rows: DraftRow[]
   initialMode?: string
   vendors: Vendor[]
+  snapshot: BatchSnapshot
+  endpointOptions: EndpointConfig
   pricing: ModelPricingConfig
   onApply: (rows: DraftRow[]) => void
   onClose: () => void
@@ -58,6 +66,9 @@ export function BatchDialog(props: {
   const { t } = useTranslation()
   const [vendor, setVendor] = useState('keep')
   const [mode, setMode] = useState(props.initialMode ?? 'keep')
+  const [visibility, setVisibility] = useState('keep')
+  const [endpointMode, setEndpointMode] = useState('keep')
+  const [endpoints, setEndpoints] = useState('')
   const quotaPerUnit = useSystemConfigStore(
     (s) => s.config.currency.quotaPerUnit
   )
@@ -79,6 +90,12 @@ export function BatchDialog(props: {
   const prepare = async () => {
     setPreparing(true)
     try {
+      if (
+        endpointMode === 'set' &&
+        !Object.keys(parseEndpointConfig(endpoints)).length
+      ) {
+        throw new Error(t('Select at least one endpoint'))
+      }
       let uniform: PricingValues | undefined
       if (mode === 'uniform') {
         const data = await editor.current?.commitDraft()
@@ -99,6 +116,23 @@ export function BatchDialog(props: {
         if (vendor !== 'keep') {
           result.vendorId = Number(vendor)
           result.vendorTouched = true
+        }
+        if (visibility !== 'keep') {
+          result.squareVisible = visibility === 'show'
+          result.squareTouched = true
+        }
+        if (endpointMode !== 'keep') {
+          // Apply types uniformly, retaining each model's own custom paths.
+          result.endpoints =
+            endpointMode === 'auto'
+              ? ''
+              : updateEndpointConfig(
+                  row.endpoints ?? row.metadata?.endpoints ?? '',
+                  Object.keys(parseEndpointConfig(endpoints)),
+                  props.snapshot,
+                  props.endpointOptions
+                )
+          result.endpointsTouched = true
         }
         if (mode === 'token' || mode === 'request') {
           const entry = draftEntry(row, props.pricing)
@@ -229,6 +263,40 @@ export function BatchDialog(props: {
                     ?.name ?? t('Unassigned'),
               },
               {
+                id: 'square',
+                header: t('Square display'),
+                cell: (row) => {
+                  const before = props.rows.find(
+                    (item) => item.source_name === row.source_name
+                  )
+                  return (
+                    <span>
+                      {before?.squareVisible ? t('Shown') : t('Hidden')} →{' '}
+                      {row.squareVisible ? t('Shown') : t('Hidden')}
+                    </span>
+                  )
+                },
+              },
+              {
+                id: 'endpoints',
+                header: t('Endpoint selection'),
+                cell: (row) => (
+                  <span className='break-words'>
+                    {Object.keys(
+                      parseEndpointConfig(
+                        props.rows.find(
+                          (item) => item.source_name === row.source_name
+                        )?.endpoints ?? ''
+                      )
+                    ).join(', ') || t('Automatic by channel')}
+                    {' → '}
+                    {Object.keys(parseEndpointConfig(row.endpoints ?? '')).join(
+                      ', '
+                    ) || t('Automatic by channel')}
+                  </span>
+                ),
+              },
+              {
                 id: 'before',
                 header: t('Before'),
                 cell: (row) => (
@@ -274,6 +342,50 @@ export function BatchDialog(props: {
               {t('Model icons inherit the selected vendor icon.')}
             </p>
           </div>
+          <div className='grid gap-4 sm:grid-cols-2'>
+            <div className='space-y-2'>
+              <Label htmlFor='batch-square'>{t('Square display')}</Label>
+              <Combobox
+                id='batch-square'
+                value={visibility}
+                onValueChange={(value) => setVisibility(value ?? 'keep')}
+                options={[
+                  { value: 'keep', label: t('Keep existing visibility') },
+                  { value: 'show', label: t('Shown') },
+                  { value: 'hide', label: t('Hidden') },
+                ]}
+              />
+            </div>
+            <div className='space-y-2'>
+              <Label htmlFor='batch-endpoint-mode'>
+                {t('Endpoint selection')}
+              </Label>
+              <Combobox
+                id='batch-endpoint-mode'
+                value={endpointMode}
+                onValueChange={(value) => setEndpointMode(value ?? 'keep')}
+                options={[
+                  { value: 'keep', label: t('Keep existing endpoints') },
+                  { value: 'set', label: t('Set endpoints') },
+                  { value: 'auto', label: t('Automatic by channel') },
+                ]}
+              />
+            </div>
+          </div>
+          {endpointMode === 'set' && (
+            <EndpointSelect
+              value={endpoints}
+              snapshot={props.snapshot}
+              catalog={props.endpointOptions}
+              label={t('Select endpoints')}
+              onChange={setEndpoints}
+            />
+          )}
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'Endpoint metadata supplements channel capabilities; it does not disable API access. Empty selection uses channel defaults.'
+            )}
+          </p>
           <div className='space-y-2'>
             <Label htmlFor='batch-price-mode'>{t('Pricing')}</Label>
             <Combobox

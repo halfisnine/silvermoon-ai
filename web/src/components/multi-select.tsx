@@ -61,6 +61,7 @@ interface MultiSelectProps {
   onChange: (values: string[]) => void
   placeholder?: string
   className?: string
+  popupClassName?: string
   allowCreate?: boolean
   /**
    * Label shown for the "create" item in the dropdown.
@@ -304,11 +305,23 @@ export function MultiSelect(props: MultiSelectProps) {
     }
   }
 
+  // Base UI freezes its query during popup exit animations. A custom filter
+  // must follow the current input/server results even if a fast reopen
+  // interrupts that animation, rather than retaining the previous results.
+  let filteredItems: string[] | undefined
+  if (props.filter) {
+    const filter = props.filter
+    filteredItems = props.listStatus
+      ? []
+      : items.filter((value) => filter(value, inputValue))
+  }
+
   return (
     <Combobox
       multiple
       items={props.listStatus ? [] : items}
       filter={props.filter}
+      filteredItems={filteredItems}
       value={props.selected}
       onValueChange={handleValueChange}
       inputValue={inputValue}
@@ -430,7 +443,7 @@ export function MultiSelect(props: MultiSelectProps) {
         />
       </ComboboxChips>
 
-      <ComboboxContent anchor={chipsAnchorRef}>
+      <ComboboxContent anchor={chipsAnchorRef} className={props.popupClassName}>
         {props.listStatus ? (
           <div className='p-3'>{props.listStatus}</div>
         ) : (

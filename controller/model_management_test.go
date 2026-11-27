@@ -1831,6 +1831,49 @@ func TestChannelModelBatchDatabaseMatrix(t *testing.T) {
 				require.NoError(t, vendor.Update())
 				require.ErrorIs(t, model.ApplyChannelModelBatch(channel.Id, model.ChannelModelBatchRequest{ExpectedVersion: current.Version, Changes: []model.ChannelModelBatchChange{{SourceName: "customer-alias", ModelName: "customer-alias", VendorID: &vendor.Id}}}), model.ErrChannelModelBatchConflict)
 			})
+			t.Run("square_and_endpoints_save_atomically_with_explicit_false_and_reset", func(t *testing.T) {
+				original := model.Model{ModelName: "catalog-a", Status: 1, SyncOfficial: 1, Description: "Keep metadata", Endpoints: `{"openai":{"path":"/custom/chat","method":"POST","note":"keep"}}`}
+				require.NoError(t, original.Insert())
+				extra := model.Channel{Name: "Catalog batch", Type: constant.ChannelTypeNewAPI, Status: 1, Models: "catalog-a,catalog-b", Group: "default"}
+				require.NoError(t, extra.Insert())
+				initial, err := model.GetChannelModelBatch(extra.Id)
+				require.NoError(t, err)
+				assert.Equal(t, "/v1/responses", initial.EndpointOptions[constant.EndpointTypeOpenAIResponse].Path)
+				paths := `{"openai-response":{"path":"/v1/responses","method":"POST"},"openai":"/custom/new-chat"}`
+				changes := []model.ChannelModelBatchChange{
+					{SourceName: "catalog-a", ModelName: "catalog-a", Status: common.GetPointer(0)},
+					{SourceName: "catalog-b", ModelName: "catalog-b", Status: common.GetPointer(1), Endpoints: &paths},
+				}
+				bad := append([]model.ChannelModelBatchChange{}, changes...)
+				bad[1].Endpoints = common.GetPointer(`{"openai":{"path":"https://invalid.example","method":"POST"}}`)
+				require.Error(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: bad}))
+				unchanged, err := model.GetChannelModelBatch(extra.Id)
+				require.NoError(t, err)
+				assert.Equal(t, initial.Version, unchanged.Version, "invalid endpoint must roll back the first visibility update")
+				bad[1] = changes[1]
+				bad[1].Status = common.GetPointer(2)
+				require.Error(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: bad}))
+				require.NoError(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: changes}))
+				var a, b model.Model
+				require.NoError(t, db.Where("model_name = ?", "catalog-a").First(&a).Error)
+				require.NoError(t, db.Where("model_name = ?", "catalog-b").First(&b).Error)
+				assert.Zero(t, a.Status)
+				assert.Equal(t, original.Endpoints, a.Endpoints, "omitted endpoint field must preserve custom settings")
+				assert.Equal(t, original.SyncOfficial, a.SyncOfficial)
+				assert.Equal(t, original.Description, a.Description)
+				assert.Equal(t, 1, b.Status, "an explicitly shown new model must not be forced hidden")
+				assert.Zero(t, b.SyncOfficial)
+				assert.Equal(t, paths, b.Endpoints)
+				require.ErrorIs(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: changes}), model.ErrChannelModelBatchConflict)
+				current, err := model.GetChannelModelBatch(extra.Id)
+				require.NoError(t, err)
+				require.NoError(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: current.Version, Changes: []model.ChannelModelBatchChange{{SourceName: "catalog-b", ModelName: "catalog-b", Status: common.GetPointer(0), Endpoints: common.GetPointer("")}}}))
+				require.NoError(t, db.First(&b, b.Id).Error)
+				assert.Zero(t, b.Status)
+				assert.Empty(t, b.Endpoints, "explicit empty endpoints must restore automatic inference")
+				assert.Equal(t, original.Description, a.Description)
+			})
+
 		})
 	}
 }

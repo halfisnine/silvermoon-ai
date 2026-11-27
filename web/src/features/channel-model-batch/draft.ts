@@ -54,6 +54,8 @@ export function createDrafts(snapshot: BatchSnapshot): DraftRow[] {
     ...row,
     name: row.source_name,
     vendorId: row.metadata?.vendor_id ?? 0,
+    squareVisible: row.metadata?.status === 1,
+    endpoints: row.metadata?.endpoints ?? '',
   }))
 }
 
@@ -64,12 +66,32 @@ export function renameDraft(
   config: ModelPricingConfig
 ): DraftRow {
   const metadata = resolveMetadata(snapshot.metadata, name)
+  let squareVisible = row.squareVisible
+  if (!row.squareTouched) {
+    squareVisible =
+      name === row.source_name
+        ? row.metadata?.status === 1
+        : snapshot.metadata.some(
+            (record) =>
+              record.name_rule === 0 &&
+              record.model_name === name &&
+              record.status === 1
+          )
+  }
   const next = {
     ...row,
     name,
     vendorId: row.vendorTouched
       ? row.vendorId
       : (metadata?.vendor_id ?? row.metadata?.vendor_id ?? 0),
+    squareVisible,
+    endpoints: row.endpointsTouched
+      ? row.endpoints
+      : (snapshot.metadata.find(
+          (record) => record.name_rule === 0 && record.model_name === name
+        )?.endpoints ??
+        row.metadata?.endpoints ??
+        ''),
   }
   if (row.pricing || row.quickPricing) {
     // Price drafts travel with the row, but conflict versions belong to names.
@@ -94,6 +116,8 @@ export function isDirty(row: DraftRow): boolean {
     row.name !== row.source_name ||
     row.vendorId !== (row.metadata?.vendor_id ?? 0) ||
     row.vendorTouched === true ||
+    row.squareTouched === true ||
+    row.endpointsTouched === true ||
     row.pricing !== undefined ||
     row.quickPricing !== undefined
   )
@@ -149,6 +173,8 @@ export function buildChanges(
     source_name: row.source_name,
     model_name: row.name,
     vendor_id: row.vendorId,
+    status: (row.squareVisible ?? row.metadata?.status === 1) ? 1 : 0,
+    ...(row.endpointsTouched ? { endpoints: row.endpoints ?? '' } : {}),
     ...(row.pricing === undefined
       ? {}
       : {
