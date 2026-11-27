@@ -72,6 +72,11 @@ const snapshot: BatchSnapshot = {
   metadata: [],
   channels: [],
   version: 'v1',
+  endpoint_options: {
+    openai: { path: '/v1/chat/completions', method: 'POST' },
+    'openai-response': { path: '/v1/responses', method: 'POST' },
+    anthropic: { path: '/v1/messages', method: 'POST' },
+  },
 }
 const config: ModelPricingConfig = {
   entries: ['alpha', 'beta'].map((name) => ({
@@ -635,7 +640,7 @@ it('provides batch vendors and uniform decimal request pricing for every selecte
   await user.click(
     screen.getByRole('checkbox', { name: 'Select visible models' })
   )
-  await user.click(screen.getByRole('button', { name: 'Batch pricing' }))
+  await user.click(screen.getByRole('button', { name: 'Batch settings' }))
   const dialog = screen.getByRole('dialog')
   await user.click(within(dialog).getByRole('combobox', { name: 'Vendor' }))
   await user.click(await screen.findByRole('option', { name: 'Saved vendor' }))
@@ -709,7 +714,7 @@ it('sets independent decimal cache prices for every selected model before applyi
   await user.click(
     screen.getByRole('checkbox', { name: 'Select visible models' })
   )
-  await user.click(screen.getByRole('button', { name: 'Batch pricing' }))
+  await user.click(screen.getByRole('button', { name: 'Batch settings' }))
   const dialog = screen.getByRole('dialog')
   await user.click(within(dialog).getByRole('combobox', { name: 'Pricing' }))
   await user.click(
@@ -1020,6 +1025,8 @@ it('shows cache switches and prices directly in model rows and removes the refer
     'Vendor',
     'Customer pricing (USD)',
     'Upstream model',
+    'Square display',
+    'Endpoint selection',
     'Status',
     'Actions',
   ])
@@ -1036,7 +1043,7 @@ it('shows cache switches and prices directly in model rows and removes the refer
     within(cells[3]).queryByRole('button', { name: 'Advanced settings' })
   ).not.toBeInTheDocument()
   expect(
-    within(cells[6]).getByRole('button', { name: 'Advanced settings' })
+    within(cells[8]).getByRole('button', { name: 'Advanced settings' })
   ).toBeEnabled()
   expect(within(cells[3]).getByText('Read cache')).toBeVisible()
   expect(within(cells[3]).getByText('Write cache')).toBeVisible()
@@ -1081,4 +1088,170 @@ it('shows cache switches and prices directly in model rows and removes the refer
       }),
     })
   )
+})
+
+it('edits square display and searchable endpoints inline and retains both while renaming', async () => {
+  const { user, post } = await start()
+  await screen.findByRole('textbox', { name: 'User model name for alpha' })
+  expect(
+    screen.queryByRole('button', { name: 'Batch pricing' })
+  ).not.toBeInTheDocument()
+  const square = screen.getByRole('switch', {
+    name: 'Square display for alpha',
+  })
+  expect(square).not.toBeChecked()
+  await user.click(square)
+  const endpoints = screen.getByRole('combobox', {
+    name: 'Endpoints for alpha',
+  })
+  await user.type(endpoints, '/responses')
+  expect(
+    await screen.findByRole('option', { name: 'openai-response' })
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('option', { name: 'anthropic' })
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('option', { name: 'openai-response' }))
+  await user.click(endpoints)
+  await user.click(await screen.findByRole('option', { name: 'openai' }))
+  if (endpoints.getAttribute('aria-expanded') === 'true') {
+    await user.keyboard('{Escape}')
+  }
+  const name = screen.getByRole('textbox', {
+    name: 'User model name for alpha',
+  })
+  await user.clear(name)
+  await user.type(name, 'customer-alpha')
+  expect(square).toBeChecked()
+  const row = name.closest('tr')
+  if (!row) throw new Error('Missing model row')
+  expect(within(row).getByText('+1')).toBeVisible()
+  expect(within(row).getByText('openai-response')).toBeVisible()
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Review and save' })
+    ).toBeEnabled()
+  )
+  await user.click(screen.getByRole('button', { name: 'Review and save' }))
+  const dialog = await screen.findByRole('dialog')
+  expect(
+    within(dialog).getByText(/Square display.*Hidden.*Shown/)
+  ).toBeVisible()
+  expect(
+    post.mock.calls.filter(([url]) => url === '/api/channel/7/model_batch')
+  ).toHaveLength(0)
+  await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith(
+      '/api/channel/7/model_batch',
+      expect.objectContaining({
+        changes: [
+          expect.objectContaining({
+            model_name: 'customer-alpha',
+            status: 1,
+            endpoints: JSON.stringify({
+              'openai-response': snapshot.endpoint_options?.['openai-response'],
+              openai: snapshot.endpoint_options?.openai,
+            }),
+          }),
+        ],
+      })
+    )
+  )
+})
+
+it('previews batch visibility and endpoint changes and preserves each model custom path', async () => {
+  const metadata = ['alpha', 'beta'].map((model_name, index) => ({
+    id: index + 1,
+    model_name,
+    name_rule: 0 as const,
+    status: index === 0 ? 1 : 0,
+    sync_official: 0,
+    created_time: 0,
+    updated_time: 0,
+    endpoints: JSON.stringify({
+      openai: {
+        path: `/${model_name}/chat`,
+        method: 'POST',
+        custom: model_name,
+      },
+    }),
+  }))
+  const custom = {
+    ...snapshot,
+    metadata,
+    rows: snapshot.rows.map((row, index) => ({
+      ...row,
+      metadata: metadata[index],
+    })),
+  }
+  const { user, post } = await start({ snapshot: custom })
+  await screen.findByRole('textbox', { name: 'User model name for alpha' })
+  await user.click(
+    screen.getByRole('checkbox', { name: 'Select visible models' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Batch settings' }))
+  let dialog = screen.getByRole('dialog')
+  expect(
+    within(dialog).getByRole('combobox', { name: 'Square display' })
+  ).toHaveValue('Keep existing visibility')
+  expect(
+    within(dialog).getByRole('combobox', { name: 'Endpoint selection' })
+  ).toHaveValue('Keep existing endpoints')
+  await user.click(
+    within(dialog).getByRole('combobox', { name: 'Square display' })
+  )
+  await user.click(await screen.findByRole('option', { name: 'Shown' }))
+  await user.click(
+    within(dialog).getByRole('combobox', { name: 'Endpoint selection' })
+  )
+  await user.click(await screen.findByRole('option', { name: 'Set endpoints' }))
+  const endpointInput = within(dialog).getByRole('combobox', {
+    name: 'Select endpoints',
+  })
+  await user.click(endpointInput)
+  await user.click(await screen.findByRole('option', { name: 'openai' }))
+  if (endpointInput.getAttribute('aria-expanded') === 'true') {
+    await user.keyboard('{Escape}')
+  }
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Preview changes' })
+  )
+  await screen.findByRole('button', { name: 'Apply to draft' })
+  expect(within(dialog).getByText('Hidden → Shown')).toBeVisible()
+  expect(
+    post.mock.calls.filter(([url]) => url === '/api/channel/7/model_batch')
+  ).toHaveLength(0)
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Apply to draft' })
+  )
+  expect(
+    screen.getByRole('switch', { name: 'Square display for beta' })
+  ).toBeChecked()
+  await user.click(screen.getByRole('button', { name: 'Review and save' }))
+  dialog = await screen.findByRole('dialog')
+  await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+  await waitFor(() =>
+    expect(
+      post.mock.calls.filter(([url]) => url === '/api/channel/7/model_batch')
+    ).toHaveLength(1)
+  )
+  const body = post.mock.calls.find(
+    ([url]) => url === '/api/channel/7/model_batch'
+  )?.[1] as {
+    changes: {
+      model_name: string
+      status: number
+      endpoints: string
+      pricing?: unknown
+    }[]
+  }
+  expect(body.changes).toHaveLength(2)
+  body.changes.forEach((change, index) => {
+    expect(change.status).toBe(1)
+    expect(JSON.parse(change.endpoints)).toEqual(
+      JSON.parse(metadata[index].endpoints)
+    )
+    expect(change).not.toHaveProperty('pricing')
+  })
 })

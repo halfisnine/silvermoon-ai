@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import {
   Tooltip,
   TooltipContent,
@@ -37,11 +38,14 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 
 import type { BatchSnapshot, DraftRow } from './api'
 import { draftEntry, isDirty, renameDraft } from './draft'
+import { EndpointSelect } from './endpoint-select'
+import type { EndpointConfig } from './endpoints'
 import { InlinePricing } from './inline-pricing'
 
 export function ModelTable(props: {
   rows: DraftRow[]
   snapshot: BatchSnapshot
+  endpointOptions: EndpointConfig
   selected: Set<string>
   onSelectionChange: Dispatch<SetStateAction<Set<string>>>
   pricing: ModelPricingConfig
@@ -83,7 +87,7 @@ export function ModelTable(props: {
           }
         },
       }}
-      tableClassName='min-w-[1180px] table-fixed [&_td]:whitespace-normal [&_th]:whitespace-normal'
+      tableClassName='min-w-[1480px] table-fixed [&_td]:whitespace-normal [&_th]:whitespace-normal'
       data={props.rows}
       getRowKey={(row) => row.source_name}
       emptyContent={<EmptyState title={t('No models found')} />}
@@ -219,6 +223,46 @@ export function ModelTable(props: {
             <span className='batch-upstream' title={row.upstream_name}>
               {row.upstream_name}
             </span>
+          ),
+        },
+        {
+          id: 'square',
+          header: t('Square display'),
+          className: 'w-[84px]',
+          cell: (row) => (
+            <Switch
+              aria-label={t('Square display for {{model}}', {
+                model: row.source_name,
+              })}
+              checked={row.squareVisible ?? row.metadata?.status === 1}
+              onCheckedChange={(checked) =>
+                props.onPatch(row.source_name, {
+                  squareVisible: checked,
+                  squareTouched: true,
+                })
+              }
+            />
+          ),
+        },
+        {
+          id: 'endpoints',
+          header: t('Endpoint selection'),
+          className: 'w-[176px]',
+          cell: (row) => (
+            <div data-model-source={row.source_name}>
+              <EndpointSelect
+                label={t('Endpoints for {{model}}', { model: row.source_name })}
+                value={row.endpoints ?? row.metadata?.endpoints ?? ''}
+                snapshot={props.snapshot}
+                catalog={props.endpointOptions}
+                onChange={(value) =>
+                  props.onPatch(row.source_name, {
+                    endpoints: value,
+                    endpointsTouched: true,
+                  })
+                }
+              />
+            </div>
           ),
         },
         {

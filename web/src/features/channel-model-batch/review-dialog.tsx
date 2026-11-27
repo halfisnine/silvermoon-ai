@@ -25,6 +25,7 @@ import type { PricingValues } from '@/features/model-pricing/pricing'
 
 import type { BatchSnapshot, DraftRow } from './api'
 import { draftEntry, resolveMetadata } from './draft'
+import { parseEndpointConfig } from './endpoints'
 import { PricingSummary } from './pricing-summary'
 
 export function ReviewDialog(props: {
@@ -44,7 +45,7 @@ export function ReviewDialog(props: {
       open
       title={t('Review changes')}
       description={t(
-        'Review global vendor and pricing changes before saving. This operation does not publish hidden models.'
+        'Review shared model settings and prices before saving. Models marked as shown may appear in the model square when a channel is available.'
       )}
       onOpenChange={(open) => {
         if (!open && !props.isSaving) props.onClose()
@@ -100,6 +101,22 @@ export function ReviewDialog(props: {
                   (vendor) => vendor.id === row.vendorId
                 )?.name ?? t('Unassigned')}{' '}
                 · {t('Model icons inherit the selected vendor icon.')}
+              </p>
+              <p className='text-muted-foreground text-xs break-words'>
+                {t('Square display')}:{' '}
+                {beforeMetadata?.status === 1 ? t('Shown') : t('Hidden')}
+                {' → '}
+                {row.squareVisible ? t('Shown') : t('Hidden')}
+              </p>
+              <p className='text-muted-foreground text-xs break-words'>
+                {t('Endpoint selection')}:{' '}
+                {Object.keys(
+                  parseEndpointConfig(beforeMetadata?.endpoints ?? '')
+                ).join(', ') || t('Automatic by channel')}
+                {' → '}
+                {Object.keys(parseEndpointConfig(row.endpoints ?? '')).join(
+                  ', '
+                ) || t('Automatic by channel')}
               </p>
               <p className='text-muted-foreground text-xs break-words'>
                 {t('Other channels using this customer name')}:{' '}

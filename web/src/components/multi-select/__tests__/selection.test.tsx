@@ -32,6 +32,7 @@ function Fixture(props: {
   initialSelected?: string[]
   allowCreate?: boolean
   disabled?: boolean
+  filter?: (value: string, query: string) => boolean
 }) {
   const [selected, setSelected] = useState(props.initialSelected ?? [])
 
@@ -43,6 +44,7 @@ function Fixture(props: {
         onChange={setSelected}
         allowCreate={props.allowCreate ?? true}
         disabled={props.disabled}
+        filter={props.filter}
       />
       <output aria-label='Selected values'>{selected.join(',')}</output>
     </>
@@ -159,6 +161,28 @@ describe('multi-select batch paste', () => {
 })
 
 describe('multi-select remote result controls', () => {
+  it('filters the next search after selecting a result without losing the selected value', async () => {
+    const user = userEvent.setup()
+    render(
+      <Fixture
+        allowCreate={false}
+        filter={(value, query) => {
+          const label = value === 'a' ? 'first endpoint' : 'second endpoint'
+          return label.includes(query)
+        }}
+      />
+    )
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'first')
+    await user.click(screen.getByRole('option', { name: 'a' }))
+    await user.click(input)
+    await user.clear(input)
+    await user.type(input, 'second')
+    expect(screen.getByRole('option', { name: 'c' })).toBeVisible()
+    expect(screen.queryByRole('option', { name: 'a' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Selected values')).toHaveTextContent(/^a$/)
+  })
+
   it('uses a supplied result filter and keeps selected labels while changing result pages', async () => {
     const onSearchChange = vi.fn()
     const user = userEvent.setup()
