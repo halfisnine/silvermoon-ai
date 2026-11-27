@@ -43,3 +43,16 @@
 ## 独立验收
 
 `negative_wallet_acceptance`（gpt-6.1-sol，只读）对完整业务及运行证据复验：N01–N07全部通过，N08代码、边界及实际运行部分通过；两项生产缺陷及测试夹具问题均已修复，无剩余生产阻断项。预览备份、更新及数据一致性检查完成后另记操作结果。原冻结Issue未修改。
+
+
+## 预览更新与最终操作验收
+
+- 代码提交：`fecdffc`，分支 `codex/billing-failure-refund`。已逐文件确认已测变更源码 SHA256 与该提交一致；预览使用与双网关测试相同的可执行文件。
+- 仅更新 `silvermoon-channel-model-batch-preview`，运行版本 `preview-unified-fecdffc`，服务器回环端口 `127.0.0.1:46016`。之前合并的批量定价功能与普通失败退款修复保留；错误日志 `ERROR_LOG_ENABLED=true` 保留，资源、网络、只读根目录和数据挂载沿用。
+- 停止目标预览后先完整备份数据，再替换。备份目录 `.dev/private/unified-preview/20261127-222235`；原容器保留为 `silvermoon-channel-model-batch-preview-backup-20261127-222235`。
+- 更新前后42项数据快照一致、业务记录数量无变化：全部营销表、用户资金以及渠道/模型/供应商/选项/能力/令牌设置。健康接口版本核验成功。详细结果为 `build/dev/negative-wallet/preview-update.json`。
+- 实际浏览器读取原预览批量定价页面，新列与端口选择可见、无页面异常、零保存请求：`build/dev/negative-wallet/browser-batch.log`。已有完整保存/刷新验证仍见此前统一预览记录，本轮没有改批量定价源码。
+- 浏览器钱包/概览欠费显示通过：1440桌面、390手机宽度，负金额及抵扣说明可见、无横向溢出、无页面异常。负金额仅由浏览器拦截响应构造，未修改预览账户资金；先读取了原真实钱包，全部营销写请求为零。证据 `browser-wallet.json` 及截图位于 `build/dev/negative-wallet/`。
+- 未执行生产部署、镜像发布或推送。
+
+最终由同一独立验收 agent 读取预览更新与浏览器证据后确认：N01–N08全部通过，验收关闭，无剩余生产阻断问题。
