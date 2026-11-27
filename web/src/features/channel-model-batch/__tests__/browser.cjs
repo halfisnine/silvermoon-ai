@@ -40,6 +40,10 @@ const snapshot = {
   metadata: [],
   channels: [],
   version: 'v1',
+  endpoint_options: {
+    openai: { path: '/v1/chat/completions', method: 'POST' },
+    'openai-response': { path: '/v1/responses', method: 'POST' },
+  },
 }
 ;(async () => {
   const results = []
@@ -189,6 +193,44 @@ const snapshot = {
           true
         )
         assert.equal(
+          await page
+            .getByRole('button', { name: 'Batch pricing', exact: true })
+            .count(),
+          0
+        )
+        const endpointInput = page.getByRole('combobox', {
+          name: 'Endpoints for alpha',
+          exact: true,
+        })
+        await endpointInput.fill('/responses')
+        await page
+          .getByRole('option', { name: 'openai-response', exact: true })
+          .click()
+        await endpointInput.click()
+        await endpointInput.fill('/chat/completions')
+        await page.getByRole('option', { name: 'openai', exact: true }).click()
+        await page
+          .getByRole('textbox', { name: 'Search models', exact: true })
+          .click()
+        const endpointRow = page.locator('tbody tr').first()
+        assert.equal(
+          await endpointRow.getByText('+1', { exact: true }).count(),
+          1
+        )
+        const endpointHeight = await endpointRow
+          .locator('.batch-endpoint-select')
+          .evaluate((el) => el.getBoundingClientRect().height)
+        assert.ok(
+          endpointHeight <= 34,
+          'Endpoint summary stays on one compact row'
+        )
+        await endpointRow
+          .getByRole('switch', {
+            name: 'Square display for alpha',
+            exact: true,
+          })
+          .check()
+        assert.equal(
           await page.evaluate(
             () => document.documentElement.scrollWidth <= innerWidth + 1
           ),
@@ -211,6 +253,8 @@ const snapshot = {
               'Vendor',
               'Customer pricing (USD)',
               'Upstream model',
+              'Square display',
+              'Endpoint selection',
               'Status',
               'Actions',
             ],
@@ -255,14 +299,14 @@ const snapshot = {
           )
           if (width >= 1920) {
             assert.ok(
-              layout.model >= 350 && layout.upstream >= 350,
+              layout.model >= 240 && layout.upstream >= 240,
               'Wide-screen spare width expands both model name columns'
             )
           }
           assert.equal(
             await row
               .locator('td')
-              .nth(6)
+              .nth(8)
               .getByRole('button', { name: 'Advanced settings' })
               .count(),
             1
@@ -300,8 +344,9 @@ const snapshot = {
               .locator('table')
               .evaluate(
                 (el) =>
+                  innerWidth < 1680 ||
                   el.getBoundingClientRect().width <=
-                  el.parentElement.clientWidth + 1
+                    el.parentElement.clientWidth + 1
               ),
             true,
             'Desktop columns fit the workspace even with long model names'
@@ -668,7 +713,7 @@ const snapshot = {
           })
         }
         await page
-          .getByRole('button', { name: 'Batch pricing', exact: true })
+          .getByRole('button', { name: 'Batch settings', exact: true })
           .click()
         await dialog
           .getByRole('combobox', { name: 'Pricing', exact: true })

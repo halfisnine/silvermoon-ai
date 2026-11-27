@@ -215,7 +215,7 @@ func TestMarketingAccountingReads(t *testing.T) {
 				assert.Equal(t, []MarketingAccountingMoney{{Amount: "0.000002", Currency: "CNY"}}, monthly.(map[string]any)["amounts"], "a single paid unit must not disappear through two-decimal formatting or current conversion settings")
 			})
 
-			t.Run("unknown terminal and unpaid known fee remain distinct", func(t *testing.T) {
+			t.Run("unknown terminal and confirmed paid overdraft remain distinct", func(t *testing.T) {
 				var unknown, short *model.MarketingFunding
 				require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 					var e error
@@ -252,11 +252,16 @@ func TestMarketingAccountingReads(t *testing.T) {
 				read, err = ReadMarketingAccounting(context.Background(), user.Id, false, short.ID, filter)
 				require.NoError(t, err)
 				v = read.(MarketingAccountingRequest)
-				assert.Equal(t, "review", v.State)
+				assert.Equal(t, "settled", v.State)
 				assert.True(t, v.CostKnown)
 				assert.Equal(t, "20", v.Actual.Amount)
-				assert.Equal(t, "9.99", v.Total.Amount)
-				assert.Equal(t, "10.01", v.Unsettled.Amount)
+				assert.Equal(t, "20", v.Total.Amount)
+				assert.Equal(t, "20", v.Paid.Amount)
+				assert.Equal(t, "0", v.Unsettled.Amount)
+				wallet, err := ReadMarketingWallet(context.Background(), user.Id)
+				require.NoError(t, err)
+				assert.Equal(t, "-7", wallet.(map[string]any)["paid"].(*MarketingAccountingMoney).Amount, "wallet uses current 1000 units / 7 CNY, while historical request retains its original conversion")
+				assert.Equal(t, "0", wallet.(map[string]any)["gift"].(*MarketingAccountingMoney).Amount)
 				own := &model.Log{Type: model.LogTypeConsume, UserId: user.Id, UsageEventID: short.RequestKey, Other: `{}`}
 				foreign := &model.Log{Type: model.LogTypeConsume, UserId: other.Id, UsageEventID: short.RequestKey, Other: `{}`}
 				require.NoError(t, EnrichMarketingUsageLogs(context.Background(), []*model.Log{own, foreign}))

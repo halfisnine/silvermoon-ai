@@ -494,7 +494,7 @@ func TestResponsesInterruptedStreamHealth(t *testing.T) {
 				}
 			}
 			fixture.closeAndWait(t)
-			assertResponsesWSReview(t, fixture, 1000)
+			assertResponsesWSPartialSettlement(t, fixture, 1000)
 			if scenario == "sse client cancel" {
 				keys, err := common.RDB.Keys(context.Background(), "perf:ws-billing:*").Result()
 				require.NoError(t, err)
@@ -536,22 +536,22 @@ func assertResponsesWSAccounting(t *testing.T, fixture *responsesWSBillingTest, 
 	assert.Equal(t, charged, fixture.user.UsedQuota)
 }
 
-func assertResponsesWSReview(t *testing.T, fixture *responsesWSBillingTest, reserved int64) {
+func assertResponsesWSPartialSettlement(t *testing.T, fixture *responsesWSBillingTest, charged int64) {
 	t.Helper()
-	assertResponsesWSAccounting(t, fixture, []int{0})
+	assertResponsesWSAccounting(t, fixture, []int{int(charged)})
 	var calls []model.MarketingFunding
 	require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).Find(&calls).Error)
 	require.Len(t, calls, 1)
-	assert.Equal(t, "review", calls[0].State)
-	assert.False(t, calls[0].CostKnown)
-	assert.Zero(t, calls[0].SettledQuota)
-	assert.Equal(t, reserved, calls[0].ReservedQuota)
+	assert.Equal(t, "settled", calls[0].State)
+	assert.True(t, calls[0].CostKnown)
+	assert.Equal(t, charged, calls[0].SettledQuota)
+	assert.Zero(t, calls[0].ReservedQuota)
 	var account model.MarketingAccount
 	require.NoError(t, model.DB.First(&account, "user_id = ?", fixture.user.Id).Error)
-	assert.Equal(t, reserved, account.PaidReserved)
+	assert.Zero(t, account.PaidReserved)
 	var hold model.MarketingTokenHold
 	require.NoError(t, model.DB.First(&hold, "token_id = ?", fixture.token.Id).Error)
-	assert.Equal(t, reserved, hold.ReservedQuota)
+	assert.Zero(t, hold.ReservedQuota)
 	var dispatches int64
 	require.NoError(t, model.DB.Model(&model.MarketingDispatch{}).Where("funding_id = ?", calls[0].ID).Count(&dispatches).Error)
 	assert.EqualValues(t, 1, dispatches)
@@ -751,7 +751,7 @@ func TestResponsesWebSocketDialsNativeResponsesChannelTypes(t *testing.T) {
 	}
 }
 
-func TestResponsesWebSocketDisconnectPreservesUnknownDeliveredOutputOnce(t *testing.T) {
+func TestResponsesWebSocketDisconnectSettlesDeliveredOutputOnce(t *testing.T) {
 	fixture := newResponsesWSBillingTest(t, `tier("output", c * 2)`, func(ws *websocket.Conn, _ *http.Request) {
 		if _, _, err := ws.ReadMessage(); !assert.NoError(t, err) {
 			return
@@ -772,7 +772,7 @@ func TestResponsesWebSocketDisconnectPreservesUnknownDeliveredOutputOnce(t *test
 	require.Equal(t, "response.output_text.delta", delta["type"])
 	assert.Equal(t, "hello", delta["delta"])
 	fixture.closeAndWait(t)
-	assertResponsesWSReview(t, fixture, 1)
+	assertResponsesWSPartialSettlement(t, fixture, 1)
 	keys, err := common.RDB.Keys(context.Background(), "perf:ws-billing:*").Result()
 	require.NoError(t, err)
 	assert.Empty(t, keys, "client cancellation must not affect model health")
@@ -835,7 +835,7 @@ func TestResponsesWebSocketCancelErrorDoesNotFinishActiveRequest(t *testing.T) {
 	assertResponsesWSAccounting(t, fixture, []int{1000})
 }
 
-func TestResponsesWebSocketInitialUpstreamErrorPreservesReservation(t *testing.T) {
+func TestResponsesWebSocketInitialUpstreamErrorRefundsReservation(t *testing.T) {
 	for _, tc := range []struct {
 		name, upstream, wantType, wantMessage string
 		status                                int
@@ -847,7 +847,7 @@ func TestResponsesWebSocketInitialUpstreamErrorPreservesReservation(t *testing.T
 		t.Run(tc.name, func(t *testing.T) {
 			reserved := make(chan int64, 1)
 			tokenID := make(chan int, 1)
-			// An error frame alone does not prove that upstream never executed.
+			// Ordinary failure policy refunds this request without claiming non-execution.
 			fixture := newResponsesWSBillingTest(t, `tier("request", fixed(0.002))`, func(ws *websocket.Conn, _ *http.Request) {
 				if _, _, err := ws.ReadMessage(); !assert.NoError(t, err) {
 					return
@@ -875,12 +875,12 @@ func TestResponsesWebSocketInitialUpstreamErrorPreservesReservation(t *testing.T
 			assertResponsesWSAccounting(t, fixture, nil)
 			var funding model.MarketingFunding
 			require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).First(&funding).Error)
-			assert.Equal(t, "review", funding.State)
-			assert.False(t, funding.CostKnown)
-			assert.EqualValues(t, 1000, funding.ReservedQuota)
+			assert.Equal(t, "settled", funding.State)
+			assert.True(t, funding.CostKnown)
+			assert.Zero(t, funding.ReservedQuota)
 			var hold model.MarketingTokenHold
 			require.NoError(t, model.DB.First(&hold, "token_id = ?", fixture.token.Id).Error)
-			assert.EqualValues(t, 1000, hold.ReservedQuota)
+			assert.Zero(t, hold.ReservedQuota)
 		})
 	}
 }
@@ -964,28 +964,20 @@ func TestResponsesStreamOutcomesPreserveAccounting(t *testing.T) {
 						assert.JSONEq(t, expected, string(actual), "upstream frames must be delivered once and unchanged")
 					}
 				}
-				review := tc.failed || tc.name == "completed-at-output-limit"
 				quotas := []int{1000}
 				require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","event_id":"limited","stream_id":"planner","model":"ws-billing","input":"next"}`)))
 				limited := readResponsesWSTestEvent(t, fixture.client)
-				if review && tc.failed {
-					assert.Equal(t, float64(http.StatusForbidden), limited["status"], "unknown prior cost blocks another upstream generation")
-				} else {
-					assert.Equal(t, float64(http.StatusTooManyRequests), limited["status"])
+				if tc.failed {
+					assert.Equal(t, "response.completed", limited["type"], "failed prior request must not block the next generation")
+					quotas = append(quotas, 1000)
+					require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","event_id":"limited","stream_id":"planner","model":"ws-billing","input":"next"}`)))
+					limited = readResponsesWSTestEvent(t, fixture.client)
 				}
+				assert.Equal(t, float64(http.StatusTooManyRequests), limited["status"])
 				assert.Equal(t, "planner", limited["stream_id"])
 				assert.Equal(t, "limited", limited["event_id"])
 				fixture.closeAndWait(t)
-				if review {
-					quotas = []int{0}
-					reserved := int64(1000)
-					if tc.name == "failed-actual-usage" || tc.name == "failed-estimated-output" {
-						reserved = 1
-					}
-					assertResponsesWSReview(t, fixture, reserved)
-				} else {
-					assertResponsesWSAccounting(t, fixture, quotas)
-				}
+				assertResponsesWSAccounting(t, fixture, quotas)
 				var logs []model.Log
 				require.NoError(t, model.LOG_DB.Where("token_id = ? AND type = ?", fixture.token.Id, model.LogTypeConsume).Order("id").Find(&logs).Error)
 				require.Len(t, logs, len(quotas))
@@ -1010,11 +1002,7 @@ func TestResponsesStreamOutcomesPreserveAccounting(t *testing.T) {
 				}
 				requests, successes := waitPerfCounters(t, expectedRequests)
 				assert.Equal(t, expectedRequests, requests)
-				if tc.failed {
-					assert.Zero(t, successes)
-				} else {
-					assert.Equal(t, int64(1), successes)
-				}
+				assert.Equal(t, int64(1), successes)
 			})
 		}
 	}
@@ -1029,7 +1017,7 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 	}{
 		{"business rejection", "context_length_exceeded", 400, 1, false, true},
 		{"credentials rejected as 400", "invalid_api_key", 400, 1, false, false},
-		{"ambiguous server error is not retried", "server_error", 500, 1, false, false},
+		{"ordinary server error retries", "server_error", 500, 2, true, false},
 		{"explicit rate limit rejection permits retry", "rate_limit_exceeded", 429, 2, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1071,9 +1059,9 @@ func TestResponsesHTTPHealthCountsFinalResult(t *testing.T) {
 				assert.Equal(t, "settled", funding.State)
 				assert.EqualValues(t, 1000, funding.SettledQuota)
 			} else {
-				assert.Equal(t, "review", funding.State)
-				assert.False(t, funding.CostKnown)
-				assert.EqualValues(t, 1000, funding.ReservedQuota)
+				assert.Equal(t, "settled", funding.State)
+				assert.True(t, funding.CostKnown)
+				assert.Zero(t, funding.ReservedQuota)
 				assert.Zero(t, funding.SettledQuota)
 			}
 			if !tc.success {
@@ -1149,7 +1137,7 @@ func TestResponsesWebSocketAmbiguousControlErrorClosesAndSettlesOnce(t *testing.
 	require.ErrorAs(t, err, &closeErr, "an unattributed error must close the connection instead of remaining busy")
 	assert.Equal(t, websocket.CloseInternalServerErr, closeErr.Code)
 	fixture.closeAndWait(t)
-	assertResponsesWSReview(t, fixture, 1000)
+	assertResponsesWSPartialSettlement(t, fixture, 1000)
 }
 
 // Every way a session ends sends the client a close frame whose code says
@@ -1251,7 +1239,7 @@ func TestResponsesWebSocketCloseCodes(t *testing.T) {
 			if tc.events[len(tc.events)-1] == completed {
 				assertResponsesWSAccounting(t, fixture, []int{1000})
 			} else {
-				assertResponsesWSReview(t, fixture, 1000)
+				assertResponsesWSPartialSettlement(t, fixture, 1000)
 			}
 			if tc.upstreamCode != 0 {
 				require.Len(t, upstreamCodes, 1)
@@ -1341,7 +1329,7 @@ func TestResponsesWebSocketAcceptsCancelAfterControlError(t *testing.T) {
 	require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.cancel","response_id":"active"}`)))
 	assert.Equal(t, "response.cancelled", readResponsesWSTestEvent(t, fixture.client)["type"])
 	fixture.closeAndWait(t)
-	assertResponsesWSReview(t, fixture, 1000)
+	assertResponsesWSPartialSettlement(t, fixture, 1000)
 }
 
 // A late error that names the previous response must not end the request
@@ -1380,13 +1368,7 @@ func TestResponsesWebSocketIgnoresLateErrorForPreviousResponse(t *testing.T) {
 			assert.Equal(t, tc.firstTerminalType, readResponsesWSTestEvent(t, fixture.client)["type"])
 			require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","model":"ws-billing","input":"second"}`)))
 			created := readResponsesWSTestEvent(t, fixture.client)
-			if tc.name == "after error" {
-				assert.Equal(t, "error", created["type"])
-				assert.Equal(t, float64(http.StatusForbidden), created["status"])
-				fixture.closeAndWait(t)
-				assertResponsesWSReview(t, fixture, 1000)
-				return
-			}
+
 			require.Equal(t, "response.created", created["type"], "the late error must not reach the client or end the request: %v", created)
 			assert.Equal(t, "response.completed", readResponsesWSTestEvent(t, fixture.client)["type"])
 			fixture.closeAndWait(t)
@@ -1589,7 +1571,7 @@ func TestResponsesWSMarketingDispatchUnknownAndRevocation(t *testing.T) {
 			require.NoError(t, model.DB.First(fixture.token, fixture.token.Id).Error)
 			var hold model.MarketingTokenHold
 			require.NoError(t, model.DB.First(&hold, "token_id = ?", fixture.token.Id).Error)
-			if scenario.disable {
+			if scenario.name != "failure_before_created" {
 				assert.Equal(t, "settled", funding[0].State)
 				assert.EqualValues(t, 10, funding[0].ActualQuota)
 				assert.EqualValues(t, 6, gift.ConsumedQuota)
@@ -1597,14 +1579,14 @@ func TestResponsesWSMarketingDispatchUnknownAndRevocation(t *testing.T) {
 				assert.Equal(t, 2990, fixture.token.RemainQuota)
 				assert.Zero(t, hold.ReservedQuota)
 			} else {
-				assert.Equal(t, "review", funding[0].State)
-				assert.False(t, funding[0].CostKnown)
-				assert.EqualValues(t, 10, funding[0].ReservedQuota)
-				assert.EqualValues(t, 6, gift.ReservedQuota)
+				assert.Equal(t, "settled", funding[0].State)
+				assert.True(t, funding[0].CostKnown)
+				assert.Zero(t, funding[0].ReservedQuota)
+				assert.Zero(t, gift.ReservedQuota)
 				assert.Zero(t, gift.ConsumedQuota)
 				assert.Equal(t, 100, fixture.user.Quota)
 				assert.Equal(t, 3000, fixture.token.RemainQuota)
-				assert.EqualValues(t, 10, hold.ReservedQuota)
+				assert.Zero(t, hold.ReservedQuota)
 			}
 		})
 	}
@@ -1713,7 +1695,10 @@ func TestResponsesWSMarketingPrewarmKeepsExecutionEvidence(t *testing.T) {
 		{name: "explicit_zero_usage", events: []string{`{"type":"response.completed","response":{"id":"warm","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0,"output_tokens_details":{"reasoning_tokens":0}}}}`}, known: true},
 		{name: "actual_usage_is_not_free", events: []string{`{"type":"response.completed","response":{"id":"warm","status":"completed","output":[],"usage":{"input_tokens":4,"output_tokens":3,"total_tokens":7}}}`}, known: true, quota: 10},
 		{name: "generated_output_is_not_free", events: []string{`{"type":"response.output_text.delta","delta":"answer"}`, `{"type":"response.completed","response":{"id":"warm","status":"completed","output":[]}}`}, known: true, quota: 10},
-		{name: "disconnect_without_terminal"},
+		{name: "disconnect_without_terminal", known: true},
+		{name: "invalid_usage_error_after_created", events: []string{`{"type":"response.created","response":{"id":"warm","status":"in_progress"}}`, `{"type":"error","status":500,"error":{"code":"server_error","message":"failed prewarm"},"response":{"id":"warm","usage":{"input_tokens":-1,"output_tokens":0,"total_tokens":0}}}`}},
+		{name: "failed_prewarm_error_after_created", events: []string{`{"type":"response.created","response":{"id":"warm","status":"in_progress"}}`, `{"type":"error","status":500,"error":{"code":"server_error","message":"failed prewarm"}}`}, known: true},
+		{name: "failed_prewarm", events: []string{`{"type":"response.failed","response":{"id":"warm","status":"failed","output":[],"usage":null}}`}, known: true},
 		{name: "missing_empty_output_proof", events: []string{`{"type":"response.completed","response":{"id":"warm","status":"completed"}}`}},
 		{name: "negative_usage_is_not_zero", events: []string{`{"type":"response.completed","response":{"id":"warm","status":"completed","output":[],"usage":{"input_tokens":-1,"output_tokens":0,"total_tokens":0}}}`}},
 		{name: "nonzero_nested_usage_is_not_zero", events: []string{`{"type":"response.completed","response":{"id":"warm","status":"completed","output":[],"usage":{"input_tokens":0,"output_tokens":0,"total_tokens":0,"output_tokens_details":{"reasoning_tokens":1}}}}`}},
@@ -1785,14 +1770,22 @@ func TestResponsesWSMarketingPrewarmKeepsExecutionEvidence(t *testing.T) {
 					assert.EqualValues(t, 6, gift.RemainingQuota)
 					assert.Zero(t, gift.ConsumedQuota)
 					assert.Equal(t, 100, fixture.user.Quota)
-					assert.Contains(t, first.UsageEvidence, `"generate":false`)
-					require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","model":"ws-billing","input":"actually generate"}`)))
-					assert.Equal(t, "response.completed", readResponsesWSTestEvent(t, fixture.client)["type"])
-					var calls []model.MarketingFunding
-					require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).Order("id").Find(&calls).Error)
-					require.Len(t, calls, 2)
-					assert.EqualValues(t, 10, calls[1].ActualQuota)
-					assert.Equal(t, "settled", calls[1].State)
+					if len(scenario.events) > 0 {
+						if strings.Contains(scenario.name, "failed_prewarm") {
+							assert.Contains(t, first.UsageEvidence, "request_failure:")
+						} else {
+							assert.Contains(t, first.UsageEvidence, `"generate":false`)
+						}
+					}
+					if len(scenario.events) > 0 {
+						require.NoError(t, fixture.client.WriteMessage(websocket.TextMessage, []byte(`{"type":"response.create","model":"ws-billing","input":"actually generate"}`)))
+						assert.Equal(t, "response.completed", readResponsesWSTestEvent(t, fixture.client)["type"])
+						var calls []model.MarketingFunding
+						require.NoError(t, model.DB.Where("user_id = ?", fixture.user.Id).Order("id").Find(&calls).Error)
+						require.Len(t, calls, 2)
+						assert.EqualValues(t, 10, calls[1].ActualQuota)
+						assert.Equal(t, "settled", calls[1].State)
+					}
 				}
 			} else {
 				assert.Equal(t, "review", first.State)
@@ -1805,7 +1798,7 @@ func TestResponsesWSMarketingPrewarmKeepsExecutionEvidence(t *testing.T) {
 			}
 			fixture.closeAndWait(t)
 			wantCalls := int32(1)
-			if scenario.known && scenario.quota == 0 {
+			if scenario.known && scenario.quota == 0 && len(scenario.events) > 0 {
 				wantCalls = 2
 			}
 			assert.Equal(t, wantCalls, received.Load())

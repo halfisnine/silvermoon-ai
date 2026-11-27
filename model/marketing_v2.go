@@ -293,7 +293,7 @@ func CreditMarketingPayment(tx *gorm.DB, input MarketingPaymentInput) (*Marketin
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	if user.Quota < 0 || int64(user.Quota) > common.MaxWalletQuota-quota || account.PaymentSequence == math.MaxInt64 || account.Revision == math.MaxInt64 {
+	if int64(user.Quota) < -common.MaxWalletQuota || int64(user.Quota) > common.MaxWalletQuota-quota || account.PaymentSequence == math.MaxInt64 || account.Revision == math.MaxInt64 {
 		return nil, ErrMarketingInput
 	}
 	conversion, err := common.Marshal(input.Money)

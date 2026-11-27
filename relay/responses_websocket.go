@@ -412,6 +412,11 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			if incoming.err != nil {
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonScannerErr, incoming.err)
 				state.closeCode, state.closeReason = websocket.CloseInternalServerErr, "upstream connection closed"
+				if prewarm && !generated {
+					if handled, err := settleResponsesWSPrewarm(c, info, &dto.ResponsesStreamResponse{}, nil, responseID, prewarmUsageConflict); handled {
+						return err
+					}
+				}
 				ConsumeResponsesQuota(c, info, accumulator.Finish())
 				return nil
 			}
@@ -423,6 +428,9 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 			}
 			if err := common.Unmarshal(incoming.body, &event); err != nil {
 				info.StreamStatus.RecordError("invalid upstream websocket event")
+				if prewarm && ojson.GetBytes(incoming.body, "response.usage").Type != ojson.Null {
+					prewarmUsageConflict = true
+				}
 			} else {
 				if event.Type != "error" && event.StreamID != "" && event.StreamID != create.StreamID {
 					if err := s.writeClient(incoming.kind, incoming.body); err != nil {
@@ -478,6 +486,11 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 						state.terminal = &incoming
 						if ambiguous {
 							state.closeCode = websocket.CloseInternalServerErr
+						}
+						if prewarm && !generated {
+							if handled, err := settleResponsesWSPrewarm(c, info, &event.ResponsesStreamResponse, incoming.body, responseID, prewarmUsageConflict); handled {
+								return err
+							}
 						}
 						ConsumeResponsesQuota(c, info, accumulator.Finish())
 						return nil
@@ -563,10 +576,20 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 		case <-idle.C:
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, context.DeadlineExceeded)
 			state.closeCode, state.closeReason = websocket.CloseInternalServerErr, "upstream response timed out"
+			if prewarm && !generated {
+				if handled, err := settleResponsesWSPrewarm(c, info, &dto.ResponsesStreamResponse{}, nil, responseID, prewarmUsageConflict); handled {
+					return err
+				}
+			}
 			ConsumeResponsesQuota(c, info, accumulator.Finish())
 			return nil
 		case <-s.ctx.Done():
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, s.ctx.Err())
+			if prewarm && !generated {
+				if handled, err := settleResponsesWSPrewarm(c, info, &dto.ResponsesStreamResponse{}, nil, responseID, prewarmUsageConflict); handled {
+					return err
+				}
+			}
 			ConsumeResponsesQuota(c, info, accumulator.Finish())
 			return nil
 		}
@@ -574,8 +597,8 @@ func (s *responsesWSSession) runCall(c *gin.Context, state *responsesWSCallState
 }
 
 // A successful generate:false acknowledgement is not a model generation and
-// must not trigger a per-request fixed charge. Missing or conflicting evidence
-// stays unknown; real generation/usage still uses the ordinary pricing path.
+// must not trigger a per-request fixed charge. Failed empty prewarms release
+// their holds; conflicting usage stays unresolved. Generation uses ordinary pricing.
 func settleResponsesWSPrewarm(c *gin.Context, info *relaycommon.RelayInfo, event *dto.ResponsesStreamResponse, raw []byte, responseID string, usageConflict bool) (bool, *types.NewAPIError) {
 	if event.Response != nil && event.Response.Usage != nil {
 		u := event.Response.Usage
@@ -585,6 +608,9 @@ func settleResponsesWSPrewarm(c *gin.Context, info *relaycommon.RelayInfo, event
 	}
 	output := ojson.GetBytes(raw, "response.output")
 	usage := ojson.GetBytes(raw, "response.usage")
+	// Error terminals can reach this helper before the stream accumulator's
+	// usage checks. Validate this frame here as well as earlier frames.
+	usageConflict = usageConflict || (usage.Type != ojson.Null && !responsesWSZeroUsage(usage))
 	verified := !usageConflict && info.StreamStatus.OutcomeSnapshot().Response == relaycommon.ResponseOutcomeCompleted &&
 		!info.StreamStatus.HasErrors() && responseID != "" && output.IsArray() && len(output.Array()) == 0 &&
 		(usage.Type == ojson.Null || responsesWSZeroUsage(usage))
@@ -597,6 +623,12 @@ func settleResponsesWSPrewarm(c *gin.Context, info *relaycommon.RelayInfo, event
 				return true, types.NewError(encodeErr, types.ErrorCodeBadResponse, types.ErrOptionWithSkipRetry())
 			}
 			err = funding.SettleEvidence(&zero, true, "upstream_terminal", string(evidence), 1)
+		} else if !usageConflict && info.StreamStatus.OutcomeSnapshot().Response != relaycommon.ResponseOutcomeCompleted {
+			err = funding.FinishFailedAttempt()
+			if err == nil {
+				zero := int64(0)
+				err = funding.SettleEvidence(&zero, true, "request_failure", "prewarm ended without generation or payable usage", 1)
+			}
 		} else {
 			err = funding.PreserveUnknown("Responses prewarm result has no verified empty terminal")
 		}

@@ -30,6 +30,7 @@ import {
   renameDraft,
   validateDrafts,
 } from '../draft'
+import { parseEndpointConfig, updateEndpointConfig } from '../endpoints'
 import { quickPrice, quickPriceValues } from '../quick-pricing'
 
 const snapshot: BatchSnapshot = {
@@ -161,7 +162,7 @@ describe('channel model drafts', () => {
     const rows = createDrafts(snapshot)
     rows[0].name = 'alias'
     expect(buildChanges(rows, prices)).toEqual([
-      { source_name: 'a', model_name: 'alias', vendor_id: 0 },
+      { source_name: 'a', model_name: 'alias', vendor_id: 0, status: 0 },
     ])
   })
   it('preserves the original pricing version after another query refreshes', () => {
@@ -517,4 +518,80 @@ it('creates inline token prices for unpriced models without treating runtime def
       500000
     )
   ).toThrow()
+})
+
+it('preserves custom endpoint details, resolves new types from the server and clears to automatic', () => {
+  const catalog = {
+    ...snapshot,
+    endpoint_options: {
+      openai: { path: '/v1/chat/completions', method: 'POST' },
+      'openai-response': { path: '/v1/responses', method: 'POST' },
+    },
+  }
+  const raw = '{"openai":{"path":"/custom","method":"GET","extra":"keep"}}'
+  expect(
+    parseEndpointConfig(
+      updateEndpointConfig(raw, ['openai', 'openai-response'], catalog)
+    )
+  ).toEqual({
+    openai: { path: '/custom', method: 'GET', extra: 'keep' },
+    'openai-response': { path: '/v1/responses', method: 'POST' },
+  })
+  expect(updateEndpointConfig(raw, [], catalog)).toBe('')
+  expect(
+    updateEndpointConfig(
+      '["custom-legacy"]',
+      ['custom-legacy', 'openai'],
+      catalog
+    )
+  ).toBe('["custom-legacy","openai"]')
+})
+
+it('keeps source endpoint details when renaming into a different metadata rule without an exact target', () => {
+  const source = {
+    id: 1,
+    model_name: 'a',
+    name_rule: 0 as const,
+    status: 1,
+    sync_official: 0,
+    created_time: 0,
+    updated_time: 0,
+    endpoints: '{"openai":"/source/chat"}',
+  }
+  const prefix = {
+    ...source,
+    id: 2,
+    model_name: 'other-',
+    name_rule: 1 as const,
+    endpoints: '{"openai":"/other/chat"}',
+  }
+  const data = {
+    ...snapshot,
+    metadata: [source, prefix],
+    rows: [{ ...snapshot.rows[0], metadata: source }],
+  }
+  const renamed = renameDraft(
+    createDrafts(data)[0],
+    'other-alias',
+    data,
+    prices
+  )
+  expect(renamed.endpoints).toBe(source.endpoints)
+  expect(renamed.squareVisible).toBe(false)
+  const edited = renameDraft(
+    {
+      ...renamed,
+      squareVisible: true,
+      squareTouched: true,
+      endpoints: '',
+      endpointsTouched: true,
+    },
+    'another-alias',
+    data,
+    prices
+  )
+  expect(buildChanges([edited], prices)[0]).toMatchObject({
+    status: 1,
+    endpoints: '',
+  })
 })

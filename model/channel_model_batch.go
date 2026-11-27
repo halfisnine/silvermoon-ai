@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/setting/reasoning"
 	"gorm.io/gorm"
 )
@@ -31,18 +32,21 @@ type ChannelModelBatchRow struct {
 }
 
 type ChannelModelBatchSnapshot struct {
-	Channel  ChannelModelBatchChannel   `json:"channel"`
-	Rows     []ChannelModelBatchRow     `json:"rows"`
-	Vendors  []Vendor                   `json:"vendors"`
-	Metadata []Model                    `json:"metadata"`
-	Channels []ChannelModelBatchChannel `json:"channels"`
-	Version  string                     `json:"version"`
+	Channel         ChannelModelBatchChannel                      `json:"channel"`
+	Rows            []ChannelModelBatchRow                        `json:"rows"`
+	Vendors         []Vendor                                      `json:"vendors"`
+	Metadata        []Model                                       `json:"metadata"`
+	Channels        []ChannelModelBatchChannel                    `json:"channels"`
+	Version         string                                        `json:"version"`
+	EndpointOptions map[constant.EndpointType]common.EndpointInfo `json:"endpoint_options"`
 }
 
 type ChannelModelBatchChange struct {
 	SourceName             string         `json:"source_name"`
 	ModelName              string         `json:"model_name"`
 	VendorID               *int           `json:"vendor_id,omitempty"`
+	Status                 *int           `json:"status,omitempty"`
+	Endpoints              *string        `json:"endpoints,omitempty"`
 	Pricing                *PricingValues `json:"pricing,omitempty"`
 	ExpectedPricingVersion string         `json:"expected_pricing_version,omitempty"`
 }
@@ -65,7 +69,7 @@ func GetChannelModelBatch(id int) (*ChannelModelBatchSnapshot, error) {
 }
 
 func readChannelModelBatch(tx *gorm.DB, id int) (*ChannelModelBatchSnapshot, error) {
-	snapshot := &ChannelModelBatchSnapshot{Rows: []ChannelModelBatchRow{}, Vendors: []Vendor{}, Metadata: []Model{}}
+	snapshot := &ChannelModelBatchSnapshot{Rows: []ChannelModelBatchRow{}, Vendors: []Vendor{}, Metadata: []Model{}, EndpointOptions: common.GetDefaultEndpointInfos()}
 	if err := tx.Model(&Channel{}).Select("id", "name", "type", "models", "model_mapping").Order("id").Find(&snapshot.Channels).Error; err != nil {
 		return nil, err
 	}
@@ -222,7 +226,15 @@ func ApplyChannelModelBatch(id int, request ChannelModelBatchRequest) error {
 				// changes; other models' upstream targets are never rewritten.
 				mapping[name] = change.SourceName
 			}
-			if change.VendorID != nil || name != change.SourceName {
+			if change.Status != nil && *change.Status != 0 && *change.Status != 1 {
+				return errors.New("invalid catalog visibility")
+			}
+			if change.Endpoints != nil {
+				if err := ValidateModelEndpoints(*change.Endpoints); err != nil {
+					return err
+				}
+			}
+			if change.VendorID != nil || change.Status != nil || change.Endpoints != nil || name != change.SourceName {
 				record, exists := exact[name]
 				if !exists {
 					if row.Metadata != nil {
@@ -230,9 +242,16 @@ func ApplyChannelModelBatch(id int, request ChannelModelBatchRequest) error {
 					}
 					record.Id, record.ModelName, record.NameRule = 0, name, NameRuleExact
 					record.CreatedTime = common.GetTimestamp()
+					record.Status, record.SyncOfficial = 0, 0
 				}
 				if change.VendorID != nil {
 					record.VendorID = *change.VendorID
+				}
+				if change.Status != nil {
+					record.Status = *change.Status
+				}
+				if change.Endpoints != nil {
+					record.Endpoints = *change.Endpoints
 				}
 				if record.VendorID != 0 {
 					vendor, valid := vendors[record.VendorID]
@@ -262,7 +281,6 @@ func ApplyChannelModelBatch(id int, request ChannelModelBatchRequest) error {
 				record.Icon, record.UpdatedTime = "", common.GetTimestamp()
 				if !exists {
 					status, syncOfficial := record.Status, record.SyncOfficial
-					status, syncOfficial = 0, 0
 					if err := tx.Create(&record).Error; err != nil {
 						return err
 					}
@@ -270,7 +288,7 @@ func ApplyChannelModelBatch(id int, request ChannelModelBatchRequest) error {
 					if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(map[string]any{"status": status, "sync_official": syncOfficial}).Error; err != nil {
 						return err
 					}
-				} else if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(map[string]any{"vendor_id": record.VendorID, "icon": "", "updated_time": record.UpdatedTime}).Error; err != nil {
+				} else if err := tx.Model(&Model{}).Where("id = ?", record.Id).Updates(map[string]any{"vendor_id": record.VendorID, "icon": "", "status": record.Status, "endpoints": record.Endpoints, "updated_time": record.UpdatedTime}).Error; err != nil {
 					return err
 				}
 			}

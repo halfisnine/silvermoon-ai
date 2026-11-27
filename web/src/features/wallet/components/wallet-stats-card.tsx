@@ -39,16 +39,24 @@ export function WalletStatsCard(props: {
   if (props.error) {
     return <ErrorState className='min-h-28' onRetry={props.onRetry} />
   }
+  const paid = props.balance?.paid
+  const hasDebt =
+    !props.loading &&
+    !!paid &&
+    /^-\d+(\.\d+)?$/.test(paid.amount) &&
+    /[1-9]/.test(paid.amount)
   const stats = [
     {
       label: t('Remaining paid amount'),
       money: props.balance?.paid,
       icon: WalletCards,
+      tone: hasDebt ? ('destructive' as const) : ('success' as const),
     },
     {
       label: t('Remaining gift amount'),
       money: props.balance?.gift,
       icon: Gift,
+      tone: 'info' as const,
     },
   ]
   return (
@@ -56,7 +64,7 @@ export function WalletStatsCard(props: {
       role='group'
       aria-label={t('Wallet')}
       className={cn(
-        'grid grid-cols-2 divide-x rounded-lg border',
+        'grid grid-cols-2 rounded-lg border',
         props.compact && 'bg-background/40'
       )}
     >
@@ -65,12 +73,13 @@ export function WalletStatsCard(props: {
           key={item.label}
           className={cn(
             'min-w-0',
+            index === 1 && 'border-l',
             props.compact ? 'px-2.5 py-2.5' : 'px-3 py-3 sm:px-5 sm:py-4'
           )}
         >
           <div className='flex items-center gap-2'>
             {!props.compact && (
-              <IconBadge tone={index === 0 ? 'success' : 'info'} size='stat'>
+              <IconBadge tone={item.tone} size='stat'>
                 <item.icon />
               </IconBadge>
             )}
@@ -84,7 +93,8 @@ export function WalletStatsCard(props: {
             <div
               className={cn(
                 'mt-2 font-mono text-lg font-bold break-all tabular-nums',
-                !props.compact && 'sm:text-2xl'
+                !props.compact && 'sm:text-2xl',
+                index === 0 && hasDebt && 'text-destructive'
               )}
             >
               {item.money
@@ -113,6 +123,26 @@ export function WalletStatsCard(props: {
           )}
         </div>
       ))}
+      {hasDebt && paid && (
+        <p
+          role='status'
+          className={cn(
+            'text-destructive col-span-2 min-w-0 border-t text-xs leading-relaxed break-words',
+            props.compact ? 'px-2.5 py-2' : 'px-3 py-3 sm:px-5'
+          )}
+        >
+          {t(
+            'Amount owed: {{amount}}. Your next recharge will automatically offset this debt.',
+            {
+              amount: formatMarketingMoney(
+                paid.amount.slice(1),
+                paid.currency,
+                i18n.language
+              ),
+            }
+          )}
+        </p>
+      )}
     </div>
   )
 }

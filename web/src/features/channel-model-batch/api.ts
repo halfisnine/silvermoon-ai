@@ -45,11 +45,14 @@ export type BatchSnapshot = {
   metadata: Model[]
   channels: BatchChannel[]
   version: string
+  endpoint_options?: Record<string, { path: string; method: string }>
 }
 export type BatchChange = {
   source_name: string
   model_name: string
   vendor_id?: number
+  status?: number
+  endpoints?: string
   pricing?: PricingValues
   expected_pricing_version?: string
 }
@@ -57,6 +60,10 @@ export type DraftRow = BatchRow & {
   name: string
   vendorId: number
   vendorTouched?: boolean
+  squareVisible?: boolean
+  squareTouched?: boolean
+  endpoints?: string
+  endpointsTouched?: boolean
   quickPricing?: import('./quick-pricing').QuickPrice
   priceError?: string
   pricing?: PricingValues

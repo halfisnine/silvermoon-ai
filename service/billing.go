@@ -60,7 +60,7 @@ func PreConsumeBilling(c *gin.Context, preConsumedQuota int, relayInfo *relaycom
 		return types.NewError(errors.New(MarketingBillingMessage(c, err)), types.ErrorCodeQueryDataError, types.ErrOptionWithSkipRetry())
 	}
 	if !managed {
-		return types.NewErrorWithStatusCode(errors.New(MarketingBillingMessage(c, model.ErrMarketingReview)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
+		return types.NewErrorWithStatusCode(errors.New(MarketingBillingMessage(c, model.ErrMarketingOrigin)), types.ErrorCodeInsufficientUserQuota, http.StatusForbidden, types.ErrOptionWithSkipRetry())
 	}
 	session, err := NewMarketingBillingSession(relayInfo, preConsumedQuota)
 	if err != nil {

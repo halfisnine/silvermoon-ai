@@ -15,7 +15,6 @@ import (
 	"github.com/MoeForge/moego/ojson"
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -166,7 +165,7 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 	}
 	var usage dto.Usage
 	if err = conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		return &usage, xunfeiUnknownOutcome(info, usage, "request_write_failed", relaycommon.StreamEndReasonScannerErr)
+		return &usage, xunfeiFailedOutcome(c, info, usage, "request_write_failed", relaycommon.StreamEndReasonScannerErr)
 	}
 	if info.IsStream {
 		helper.SetEventStreamHeaders(c)
@@ -180,11 +179,11 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 			if c.Request.Context().Err() != nil {
 				reason = relaycommon.StreamEndReasonClientGone
 			}
-			return &usage, xunfeiUnknownOutcome(info, usage, "response_interrupted", reason)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "response_interrupted", reason)
 		}
 		var response XunfeiChatResponse
 		if err := common.Unmarshal(message, &response); err != nil {
-			return &usage, xunfeiUnknownOutcome(info, usage, "response_decode_failed", relaycommon.StreamEndReasonScannerErr)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "response_decode_failed", relaycommon.StreamEndReasonScannerErr)
 		}
 		// Require an explicit success code; a missing field is not code zero.
 		code, codePresent := ojson.GetBytes(message, "header.code").Value().(float64)
@@ -192,19 +191,19 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 			if codePresent {
 				info.StreamStatus.MarkFailed(strconv.Itoa(response.Header.Code), "xunfei_error", 502)
 			}
-			return &usage, xunfeiUnknownOutcome(info, usage, "upstream_error", relaycommon.StreamEndReasonHandlerStop)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "upstream_error", relaycommon.StreamEndReasonHandlerStop)
 		}
 		frameUsage := response.Payload.Usage.Text
 		if frameUsage.PromptTokens < 0 || frameUsage.CompletionTokens < 0 || frameUsage.TotalTokens < 0 ||
 			frameUsage.PromptTokens > common.MaxQuota-usage.PromptTokens || frameUsage.CompletionTokens > common.MaxQuota-usage.CompletionTokens || frameUsage.TotalTokens > common.MaxQuota-usage.TotalTokens {
-			return &usage, xunfeiUnknownOutcome(info, usage, "invalid_usage_quantity", relaycommon.StreamEndReasonHandlerStop)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "invalid_usage_quantity", relaycommon.StreamEndReasonHandlerStop)
 		}
 		usage.PromptTokens += response.Payload.Usage.Text.PromptTokens
 		usage.CompletionTokens += response.Payload.Usage.Text.CompletionTokens
 		usage.TotalTokens += response.Payload.Usage.Text.TotalTokens
 		status, statusPresent := ojson.GetBytes(message, "payload.choices.status").Value().(float64)
 		if !statusPresent || (status != 0 && status != 1 && status != 2) {
-			return &usage, xunfeiUnknownOutcome(info, usage, "invalid_response_status", relaycommon.StreamEndReasonHandlerStop)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "invalid_response_status", relaycommon.StreamEndReasonHandlerStop)
 		}
 		for _, item := range response.Payload.Choices.Text {
 			observedOutput = observedOutput || item.Content != ""
@@ -229,7 +228,7 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 		}
 		if info.IsStream {
 			if err := helper.ObjectData(c, streamResponseXunfei2OpenAI(&response)); err != nil && !terminal {
-				return &usage, xunfeiUnknownOutcome(info, usage, "client_disconnected", relaycommon.StreamEndReasonClientGone)
+				return &usage, xunfeiFailedOutcome(c, info, usage, "client_disconnected", relaycommon.StreamEndReasonClientGone)
 			}
 			if terminal {
 				helper.Done(c)
@@ -249,7 +248,7 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 		response.Payload.Choices.Text[0].Content = content.String()
 		encoded, err := common.Marshal(responseXunfei2OpenAI(&response))
 		if err != nil {
-			return &usage, xunfeiUnknownOutcome(info, usage, "response_encoding_failed", relaycommon.StreamEndReasonHandlerStop)
+			return &usage, xunfeiFailedOutcome(c, info, usage, "response_encoding_failed", relaycommon.StreamEndReasonHandlerStop)
 		}
 		c.Writer.Header().Set("Content-Type", "application/json")
 		_, _ = c.Writer.Write(encoded)
@@ -257,20 +256,13 @@ func xunfeiHandler(c *gin.Context, info *relaycommon.RelayInfo, textRequest dto.
 	}
 }
 
-// Persist only classification and observed billing quantities. Provider messages
-// and the authenticated URL can contain private data and must not enter evidence.
-func xunfeiUnknownOutcome(info *relaycommon.RelayInfo, usage dto.Usage, reason string, end relaycommon.StreamEndReason) *types.NewAPIError {
-	info.BillingUsageEstimated = true
+// A single-chat WebSocket follows ordinary request billing. Preserve observed
+// billable usage through the existing calculator before failure cleanup runs.
+func xunfeiFailedOutcome(c *gin.Context, info *relaycommon.RelayInfo, usage dto.Usage, reason string, end relaycommon.StreamEndReason) *types.NewAPIError {
 	info.StreamStatus.MarkIncomplete(reason)
 	info.StreamStatus.SetEndReason(end, nil)
-	if funding, managed := info.Billing.(*service.MarketingBillingSession); managed {
-		evidence, err := common.Marshal(map[string]any{"protocol": "xunfei_single_chat", "reason": reason, "observed_usage": usage, "stream_outcome": info.StreamStatus.OutcomeSnapshot()})
-		if err == nil {
-			err = funding.PreserveUnknown(string(evidence))
-		}
-		if err != nil && !errors.Is(err, model.ErrMarketingReview) {
-			common.SysError(fmt.Sprintf("xunfei unresolved funding evidence could not be saved: %v", err))
-		}
+	if dto.HasOpenAIUsageTokens(&usage) {
+		service.PostTextConsumeQuota(c, info, &usage, nil)
 	}
 	return types.NewError(errors.New("xunfei response did not complete successfully"), types.ErrorCodeBadResponseBody, types.ErrOptionWithSkipRetry())
 }

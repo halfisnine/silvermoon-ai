@@ -97,6 +97,10 @@ func main() {
 		runGatewayCapacity()
 		return
 	}
+	if os.Getenv("MV2_GATEWAY_SUITE") == "failure" {
+		runGatewayFailures()
+		return
+	}
 	cacheProxy := startGatewayCacheProxy()
 	defer cacheProxy.listener.Close()
 	must(os.Setenv("REDIS_CONN_STRING", "redis://"+cacheProxy.listener.Addr().String()+"/14"))
@@ -239,10 +243,10 @@ func main() {
 			check(funding.State == "settled" && funding.CostKnown && funding.SettledQuota == 500, "fixed request must retain its confirmed price")
 			check(auditToken.RemainQuota == 9500, "fixed request token charge")
 		} else {
-			check(funding.State == "review" && !funding.CostKnown && funding.SettledQuota == 0 && funding.ReservedQuota > 0, "estimated usage must retain unresolved funds")
+			check(funding.State == "settled" && funding.CostKnown && funding.ReservedQuota == 0, "ordinary usage fallback must follow original payable calculation")
 			var hold model.MarketingTokenHold
 			must(model.DB.Where("token_id = ?", auditToken.Id).First(&hold).Error)
-			check(auditToken.RemainQuota == 10000 && hold.ReservedQuota == funding.ReservedQuota && auditToken.UsedQuota == 0, "unknown usage token hold must remain")
+			check(int64(auditToken.RemainQuota) == 10000-funding.SettledQuota && hold.ReservedQuota == 0 && int64(auditToken.UsedQuota) == funding.SettledQuota, "fallback usage must reconcile with token charge")
 		}
 		fmt.Printf("GATEWAY_USAGE_PROVENANCE_OK case=%s known=%t state=%s\n", scenario.name, funding.CostKnown, funding.State)
 	}

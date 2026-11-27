@@ -184,8 +184,7 @@ func TestXunfeiSingleRequestFundingAndProtocol(t *testing.T) {
 					assert.True(t, types.IsSkipRetryError(apiErr))
 					assert.NotContains(t, recorder.Body.String(), "[DONE]")
 				}
-				// The outer request cleanup must not turn an executed unknown call into a
-				// pre-dispatch zero charge. It is harmless after a completed settlement.
+				// Failure cleanup refunds unused sources, without erasing partial usage.
 				session.Refund(ctx)
 				var funding model.MarketingFunding
 				require.NoError(t, db.Where("user_id = ?", user.Id).First(&funding).Error)
@@ -199,17 +198,24 @@ func TestXunfeiSingleRequestFundingAndProtocol(t *testing.T) {
 				require.NoError(t, db.Model(&model.MarketingDispatch{}).Where("funding_id = ?", originalFunding.ID).Count(&dispatches).Error)
 				if scenario.handshake {
 					assert.Zero(t, dispatches)
-					assert.Equal(t, "settled", funding.State)
-					assert.Zero(t, funding.ActualQuota)
-					assert.Zero(t, funding.ReservedQuota)
-				} else if scenario.complete && !scenario.unknownUsage {
+				} else {
 					assert.EqualValues(t, 1, dispatches)
-					assert.Equal(t, "settled", funding.State)
+				}
+				if scenario.name == "cumulative_usage_overflow" {
+					assert.Equal(t, "review", funding.State)
 					assert.True(t, funding.CostKnown)
+					assert.EqualValues(t, common.MaxQuota, funding.ActualQuota)
+					assert.EqualValues(t, 100, funding.SettledQuota)
+					assert.Zero(t, token.RemainQuota)
+				} else {
 					expectedQuota := scenario.expectedQuota
-					if expectedQuota == 0 {
+					if scenario.unknownUsage {
+						expectedQuota = 4
+					} else if expectedQuota == 0 && (scenario.complete || scenario.name == "partial_usage_then_disconnect" || scenario.name == "fixed_price_incomplete") {
 						expectedQuota = 7
 					}
+					assert.Equal(t, "settled", funding.State)
+					assert.True(t, funding.CostKnown)
 					giftSpent := min(expectedQuota, 5)
 					assert.EqualValues(t, expectedQuota, funding.ActualQuota)
 					assert.Zero(t, funding.ReservedQuota)
@@ -219,20 +225,8 @@ func TestXunfeiSingleRequestFundingAndProtocol(t *testing.T) {
 					assert.Equal(t, 100-expectedQuota, token.RemainQuota)
 					assert.Equal(t, expectedQuota, token.UsedQuota)
 					assert.Zero(t, hold.ReservedQuota)
-				} else {
-					assert.EqualValues(t, 1, dispatches)
-					assert.Equal(t, "review", funding.State)
-					assert.False(t, funding.CostKnown)
-					assert.EqualValues(t, 10, funding.ReservedQuota)
-					assert.Equal(t, 100, user.Quota)
-					assert.EqualValues(t, 5, gift.RemainingQuota)
-					assert.EqualValues(t, 5, gift.ReservedQuota)
-					assert.Equal(t, 100, token.RemainQuota)
-					assert.EqualValues(t, 10, hold.ReservedQuota)
-					if strings.Contains(scenario.name, "partial") || scenario.name == "fixed_price_incomplete" {
-						assert.Contains(t, funding.UsageEvidence, `"prompt_tokens":4`)
-					}
 				}
+
 				for _, secret := range []string{"private-auth-marker", "private-provider-marker"} {
 					assert.NotContains(t, funding.PricingEvidence, secret)
 					assert.NotContains(t, funding.UsageEvidence, secret)

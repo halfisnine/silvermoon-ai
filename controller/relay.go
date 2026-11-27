@@ -224,6 +224,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
+		if funding, ok := relayInfo.Billing.(*service.MarketingBillingSession); ok {
+			if err := funding.FinishFailedAttempt(); err != nil {
+				newAPIError = types.NewError(errors.New(service.MarketingBillingMessage(c, err)), types.ErrorCodeDoRequestFailed, types.ErrOptionWithSkipRetry())
+			}
+		}
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)

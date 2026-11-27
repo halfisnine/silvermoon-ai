@@ -15,6 +15,8 @@ import (
 var (
 	ErrMarketingInsufficient = errors.New("marketing funds insufficient")
 	ErrMarketingReview       = errors.New("marketing funding requires reconciliation")
+	ErrMarketingOrigin       = errors.New("initial funding sources have not been verified")
+	ErrMarketingDebt         = errors.New("confirmed consumption remains unpaid")
 	ErrMarketingAccess       = errors.New("marketing funding access denied")
 )
 
@@ -156,10 +158,10 @@ func loadMarketingFundingBook(tx *gorm.DB, userID, tokenID int) (*fundingBook, e
 			return nil, err
 		}
 	}
-	if user.Quota < 0 || int64(user.Quota) > common.MaxWalletQuota || account.PaidReserved < 0 || book.tokenHold.ReservedQuota < 0 || book.tokenHold.ReservedQuota > common.MaxWalletQuota || book.token.UsedQuota < 0 || int64(book.token.UsedQuota) > common.MaxWalletQuota {
+	if int64(user.Quota) < -common.MaxWalletQuota || int64(user.Quota) > common.MaxWalletQuota || account.PaidReserved < 0 || account.PaidReserved > common.MaxWalletQuota || book.tokenHold.ReservedQuota < 0 || book.tokenHold.ReservedQuota > common.MaxWalletQuota || book.token.UsedQuota < 0 || int64(book.token.UsedQuota) > common.MaxWalletQuota {
 		return nil, ErrMarketingReview
 	}
-	if !book.token.UnlimitedQuota && (book.token.RemainQuota < 0 || int64(book.token.RemainQuota) > common.MaxWalletQuota) {
+	if !book.token.UnlimitedQuota && (int64(book.token.RemainQuota) < -common.MaxWalletQuota || int64(book.token.RemainQuota) > common.MaxWalletQuota) {
 		return nil, ErrMarketingReview
 	}
 	if err = lockForUpdate(tx).Where("user_id = ?", userID).Find(&book.gifts).Error; err != nil {
@@ -288,7 +290,7 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 		return nil, ErrMarketingAccess
 	}
 	if book.account.OriginState != "verified" {
-		return nil, ErrMarketingReview
+		return nil, ErrMarketingOrigin
 	}
 	var prior MarketingFunding
 	err = lockForUpdate(tx).Where("request_key = ?", key).First(&prior).Error
@@ -301,13 +303,8 @@ func ReserveMarketingFunding(tx *gorm.DB, input MarketingReservationInput) (*Mar
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	// A current locking read avoids a previously established MySQL snapshot.
-	var unresolved []MarketingFunding
-	if err = lockForUpdate(tx).Where("user_id = ? AND state = ?", input.UserID, "review").Limit(1).Find(&unresolved).Error; err != nil {
+	if err = CheckMarketingFundingDebt(tx, input.UserID); err != nil {
 		return nil, err
-	}
-	if len(unresolved) > 0 {
-		return nil, ErrMarketingReview
 	}
 	// Exhausted limited tokens cannot start another request, even when input
 	// estimation is zero or a stale shared cache still shows funds.
@@ -373,7 +370,7 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 		if !input.Final || input.ActualQuota == nil {
 			return nil, ErrMarketingInput
 		}
-	case "pre_dispatch_cancel":
+	case "pre_dispatch_cancel", "request_failure":
 		if !input.Final || input.ActualQuota == nil || *input.ActualQuota != 0 {
 			return nil, ErrMarketingInput
 		}
@@ -432,9 +429,18 @@ func SettleMarketingFunding(tx *gorm.DB, input MarketingSettlementInput) (*Marke
 	if funding.FinalObserved && !input.Final {
 		return nil, ErrMarketingConflict
 	}
-	if input.EvidenceKind == "pre_dispatch_cancel" {
+	if input.EvidenceKind == "pre_dispatch_cancel" || input.EvidenceKind == "request_failure" {
 		if err = marketingRequestCanDispatch(tx, &funding); err != nil {
 			return nil, err
+		}
+		if input.EvidenceKind == "pre_dispatch_cancel" {
+			var failed []MarketingDispatch
+			if err = lockForUpdate(tx).Where("funding_id = ? AND state = ?", funding.ID, "failed").Limit(1).Find(&failed).Error; err != nil {
+				return nil, err
+			}
+			if len(failed) != 0 {
+				return nil, ErrMarketingConflict
+			}
 		}
 	}
 
@@ -571,11 +577,16 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 	if book.hasToken {
 		tokenAvailable -= int64(book.token.UsedQuota)
 		if !book.token.UnlimitedQuota {
-			tokenAvailable = min(tokenAvailable, int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+reserved)
+			// Already-incurred usage is fully charged even when the estimate was
+			// smaller than the token limit. Admission still requires positive funds.
+			tokenAvailable = min(tokenAvailable, common.MaxWalletQuota+int64(book.token.RemainQuota))
 		}
 	}
 	amount = min(amount, max(int64(0), tokenAvailable))
-	// Gifts and then paid source use current availability, excluding other holds.
+	// Gifts cannot be overdrawn or consume another request's hold. Confirmed
+	// usage beyond them belongs to the paid account, including a negative balance.
+	// A numeric bound (not wallet availability) limits settlement; pre-dispatch
+	// reservation remains fully backed by funds and tokens.
 	for i := 0; i <= len(book.gifts) && amount > 0; i++ {
 		var gift *MarketingGift
 		var sourceID int64
@@ -587,7 +598,7 @@ func (book *fundingBook) consume(tx *gorm.DB, funding *MarketingFunding, amount 
 			sourceID = gift.ID
 		}
 		allocation := book.allocation(funding.ID, sourceID)
-		available := int64(book.user.Quota) - book.account.PaidReserved + allocation.ReservedQuota
+		available := common.MaxWalletQuota + int64(book.user.Quota)
 		if gift != nil {
 			available = gift.RemainingQuota - gift.ReservedQuota + allocation.ReservedQuota
 		}
@@ -662,7 +673,7 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 		// Keep reversed consumption reserved for this in-flight request. Finalization
 		// releases it; an expired gift remains expired for every new request.
 		if debit.GiftID == 0 {
-			if int64(book.user.Quota) > common.MaxWalletQuota-take {
+			if int64(book.user.Quota) > common.MaxWalletQuota-take || book.account.PaidReserved > common.MaxWalletQuota-take {
 				return ErrMarketingInput
 			}
 			book.user.Quota += debitAmount
@@ -718,4 +729,26 @@ func (book *fundingBook) reverse(tx *gorm.DB, funding *MarketingFunding, amount 
 		}
 	}
 	return ErrMarketingReview
+}
+
+// CheckMarketingFundingDebt is called under the account lock before admitting
+// new work. An unknown remainder is not itself debt; its holds still reduce
+// available funds. Confirmed unpaid usage blocks even with CostKnown=false.
+func CheckMarketingFundingDebt(tx *gorm.DB, userID int) error {
+	var user User
+	if err := lockForUpdate(tx.Unscoped()).Select("id", "quota").First(&user, userID).Error; err != nil {
+		return err
+	}
+	if user.Quota < 0 {
+		return ErrMarketingDebt
+	}
+	// Retained pre-upgrade/numeric-bound exceptions still need reconciliation.
+	var unpaid []MarketingFunding
+	if err := lockForUpdate(tx).Where("user_id = ? AND state = ? AND actual_quota > settled_quota", userID, "review").Limit(1).Find(&unpaid).Error; err != nil {
+		return err
+	}
+	if len(unpaid) != 0 {
+		return ErrMarketingDebt
+	}
+	return nil
 }

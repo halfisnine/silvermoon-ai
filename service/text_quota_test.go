@@ -156,7 +156,7 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		{name: "audio missing usage charges once", expression: flat, audio: true, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "token reservation refunds to fixed price", expression: mixed, estimate: 50000, usage: &dto.Usage{PromptTokens: 100, TotalTokens: 100}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "fixed reservation settles token fallback", expression: mixed, estimate: 100, usage: &dto.Usage{PromptTokens: 50000, TotalTokens: 50000}, want: 50000, unit: billingexpr.BillingUnitToken},
-		{name: "missing token usage retains reservation for review", expression: mixed, estimate: 50000, review: true, unit: billingexpr.BillingUnitToken},
+		{name: "missing token usage follows original prompt fallback", expression: mixed, estimate: 50000, want: 50000, unit: billingexpr.BillingUnitToken},
 		{name: "evaluation error retains fixed reservation metadata", expression: `p == 50 ? tier("error", param("missing") * p + img_cr * 2) : tier("request", fixed(0.01))`, estimate: 100, usage: &dto.Usage{PromptTokens: 50, TotalTokens: 50}, review: true, unit: billingexpr.BillingUnitRequest},
 		{name: "explicit zero remains free", expression: `tier("free", fixed(0))`, usage: &dto.Usage{PromptTokens: 100, TotalTokens: 100}, unit: billingexpr.BillingUnitRequest},
 		{name: "multipliers and separate tool surcharge", expression: flat + ` * (param("fast") == true ? 2 : 1)`, groupRatio: 1.5, tool: true, want: 18000, unit: billingexpr.BillingUnitRequest},
@@ -1795,7 +1795,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 	require.NoError(t, db.FirstOrCreate(&model.MarketingFactSequence{ID: 1}).Error)
 
 	runTag := fmt.Sprint(time.Now().UnixNano())
-	for index, scenario := range []string{"zero_estimate_wallet", "zero_estimate_token", "zero_estimate_free", "zero_estimate_released", "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "before_dispatch", "ambiguous_dispatch", "crash_without_projection", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_tiered_reversal", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
+	for index, scenario := range []string{"zero_estimate_wallet", "zero_estimate_token", "zero_estimate_free", "zero_estimate_released", "estimated_usage", "responses_estimated_usage", "estimated_canonical", "empty_usage", "fixed_without_usage", "fixed_estimated_branch", "nonstream_missing_terminal", "failed_terminal_with_done", "gift_then_paid", "ordinary_failure_refund", "ordinary_retry", "accepted_receipt_failure", "task_without_receipt", "unknown_allows_next", "known_debt_blocks_next", "before_dispatch", "ambiguous_dispatch", "crash_without_projection", "historical_failure_reconcile", "revoked_before_dispatch", "text_terminal", "stream_interrupted", "log_outage", "log_retention", "logs_disabled", "export_disabled", "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure", "mj_recovery", "mj_timeout", "mj_provider_failure", "violation_fee", "realtime_two_rounds", "realtime_tiered_reversal", "realtime_cancelled_usage", "realtime_unknown_late", "realtime_buffer_zero", "realtime_output_zero", "realtime_pending_input", "realtime_pricing_failure", "realtime_audio_mismatch", "realtime_pipelined_commit", "realtime_automatic_expiry", "realtime_terminal_metadata", "realtime_metadata_capacity", "realtime_vad_normal", "realtime_vad_two_inputs", "realtime_vad_uncertain_config", "realtime_vad_default", "realtime_vad_partial", "realtime_vad_ga_default", "realtime_vad_partial_disabled", "realtime_stopped_start_late", "realtime_stopped_text_zero", "realtime_stopped_audio_zero"} {
 		t.Run(scenario, func(t *testing.T) {
 			user := model.User{Username: "mv2-" + fmt.Sprint(index) + runTag, AffCode: fmt.Sprintf("m%d%s", index, runTag[len(runTag)-6:]), Status: common.UserStatusEnabled}
 			require.NoError(t, db.Create(&user).Error)
@@ -1843,7 +1843,9 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				info.PriceData.AudioRatio = 1
 			}
 			if scenario == "realtime_pricing_failure" {
-				expression := `p == 0 ? tier("empty", p) : tier("invalid", c / (p-p))`
+				// An out-of-range runtime index produces a real evaluation error;
+				// floating division by zero instead saturates to a billable quota.
+				expression := `p == 0 ? tier("empty", p) : tier("invalid", [0][int(p)])`
 				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: 1_000_000, GroupRatio: 1}
 			}
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -1916,13 +1918,13 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 						require.NoError(t, coordinator.Close("upstream stopped before trusted terminal arrived"))
 						late := []byte(`{"type":"response.done","response":{"id":"automatic-unfunded","status":"completed","usage":{"total_tokens":5,"input_tokens":2,"output_tokens":3,"input_token_details":{"text_tokens":2},"output_token_details":{"text_tokens":3}}}}`)
 						recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
-						require.ErrorIs(t, err, model.ErrMarketingReview, "real cost survives recovery even though the token cannot pay it")
+						require.NoError(t, err, "already incurred usage fully settles even after token exhaustion")
 						require.NotNil(t, recovered)
 						assert.EqualValues(t, 105, recovered.ActualQuota)
-						assert.EqualValues(t, 100, recovered.SettledQuota)
-						assert.Equal(t, "review", recovered.State)
+						assert.EqualValues(t, 105, recovered.SettledQuota)
+						assert.Equal(t, "settled", recovered.State)
 						repeated, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
-						require.ErrorIs(t, err, model.ErrMarketingReview)
+						require.NoError(t, err)
 						assert.Equal(t, recovered.Revision, repeated.Revision)
 						var stopped model.MarketingRealtimeRound
 						require.NoError(t, db.First(&stopped, stoppedID).Error)
@@ -1949,10 +1951,14 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 						assert.EqualValues(t, 100, session.funding.SettledQuota)
 					}
 					require.NoError(t, db.First(&user, user.Id).Error)
-					assert.Equal(t, 20, user.Quota)
+					wantExtra := 0
+					if scenario == "realtime_stopped_start_late" {
+						wantExtra = 5
+					}
+					assert.Equal(t, 20-wantExtra, user.Quota)
 					require.NoError(t, db.First(&token, token.Id).Error)
-					assert.Zero(t, token.RemainQuota)
-					assert.Equal(t, 100, token.UsedQuota)
+					assert.Equal(t, -wantExtra, token.RemainQuota)
+					assert.Equal(t, 100+wantExtra, token.UsedQuota)
 					return
 				}
 
@@ -2410,20 +2416,11 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				}
 				require.True(t, RecordMarketingConsumption(ctx, info, model.RecordConsumeLogParams{ModelName: info.OriginModelName, Quota: 40}, usage, true, fixed))
 				require.NoError(t, db.First(&token, token.Id).Error)
-				if scenario == "fixed_without_usage" {
-					assert.Equal(t, "settled", session.funding.State)
-					assert.EqualValues(t, 40, session.funding.SettledQuota)
-					assert.Equal(t, 60, token.RemainQuota)
-				} else {
-					assert.Equal(t, "review", session.funding.State)
-					assert.False(t, session.funding.CostKnown)
-					assert.Zero(t, session.funding.SettledQuota)
-					assert.EqualValues(t, 30, session.funding.ReservedQuota)
-					assert.Equal(t, 100, token.RemainQuota)
-					var hold model.MarketingTokenHold
-					require.NoError(t, db.Where("token_id = ?", token.Id).First(&hold).Error)
-					assert.EqualValues(t, 30, hold.ReservedQuota)
-				}
+				assert.Equal(t, "settled", session.funding.State)
+				assert.EqualValues(t, 40, session.funding.SettledQuota)
+				assert.Zero(t, session.funding.ReservedQuota)
+				assert.Equal(t, 60, token.RemainQuota)
+
 			case "gift_then_paid":
 				require.NoError(t, session.BeginDispatch())
 				require.NoError(t, session.Reserve(40))
@@ -2435,21 +2432,101 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				require.NoError(t, db.First(&token, token.Id).Error)
 				assert.Equal(t, 80, user.Quota)
 				assert.Equal(t, 60, token.RemainQuota)
+			case "ordinary_retry":
+				require.NoError(t, session.BeginDispatch())
+				require.NoError(t, session.FinishFailedAttempt())
+				require.NoError(t, session.FinishFailedAttempt())
+				require.ErrorIs(t, session.BeginDispatch(), model.ErrMarketingConflict, "same attempt cannot be sent twice")
+				info.RetryIndex++
+				require.NoError(t, session.ReserveBeforeSubmit(40))
+				require.NoError(t, session.BeginDispatch())
+				require.NoError(t, session.Settle(40))
+				session.Refund(ctx)
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 80, user.Quota)
+				assert.Zero(t, session.funding.ReservedQuota)
+			case "task_without_receipt":
+				info.TaskRelayInfo = &relaycommon.TaskRelayInfo{}
+				require.NoError(t, session.BeginDispatch())
+				session.Refund(ctx)
+				assert.Equal(t, "review", session.funding.State)
+				assert.EqualValues(t, 30, session.funding.ReservedQuota)
+				assert.False(t, session.funding.CostKnown)
+			case "accepted_receipt_failure":
+				require.NoError(t, session.BeginDispatch())
+				require.NoError(t, session.RememberTaskReceipt("accepted-task", "public-task", nil, 30))
+				require.ErrorIs(t, session.FinishFailedAttempt(), model.ErrMarketingConflict)
+				session.Refund(ctx)
+				assert.Equal(t, "review", session.funding.State)
+				assert.EqualValues(t, 30, session.funding.ReservedQuota)
+				assert.False(t, session.funding.CostKnown)
+			case "unknown_allows_next", "known_debt_blocks_next":
+				require.NoError(t, session.BeginDispatch())
+				version := int64(1)
+				if scenario == "known_debt_blocks_next" {
+					actual := int64(130)
+					require.NoError(t, session.SettleEvidence(&actual, false, "upstream_progress", "confirmed partial charge", version))
+					version++
+				}
+				require.ErrorIs(t, session.SettleEvidence(nil, true, "unknown", "unresolved remainder", version), model.ErrMarketingReview)
+				nextInfo := *info
+				nextInfo.RequestId += "-next"
+				nextInfo.Billing = nil
+				next, err := NewMarketingBillingSession(&nextInfo, 30)
+				if scenario == "known_debt_blocks_next" {
+					require.ErrorIs(t, err, model.ErrMarketingDebt, "confirmed debt blocks even if total cost is unknown")
+				} else {
+					require.NoError(t, err)
+					require.NoError(t, next.BeginDispatch())
+					require.NoError(t, next.Settle(30))
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, 70, user.Quota, "old gift hold cannot be spent again")
+					assert.EqualValues(t, 30, session.funding.ReservedQuota)
+				}
+			case "ordinary_failure_refund":
+				require.NoError(t, session.BeginDispatch())
+				session.Refund(ctx)
+				session.Refund(ctx)
+				require.NoError(t, db.First(&user, user.Id).Error)
+				require.NoError(t, db.First(&token, token.Id).Error)
+				var gift model.MarketingGift
+				require.NoError(t, db.Where("user_id = ?", user.Id).First(&gift).Error)
+				assert.Equal(t, "settled", session.funding.State)
+				assert.Zero(t, session.funding.ReservedQuota)
+				assert.Zero(t, session.funding.SettledQuota)
+				assert.Equal(t, 100, user.Quota)
+				assert.EqualValues(t, 20, gift.RemainingQuota)
+				assert.Zero(t, gift.ReservedQuota)
+				assert.Equal(t, 100, token.RemainQuota)
+				nextInfo := *info
+				nextInfo.RequestId += "-next"
+				nextInfo.Billing = nil
+				require.Nil(t, PreConsumeBilling(ctx, 30, &nextInfo))
+				next := nextInfo.Billing.(*MarketingBillingSession)
+				require.NoError(t, next.BeginDispatch())
+				require.NoError(t, next.Settle(30))
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, 90, user.Quota)
 			case "before_dispatch":
 				session.Refund(ctx)
 				session.Refund(ctx)
 				assert.Equal(t, "settled", session.funding.State)
 				assert.Zero(t, session.funding.SettledQuota)
 				assert.Zero(t, session.funding.ReservedQuota)
-			case "ambiguous_dispatch", "crash_without_projection":
+			case "ambiguous_dispatch", "crash_without_projection", "historical_failure_reconcile":
 				require.NoError(t, session.BeginDispatch())
 				require.ErrorIs(t, session.BeginDispatch(), model.ErrMarketingConflict)
-				if scenario == "crash_without_projection" {
-					admin := model.User{Username: "crash-admin-" + runTag, AffCode: "ca" + runTag[len(runTag)-8:], Role: common.RoleRootUser, Status: common.UserStatusEnabled}
+				if scenario == "crash_without_projection" || scenario == "historical_failure_reconcile" {
+					finalQuota, version := 40, int64(1)
+					if scenario == "historical_failure_reconcile" {
+						require.ErrorIs(t, session.PreserveUnknown("old ordinary 503 recorded as unknown"), model.ErrMarketingReview)
+						finalQuota, version = 0, 2
+					}
+					admin := model.User{Username: fmt.Sprintf("crash-admin-%d-%s", index, runTag), AffCode: fmt.Sprintf("ca%d%s", index, runTag[len(runTag)-8:]), Role: common.RoleRootUser, Status: common.UserStatusEnabled}
 					require.NoError(t, db.Create(&admin).Error)
-					amount, currency, err := MarketingWalletDisplayAmount(40)
+					amount, currency, err := MarketingWalletDisplayAmount(int64(finalQuota))
 					require.NoError(t, err)
-					command := MarketingMaintenanceRequest{Action: "reconcile", ActorID: admin.Id, UserID: user.Id, Reference: "crash-" + runTag, Evidence: "provider final invoice", AuthorizationReference: "operator approval", WriterIsolationEvidence: "crashed process cannot resume", Currency: currency, TerminalEvidence: "provider terminal export", SourceEvidence: "original request identity from gateway audit", FundingID: session.funding.ID, Version: 1, FinalAmount: &amount, OriginalRequestID: "wrong-request"}
+					command := MarketingMaintenanceRequest{Action: "reconcile", ActorID: admin.Id, UserID: user.Id, Reference: fmt.Sprintf("crash-%d-%s", index, runTag), Evidence: "provider final invoice", AuthorizationReference: "operator approval", WriterIsolationEvidence: "crashed process cannot resume", Currency: currency, TerminalEvidence: "provider terminal export", SourceEvidence: "original request identity from gateway audit", FundingID: session.funding.ID, Version: version, FinalAmount: &amount, OriginalRequestID: "wrong-request"}
 					_, err = RunMarketingMaintenance(context.Background(), command, "local-maintenance:test", true)
 					require.ErrorIs(t, err, model.ErrMarketingConflict)
 					command.OriginalRequestID = info.RequestId
@@ -2476,7 +2553,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 					delete(result, "cache_refresh_pending")
 					assert.Equal(t, result, replay, "replay returns the original financial operation after cache recovery")
 					require.NoError(t, db.First(&user, user.Id).Error)
-					assert.Equal(t, 80, user.Quota)
+					assert.Equal(t, 100-max(finalQuota-20, 0), user.Quota)
 					assert.Equal(t, 1, user.RequestCount)
 					var projections []model.MarketingUsageProjection
 					require.NoError(t, db.Where("funding_id = ?", session.funding.ID).Find(&projections).Error)
@@ -2484,11 +2561,11 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 					var record model.Log
 					require.NoError(t, common.UnmarshalJsonStr(projections[0].Payload, &record))
 					assert.Equal(t, info.RequestId, record.RequestId)
-					assert.Equal(t, 40, record.Quota)
+					assert.Equal(t, finalQuota, record.Quota)
 					assert.Contains(t, record.Other, "usage_quantity_unknown")
 					return
 				}
-				session.Refund(ctx)
+				require.ErrorIs(t, session.PreserveUnknown("process lost terminal evidence"), model.ErrMarketingReview)
 				assert.Equal(t, "review", session.funding.State)
 				assert.EqualValues(t, 30, session.funding.ReservedQuota)
 				assert.False(t, session.funding.CostKnown)
@@ -2571,17 +2648,11 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				require.Len(t, rows, 1)
 				require.NoError(t, db.First(&user, user.Id).Error)
 				assert.Equal(t, 1, user.RequestCount)
-				if scenario == "stream_interrupted" {
-					assert.Equal(t, "review", session.funding.State)
-					assert.EqualValues(t, 30, session.funding.ReservedQuota)
-					assert.Zero(t, rows[0].Quota)
-					assert.Equal(t, 100, user.Quota)
-				} else {
-					assert.Equal(t, "settled", session.funding.State)
-					assert.Equal(t, 40, rows[0].Quota)
-					assert.Equal(t, 80, user.Quota)
-					assert.Equal(t, 40, user.UsedQuota)
-				}
+				assert.Equal(t, "settled", session.funding.State)
+				assert.Equal(t, 40, rows[0].Quota)
+				assert.Equal(t, 80, user.Quota)
+				assert.Equal(t, 40, user.UsedQuota)
+
 			case "task_recovery", "task_timeout", "task_unknown_usage", "task_provider_failure":
 				require.NoError(t, session.BeginDispatch())
 				task := &model.Task{TaskID: "task-" + scenario + runTag, UserId: user.Id, Status: model.TaskStatusSubmitted, Quota: 30, SubmitTime: now}
@@ -2735,7 +2806,11 @@ func TestMarketingBillingMessagesRespectReaderLanguage(t *testing.T) {
 		{"en", model.ErrMarketingInsufficient, "Available funds or the API token spending limit cannot cover this request."},
 		{"zh-CN", fmt.Errorf("reserve: %w", model.ErrMarketingInsufficient), "可用金额或 API 令牌的消费限额不足，无法执行本次请求。"},
 		{"en", model.ErrMarketingConflict, "This request has already been submitted or finalized. Do not resubmit it automatically."},
-		{"zh-CN", model.ErrMarketingReview, "账户资金需要核对，请联系管理员。"},
+		{"zh-CN", model.ErrMarketingReview, "请求的账务处理异常，请联系管理员。"},
+		{"zh-CN", model.ErrMarketingOrigin, "初始余额的资金来源尚未核验，请联系管理员。"},
+		{"en", model.ErrMarketingOrigin, "Initial balance sources have not been verified. Please contact the administrator."},
+		{"zh-TW", model.ErrMarketingDebt, "帳戶存在欠費，請儲值後再發起新請求。"},
+		{"en", model.ErrMarketingDebt, "Your account has unpaid charges. Please add funds before starting another request."},
 		{"zh-TW", model.ErrMarketingAccess, "此帳號或 API 權杖目前無法發起新請求。"},
 	} {
 		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

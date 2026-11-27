@@ -1,6 +1,10 @@
 package common
 
-import "github.com/QuantumNous/new-api/constant"
+import (
+	"maps"
+
+	"github.com/QuantumNous/new-api/constant"
+)
 
 // EndpointInfo 描述单个端点的默认请求信息
 // path: 上游路径
@@ -34,4 +38,10 @@ var defaultEndpointInfoMap = map[constant.EndpointType]EndpointInfo{
 func GetDefaultEndpointInfo(et constant.EndpointType) (EndpointInfo, bool) {
 	info, ok := defaultEndpointInfoMap[et]
 	return info, ok
+}
+
+// GetDefaultEndpointInfos returns the built-in endpoint catalog without exposing
+// the shared map to callers that prepare management forms.
+func GetDefaultEndpointInfos() map[constant.EndpointType]EndpointInfo {
+	return maps.Clone(defaultEndpointInfoMap)
 }

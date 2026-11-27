@@ -9,7 +9,6 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
@@ -150,6 +149,19 @@ func (s *MarketingBillingSession) RejectDispatch(evidence string) error {
 	})
 }
 
+// FinishFailedAttempt lets the existing relay policy retry an ordinary failed
+// attempt. It cannot erase an accepted task receipt or already settled usage.
+func (s *MarketingBillingSession) FinishFailedAttempt() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.info.TaskRelayInfo != nil || s.funding.Realtime || s.funding.FinalObserved || s.funding.State == "settled" || s.dispatch == nil {
+		return nil
+	}
+	return model.DB.Transaction(func(tx *gorm.DB) error {
+		return model.FailMarketingDispatch(tx, s.info.UserId, s.funding.ID, s.dispatch.ID)
+	})
+}
+
 func (s *MarketingBillingSession) RememberTaskReceipt(upstreamID, publicID string, result *relaycommon.TaskInfo, calculatedQuota int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -172,8 +184,8 @@ func (s *MarketingBillingSession) RememberTaskReceipt(upstreamID, publicID strin
 	})
 }
 
-// Settle is used only for a known terminal amount. Unknown outcomes must call
-// PreserveUnknown instead; an estimate is never promoted to actual consumption.
+// Settle accepts the amount payable under the existing pricing contract.
+// Unresolved outcomes without a payable amount use PreserveUnknown instead.
 func (s *MarketingBillingSession) Settle(actual int) error {
 	amount := int64(actual)
 	return s.SettleEvidence(&amount, true, "upstream_terminal", "terminal amount from existing pricing contract", 1)
@@ -213,14 +225,24 @@ func (s *MarketingBillingSession) NeedsRefund() bool {
 	return !s.funding.Realtime && s.funding.State != "settled" && !s.funding.FinalObserved
 }
 
-// Refund means finalize a failed request, not necessarily credit its reservation.
-// The database rejects pre-dispatch cancellation after any unresolved dispatch.
+// Refund follows ordinary failure policy, releasing each original source.
+// Accepted task receipts and observed charges are never erased by this path.
 func (s *MarketingBillingSession) Refund(c *gin.Context) {
 	if !s.NeedsRefund() {
 		return
 	}
 	zero := int64(0)
-	err := s.SettleEvidence(&zero, true, "pre_dispatch_cancel", "request stopped before any accepted dispatch", 1)
+	var err error
+	if s.info.TaskRelayInfo != nil {
+		// A submitted asynchronous task can be accepted even when its receipt is
+		// truncated or missing. Keep the original dispatch barrier for tasks.
+		err = s.SettleEvidence(&zero, true, "pre_dispatch_cancel", "task stopped before any accepted dispatch", 1)
+	} else {
+		err = s.FinishFailedAttempt()
+		if err == nil {
+			err = s.SettleEvidence(&zero, true, "request_failure", "ordinary request failed under baseline refund policy", 1)
+		}
+	}
 	if errors.Is(err, model.ErrMarketingConflict) {
 		err = s.PreserveUnknown("request failed after possible upstream execution")
 	}
@@ -229,8 +251,9 @@ func (s *MarketingBillingSession) Refund(c *gin.Context) {
 	}
 }
 
-// RecordMarketingConsumption uses the original pricing result while recording
-// certainty separately. A broken stream never turns its estimate into a bill.
+// RecordMarketingConsumption uses the original calculator result, including
+// its documented usage fallbacks. Evidence retains whether usage was estimated;
+// a reservation alone or an invalid pricing result is not a final bill.
 func RecordMarketingConsumption(c *gin.Context, info *relaycommon.RelayInfo, params model.RecordConsumeLogParams, usage *dto.Usage, pricingValid, fixed bool) bool {
 	session, managed := info.Billing.(*MarketingBillingSession)
 	if !managed {
@@ -239,26 +262,10 @@ func RecordMarketingConsumption(c *gin.Context, info *relaycommon.RelayInfo, par
 	estimated := info.BillingUsageEstimated || common.GetContextKeyBool(c, constant.ContextKeyEstimatedBillingUsage) ||
 		(usage != nil && usage.BillingUsage != nil && usage.BillingUsage.Estimated)
 	confirmedUsage := dto.HasOpenAIUsageTokens(effectiveBillingUsage(usage)) && !estimated
-	// A request-priced leaf may still have been selected by estimated token
-	// counts. Only a usage-independent price can settle without actual usage.
-	if fixed && !confirmedUsage && info.TieredBillingSnapshot != nil {
-		snapshot := info.TieredBillingSnapshot
-		used := billingexpr.UsedVarsByHash(snapshot.ExprString, snapshot.ExprHash)
-		for _, name := range []string{"p", "c", "len", "cr", "cc", "cc1h", "cc12h", "img", "img_cr", "img_o", "ai", "ao", "u"} {
-			if used[name] {
-				fixed = false
-				break
-			}
-		}
-	}
-	known := pricingValid && (confirmedUsage || fixed)
+	// The existing protocol/pricing path decides the payable amount, including
+	// partial streams. Do not replace that contract with a terminal-only rule.
+	known := pricingValid
 	outcome := info.StreamStatus.OutcomeSnapshot()
-	if info.IsStream || outcome.ExpectsTerminal {
-		complete := outcome.Response == relaycommon.ResponseOutcomeCompleted ||
-			(outcome.Response == relaycommon.ResponseOutcomeUnknown && !outcome.HasErrors && (outcome.EndReason == relaycommon.StreamEndReasonDone ||
-				(outcome.EndReason == relaycommon.StreamEndReasonEOF && !outcome.ExpectsTerminal)))
-		known = known && complete
-	}
 	var actual *int64
 	kind := "unknown"
 	if known {
@@ -271,7 +278,7 @@ func RecordMarketingConsumption(c *gin.Context, info *relaycommon.RelayInfo, par
 		common.SysError(fmt.Sprintf("marketing final pricing evidence encoding failed: %v", err))
 		return true
 	}
-	evidence, err := common.Marshal(map[string]any{"usage": usage, "usage_estimated": estimated, "usage_confirmed": confirmedUsage, "stream_outcome": outcome, "pricing_valid": pricingValid, "calculated_quota": params.Quota, "pricing": pricing})
+	evidence, err := common.Marshal(map[string]any{"usage": usage, "usage_estimated": estimated, "usage_confirmed": confirmedUsage, "stream_outcome": outcome, "pricing_valid": pricingValid, "fixed_price": fixed, "calculated_quota": params.Quota, "pricing": pricing})
 	if err != nil {
 		common.SysError(fmt.Sprintf("marketing usage evidence encoding failed: %v", err))
 		return true
@@ -314,6 +321,10 @@ func MarketingBillingMessage(c *gin.Context, err error) string {
 	switch {
 	case errors.Is(err, model.ErrMarketingInsufficient):
 		key = i18n.MsgFundingInsufficient
+	case errors.Is(err, model.ErrMarketingOrigin):
+		key = i18n.MsgFundingOrigin
+	case errors.Is(err, model.ErrMarketingDebt):
+		key = i18n.MsgFundingDebt
 	case errors.Is(err, model.ErrMarketingReview):
 		key = i18n.MsgFundingReview
 	case errors.Is(err, model.ErrMarketingAccess):
