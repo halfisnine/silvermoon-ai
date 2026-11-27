@@ -19,6 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Gift issuance validation and server-side source labels.
+  'Select at least one user',
+  'Select up to 100 users',
+  'Enter an internal issuance reason',
+  'The reason is too long',
+  'Enter a validity period between 1 second and 36500 days',
+  'Recipient is missing or disabled',
+  'Gift amount exceeds the recipient wallet limit',
+  'Gift delivery failed; retry this batch',
+  'Administrator gift',
+
   'The adjusted price is outside the supported range.',
   'This expression cannot be adjusted automatically. Keep the source price or edit it manually.',
   'Task usage metadata is unavailable. Pricing details cannot be displayed.',

@@ -177,6 +177,12 @@ export function useSidebarData(badges: SidebarBadges = {}): SidebarData {
             icon: Radio,
           },
           {
+            title: t('Batch pricing'),
+            url: '/channel-model-batch',
+            icon: ListTodo,
+            requiredRole: ROLE.SUPER_ADMIN,
+          },
+          {
             title: t('Models'),
             url: '/models/metadata',
             icon: Box,

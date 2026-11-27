@@ -1696,3 +1696,141 @@ export function parseTaskResult(){return {};}
 		})
 	}
 }
+
+func TestChannelModelBatchDatabaseMatrix(t *testing.T) {
+	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
+		t.Run(dialect.kind, func(t *testing.T) {
+			if dialect.env != "" && os.Getenv(dialect.env) == "" {
+				t.Skip("set " + dialect.env)
+			}
+			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
+			vendor := model.Vendor{Name: "Batch vendor", Icon: "OpenAI"}
+			require.NoError(t, vendor.Insert())
+			metadata := model.Model{ModelName: "batch-source", VendorID: vendor.Id, Icon: "Custom", Status: 1, SyncOfficial: 0, Description: "Preserve description"}
+			require.NoError(t, metadata.Insert())
+			channel := model.Channel{Name: "Batch channel", Key: "secret-never-return", Type: 1, Status: 1, Models: "batch-source,batch-unset", Group: "default", ModelMapping: common.GetPointer(`{"batch-source":"intermediate","intermediate":"upstream","unexposed":"remote"}`)}
+			require.NoError(t, channel.Insert())
+			snapshot, err := model.GetChannelModelBatch(channel.Id)
+			require.NoError(t, err)
+			require.Len(t, snapshot.Rows, 2)
+			assert.Equal(t, "upstream", snapshot.Rows[0].UpstreamName)
+			var savedVendorCount int64
+			require.NoError(t, db.Model(&model.Vendor{}).Count(&savedVendorCount).Error)
+			assert.EqualValues(t, 1, savedVendorCount, "reading presets must never write vendors")
+			var presetID int
+			for _, item := range snapshot.Vendors {
+				if item.Name == "Anthropic" {
+					presetID = item.Id
+					assert.Equal(t, "Claude.Color", item.Icon)
+				}
+			}
+			require.Negative(t, presetID)
+			t.Run("explicit_preset_selection_is_atomic_and_shared", func(t *testing.T) {
+				extra := model.Channel{Name: "Preset batch", Key: "test", Type: 1, Status: 1, Models: "preset-a,preset-b", Group: "default"}
+				require.NoError(t, extra.Insert())
+				initial, err := model.GetChannelModelBatch(extra.Id)
+				require.NoError(t, err)
+				changes := []model.ChannelModelBatchChange{{SourceName: "preset-a", ModelName: "preset-a", VendorID: &presetID}, {SourceName: "preset-b", ModelName: "preset-b", VendorID: &presetID}}
+				invalid := model.PricingValues{"ModelPrice": float64(-1)}
+				changes[1].Pricing, changes[1].ExpectedPricingVersion = &invalid, model.ModelPricingVersion(model.PricingValues{})
+				require.Error(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: changes}))
+				var count int64
+				require.NoError(t, db.Model(&model.Vendor{}).Where("name = ?", "Anthropic").Count(&count).Error)
+				assert.Zero(t, count, "invalid final price must roll back preset creation")
+				changes[1].Pricing = nil
+				require.NoError(t, model.ApplyChannelModelBatch(extra.Id, model.ChannelModelBatchRequest{ExpectedVersion: initial.Version, Changes: changes}))
+				var assigned []model.Model
+				require.NoError(t, db.Where("model_name IN ?", []string{"preset-a", "preset-b"}).Order("model_name").Find(&assigned).Error)
+				require.Len(t, assigned, 2)
+				assert.Positive(t, assigned[0].VendorID)
+				assert.Equal(t, assigned[0].VendorID, assigned[1].VendorID)
+				assert.Empty(t, assigned[0].Icon)
+				require.NoError(t, db.Model(&model.Vendor{}).Where("name = ?", "Anthropic").Count(&count).Error)
+				assert.EqualValues(t, 1, count)
+				// Remove the isolated fixture so existing snapshot tests retain
+				// their deliberately frozen channel/vendor version.
+				require.NoError(t, db.Where("channel_id = ?", extra.Id).Delete(&model.Ability{}).Error)
+				require.NoError(t, db.Delete(&extra).Error)
+				require.NoError(t, db.Unscoped().Where("model_name IN ?", []string{"preset-a", "preset-b"}).Delete(&model.Model{}).Error)
+				require.NoError(t, db.Unscoped().Where("name = ?", "Anthropic").Delete(&model.Vendor{}).Error)
+			})
+			encoded, err := common.Marshal(snapshot)
+			require.NoError(t, err)
+			assert.NotContains(t, string(encoded), "secret-never-return")
+			price := model.PricingValues{"billing_setting.billing_mode": "tiered_expr", "billing_setting.billing_expr": `len <= 100 ? tier("short", p * 0.125 + c * 0) : tier("long", fixed(0.025))`}
+			request := model.ChannelModelBatchRequest{ExpectedVersion: snapshot.Version, Changes: []model.ChannelModelBatchChange{{SourceName: "batch-source", ModelName: "customer-alias", VendorID: &vendor.Id, Pricing: &price, ExpectedPricingVersion: model.ModelPricingVersion(model.PricingValues{})}}}
+			t.Run("invalid_last_price_rolls_back_metadata_mapping_and_abilities", func(t *testing.T) {
+				invalid := model.PricingValues{"ModelPrice": float64(-1)}
+				bad := request
+				bad.Changes = append(append([]model.ChannelModelBatchChange{}, request.Changes...), model.ChannelModelBatchChange{SourceName: "batch-unset", ModelName: "batch-unset", Pricing: &invalid, ExpectedPricingVersion: model.ModelPricingVersion(model.PricingValues{})})
+				require.Error(t, model.ApplyChannelModelBatch(channel.Id, bad))
+				saved, err := model.GetChannelModelBatch(channel.Id)
+				require.NoError(t, err)
+				assert.Equal(t, snapshot.Version, saved.Version)
+				var count int64
+				require.NoError(t, db.Model(&model.Model{}).Where("model_name = ?", "customer-alias").Count(&count).Error)
+				assert.Zero(t, count)
+				require.NoError(t, db.Model(&model.Ability{}).Where("channel_id = ? AND model = ?", channel.Id, "batch-source").Count(&count).Error)
+				assert.EqualValues(t, 1, count)
+			})
+			t.Run("rejects_duplicate_unknown_vendor_invalid_name_and_mapping_cycle", func(t *testing.T) {
+				unknown := -1
+				for _, change := range []model.ChannelModelBatchChange{
+					{SourceName: "batch-source", ModelName: "batch-unset"},
+					{SourceName: "batch-source", ModelName: "upstream"},
+					{SourceName: "batch-source", ModelName: "intermediate"},
+					{SourceName: "batch-source", ModelName: "bad,name"},
+					{SourceName: "not-selected", ModelName: "new"},
+					{SourceName: "batch-source", ModelName: "batch-source", VendorID: &unknown},
+				} {
+					require.Error(t, model.ApplyChannelModelBatch(channel.Id, model.ChannelModelBatchRequest{ExpectedVersion: snapshot.Version, Changes: []model.ChannelModelBatchChange{change}}))
+				}
+			})
+			t.Run("commits_alias_vendor_icon_inheritance_prices_and_routes_together", func(t *testing.T) {
+				require.NoError(t, model.ApplyChannelModelBatch(channel.Id, request))
+				var updated model.Channel
+				require.NoError(t, db.First(&updated, channel.Id).Error)
+				assert.Equal(t, "customer-alias,batch-unset", updated.Models)
+				assert.Equal(t, channel.Key, updated.Key)
+				var mapping map[string]string
+				require.NoError(t, common.UnmarshalJsonStr(*updated.ModelMapping, &mapping))
+				assert.Equal(t, "batch-source", mapping["customer-alias"])
+				assert.Equal(t, "remote", mapping["unexposed"])
+				var created model.Model
+				require.NoError(t, db.Where("model_name = ?", "customer-alias").First(&created).Error)
+				assert.Equal(t, vendor.Id, created.VendorID)
+				assert.Empty(t, created.Icon)
+				assert.Equal(t, "Preserve description", created.Description)
+				assert.Zero(t, created.Status, "new metadata must stay hidden")
+				var original model.Model
+				require.NoError(t, db.First(&original, metadata.Id).Error)
+				assert.Equal(t, "Custom", original.Icon, "old global metadata is retained")
+				prices, err := model.GetModelPricingSnapshot([]string{"customer-alias"})
+				require.NoError(t, err)
+				assert.Equal(t, price, prices.Entries[0].Configured)
+				var abilities []model.Ability
+				require.NoError(t, db.Where("channel_id = ?", channel.Id).Order("model").Find(&abilities).Error)
+				require.Len(t, abilities, 2)
+				assert.Equal(t, "customer-alias", abilities[1].Model)
+				assert.True(t, abilities[1].Enabled)
+				require.ErrorIs(t, model.ApplyChannelModelBatch(channel.Id, request), model.ErrChannelModelBatchConflict)
+			})
+			t.Run("concurrent_price_changes_conflict_without_metadata_writes", func(t *testing.T) {
+				current, err := model.GetChannelModelBatch(channel.Id)
+				require.NoError(t, err)
+				bad := model.ChannelModelBatchRequest{ExpectedVersion: current.Version, Changes: []model.ChannelModelBatchChange{{SourceName: "customer-alias", ModelName: "customer-alias", VendorID: common.GetPointer(0), Pricing: &price, ExpectedPricingVersion: model.ModelPricingVersion(model.PricingValues{})}}}
+				require.ErrorIs(t, model.ApplyChannelModelBatch(channel.Id, bad), model.ErrModelPricingConflict)
+				saved, err := model.GetChannelModelBatch(channel.Id)
+				require.NoError(t, err)
+				assert.Equal(t, current.Version, saved.Version)
+			})
+			t.Run("vendor_changes_invalidate_snapshot", func(t *testing.T) {
+				current, err := model.GetChannelModelBatch(channel.Id)
+				require.NoError(t, err)
+				vendor.Icon = "Claude.Color"
+				require.NoError(t, vendor.Update())
+				require.ErrorIs(t, model.ApplyChannelModelBatch(channel.Id, model.ChannelModelBatchRequest{ExpectedVersion: current.Version, Changes: []model.ChannelModelBatchChange{{SourceName: "customer-alias", ModelName: "customer-alias", VendorID: &vendor.Id}}}), model.ErrChannelModelBatchConflict)
+			})
+		})
+	}
+}

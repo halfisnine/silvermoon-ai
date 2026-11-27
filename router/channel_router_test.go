@@ -51,6 +51,11 @@ func TestChannelStatusRoutesRegisterWithoutConflict(t *testing.T) {
 	require.NotPanics(t, func() {
 		registerChannelRoutes(api)
 	})
+	for _, method := range []string{http.MethodGet, http.MethodPost} {
+		recorder := httptest.NewRecorder()
+		engine.ServeHTTP(recorder, httptest.NewRequest(method, "/api/channel/7/model_batch", nil))
+		assert.Equal(t, http.StatusUnauthorized, recorder.Code, "%s model batch requires authentication", method)
+	}
 }
 
 func assertChannelRoutePermission(t *testing.T, method string, path string, permission authz.Permission, handler any) {

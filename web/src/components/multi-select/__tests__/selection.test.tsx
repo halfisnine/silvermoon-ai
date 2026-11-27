@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { MultiSelect } from '@/components/multi-select'
 
@@ -155,5 +155,50 @@ describe('multi-select batch paste', () => {
     expect(input).toBeDisabled()
     expect(screen.getByLabelText('Selected values')).toBeEmptyDOMElement()
     expect(input).toHaveValue('')
+  })
+})
+
+describe('multi-select remote result controls', () => {
+  it('uses a supplied result filter and keeps selected labels while changing result pages', async () => {
+    const onSearchChange = vi.fn()
+    const user = userEvent.setup()
+    const { rerender } = render(
+      <MultiSelect
+        options={[
+          { value: '1', label: 'Alice' },
+          { value: '2', label: 'Bob', disabled: true },
+        ]}
+        selected={['1']}
+        onChange={vi.fn()}
+        onSearchChange={onSearchChange}
+        filter={(id) => id === '2'}
+        listFooter={<span>Page 2</span>}
+      />
+    )
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'display name from server')
+    expect(onSearchChange).toHaveBeenLastCalledWith('display name from server')
+    expect(screen.getByRole('option', { name: 'Bob' })).toHaveAttribute(
+      'aria-disabled',
+      'true'
+    )
+    expect(
+      screen.queryByRole('option', { name: 'Alice' })
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Alice')).toBeVisible()
+    expect(screen.getByText('Page 2')).toBeVisible()
+    rerender(
+      <MultiSelect
+        options={[{ value: '1', label: 'Alice' }]}
+        selected={['1']}
+        onChange={vi.fn()}
+        listStatus={<p role='status'>Loading remote results</p>}
+      />
+    )
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Loading remote results'
+    )
+    expect(screen.queryByRole('option')).not.toBeInTheDocument()
+    expect(screen.getByText('Alice')).toBeVisible()
   })
 })

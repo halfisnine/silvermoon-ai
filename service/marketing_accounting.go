@@ -136,7 +136,7 @@ func marketingAccountingRequests(tx *gorm.DB, funding []model.MarketingFunding) 
 		}
 		for _, g := range rows {
 			gifts[g.ID] = g
-			giftSources[g.ID] = MarketingAccountingGiftSource{GiftID: g.ID, SourceNameKey: "Activity reward", ExpiresAt: g.ExpiresAt}
+			giftSources[g.ID] = MarketingAccountingGiftSource{GiftID: g.ID, SourceNameKey: marketingGiftSourceKey(g.SourceKind), ExpiresAt: g.ExpiresAt}
 		}
 		var rewards []model.MarketingActivityReward
 		if err := tx.Where("gift_id IN ?", giftIDs).Find(&rewards).Error; err != nil {
