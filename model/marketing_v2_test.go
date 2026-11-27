@@ -517,6 +517,9 @@ func assertMarketingSources(t *testing.T, db *gorm.DB, userID int) {
 	require.NoError(t, db.Where("user_id = ?", userID).Find(&gifts).Error)
 	for _, gift := range gifts {
 		assert.Equal(t, gift.GrantedQuota, gift.RemainingQuota+gift.ConsumedQuota+gift.ExpiredQuota+gift.ClearedQuota)
+		assert.GreaterOrEqual(t, gift.RemainingQuota, int64(0))
+		assert.GreaterOrEqual(t, gift.ReservedQuota, int64(0))
+		assert.GreaterOrEqual(t, gift.ConsumedQuota, int64(0))
 		assert.GreaterOrEqual(t, gift.RemainingQuota, gift.ReservedQuota)
 		var sums struct{ Reserved, Consumed int64 }
 		require.NoError(t, db.Model(&MarketingAllocation{}).Where("gift_id = ?", gift.ID).Select("COALESCE(SUM(reserved_quota),0) AS reserved, COALESCE(SUM(consumed_quota),0) AS consumed").Scan(&sums).Error)
@@ -530,7 +533,8 @@ func assertMarketingSources(t *testing.T, db *gorm.DB, userID int) {
 	require.NoError(t, db.Model(&MarketingPayment{}).Where("user_id = ?", userID).Select("COALESCE(SUM(credited_quota),0)").Scan(&credited).Error)
 	assert.Equal(t, account.PaidReserved, paid.Reserved)
 	assert.Equal(t, account.OpeningQuota+credited-paid.Consumed, int64(user.Quota))
-	assert.GreaterOrEqual(t, int64(user.Quota), account.PaidReserved)
+	assert.GreaterOrEqual(t, int64(user.Quota), -int64(common.MaxWalletQuota))
+	assert.LessOrEqual(t, int64(user.Quota), int64(common.MaxWalletQuota))
 	var tokens []Token
 	require.NoError(t, db.Unscoped().Where("user_id = ?", userID).Find(&tokens).Error)
 	for _, token := range tokens {
@@ -545,12 +549,258 @@ func assertMarketingSources(t *testing.T, db *gorm.DB, userID int) {
 		assert.Equal(t, totals.Reserved, hold.ReservedQuota)
 		assert.Equal(t, totals.Consumed, int64(token.UsedQuota))
 		if !token.UnlimitedQuota {
-			assert.GreaterOrEqual(t, int64(token.RemainQuota), hold.ReservedQuota)
+			assert.GreaterOrEqual(t, int64(token.RemainQuota), -int64(common.MaxWalletQuota))
+			assert.LessOrEqual(t, int64(token.RemainQuota), int64(common.MaxWalletQuota))
 		}
 	}
 }
 
 func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
+	t.Run("confirmed_cost_overdraws_paid_after_gifts", func(t *testing.T) {
+		for _, tc := range []struct {
+			name             string
+			paid, gift, cost int64
+			wantPaid         int
+		}{
+			{"gift_only", 0, 10, 50, -40},
+			{"mixed", 30, 20, 60, -10},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				user, token, gifts := marketingFundingFixture(t, db, "overdraw-"+tc.name, tc.paid, 100, []marketingGiftFixture{{tc.gift, 200}})
+				funding := reserveMarketingTest(t, db, user, token, "overdraw-"+tc.name, 100, tc.gift)
+				before := *funding
+				funding = settleMarketingTest(t, db, funding, &tc.cost, true, "upstream_terminal")
+				replay := settleMarketingTest(t, other, &before, &tc.cost, true, "upstream_terminal")
+				assert.Equal(t, *funding, *replay, "same terminal fact must debit exactly once across connections")
+				assert.Equal(t, "settled", funding.State)
+				assert.Equal(t, tc.cost, funding.SettledQuota)
+				assert.Zero(t, funding.ReservedQuota)
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, tc.wantPaid, user.Quota)
+				require.NoError(t, db.First(&gifts[0], gifts[0].ID).Error)
+				assert.Zero(t, gifts[0].RemainingQuota)
+				assert.Equal(t, tc.gift, gifts[0].ConsumedQuota)
+				var consumed int64
+				require.NoError(t, db.Model(&MarketingLedgerEntry{}).Where("funding_id = ? AND kind = ?", funding.ID, "consume").Select("COALESCE(SUM(amount_quota),0)").Scan(&consumed).Error)
+				assert.Equal(t, tc.cost, consumed)
+				assertMarketingSources(t, db, user.Id)
+			})
+		}
+	})
+	t.Run("paid_debt_survives_gift_and_topup_offsets_once", func(t *testing.T) {
+		for _, tc := range []struct {
+			name   string
+			credit int64
+			want   int
+		}{
+			{"insufficient", 20, -20},
+			{"exact", 40, 0},
+			{"surplus", 50, 10},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				name := "debt-topup-" + tc.name
+				user, token, _ := marketingFundingFixture(t, db, name, 0, 100, []marketingGiftFixture{{10, 200}})
+				funding := reserveMarketingTest(t, db, user, token, name, 100, 10)
+				actual := int64(50)
+				funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
+				require.NoError(t, other.Transaction(func(tx *gorm.DB) error {
+					_, err := GrantMarketingGift(tx, MarketingGiftInput{UserID: user.Id, Kind: "admin_gift", Reference: name + "-later-gift", GrantedAt: 150, Money: MarketingMoneySnapshot{Amount: "100", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
+					return err
+				}))
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, -40, user.Quota, "gift cannot repay paid debt")
+				for _, estimate := range []int64{0, 1} {
+					require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+						_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: name + "-blocked-" + strconv.FormatInt(estimate, 10), QualifiedAt: 150, Quota: estimate, PricingEvidence: "fixed:test"})
+						return err
+					}), ErrMarketingDebt)
+				}
+				input := MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: name + "-payment", PaidCents: tc.credit, PostedAt: 151, Money: MarketingMoneySnapshot{Amount: strconv.FormatInt(tc.credit, 10), QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}}
+				for _, conn := range []*gorm.DB{db, other} {
+					require.NoError(t, conn.Transaction(func(tx *gorm.DB) error { _, err := CreditMarketingPayment(tx, input); return err }))
+				}
+				require.NoError(t, db.First(&user, user.Id).Error)
+				assert.Equal(t, tc.want, user.Quota)
+				if tc.want < 0 {
+					require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+						_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: name + "-after-topup", QualifiedAt: 151, Quota: 1, PricingEvidence: "fixed:test"})
+						return err
+					}), ErrMarketingDebt)
+				} else {
+					newFunding := reserveMarketingTest(t, other, user, token, name+"-after-topup", 151, 1)
+					zero := int64(0)
+					settleMarketingTest(t, db, newFunding, &zero, true, "pre_dispatch_cancel")
+				}
+				var consumed int64
+				require.NoError(t, db.Model(&MarketingLedgerEntry{}).Where("funding_id = ? AND kind = ?", funding.ID, "consume").Select("COALESCE(SUM(amount_quota),0)").Scan(&consumed).Error)
+				assert.Equal(t, actual, consumed, "topup offsets the signed balance without another consume")
+				assertMarketingSources(t, db, user.Id)
+			})
+		}
+	})
+	t.Run("already_admitted_requests_settle_after_paid_turns_negative", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "parallel-overdraw", 20, 100, nil)
+		first := reserveMarketingTest(t, db, user, token, "parallel-overdraw-a", 100, 10)
+		second := reserveMarketingTest(t, other, user, token, "parallel-overdraw-b", 100, 10)
+		actual := int64(30)
+		first = settleMarketingTest(t, db, first, &actual, true, "upstream_terminal")
+		assert.Equal(t, "settled", first.State)
+		assertMarketingSources(t, db, user.Id)
+		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+			_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: "parallel-overdraw-c", QualifiedAt: 101, PricingEvidence: "fixed:test"})
+			return err
+		}), ErrMarketingDebt)
+		second = settleMarketingTest(t, other, second, &actual, true, "upstream_terminal")
+		assert.Equal(t, "settled", second.State)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -40, user.Quota)
+		assertMarketingSources(t, db, user.Id)
+	})
+	t.Run("dispatch_requires_reservation_still_backed_after_other_settlement", func(t *testing.T) {
+		for _, tc := range []struct {
+			name        string
+			paid, token int64
+		}{
+			{"paid", 100, 1000},
+			{"finite_token", 1000, 100},
+		} {
+			for _, bothDispatched := range []bool{false, true} {
+				name := tc.name + "_both_dispatched_" + strconv.FormatBool(bothDispatched)
+				t.Run(name, func(t *testing.T) {
+					user, token, _ := marketingFundingFixture(t, db, "bk-"+tc.name+"-"+strconv.FormatBool(bothDispatched), tc.paid, tc.token, nil)
+					first := reserveMarketingTest(t, db, user, token, "dispatch-backing-a-"+name, 100, 50)
+					second := reserveMarketingTest(t, other, user, token, "dispatch-backing-b-"+name, 100, 50)
+					toDispatch := []*MarketingFunding{first}
+					if bothDispatched {
+						toDispatch = append(toDispatch, second)
+					}
+					for _, funding := range toDispatch {
+						require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+							_, created, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: funding.ID, Reference: "dispatch-backing-" + strconv.FormatInt(funding.ID, 10), PricingEvidence: "fixed:test"})
+							assert.True(t, created)
+							return err
+						}))
+					}
+					actual := int64(70)
+					first = settleMarketingTest(t, db, first, &actual, true, "upstream_terminal")
+					assert.Equal(t, "settled", first.State)
+					require.NoError(t, db.First(&user, user.Id).Error)
+					require.NoError(t, db.First(&token, token.Id).Error)
+					assert.EqualValues(t, tc.paid-70, user.Quota)
+					assert.EqualValues(t, tc.token-70, token.RemainQuota)
+					if bothDispatched {
+						second = settleMarketingTest(t, other, second, &actual, true, "upstream_terminal")
+						assert.Equal(t, "settled", second.State)
+						assert.Equal(t, actual, second.SettledQuota)
+						require.NoError(t, db.First(&user, user.Id).Error)
+						require.NoError(t, db.First(&token, token.Id).Error)
+						assert.EqualValues(t, tc.paid-140, user.Quota)
+						assert.EqualValues(t, tc.token-140, token.RemainQuota)
+					} else {
+						require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
+							attempt, created, err := BeginMarketingDispatch(tx, MarketingDispatchInput{UserID: user.Id, FundingID: second.ID, Reference: "dispatch-backing-late-" + name, PricingEvidence: "fixed:test"})
+							assert.Nil(t, attempt)
+							assert.False(t, created)
+							return err
+						}), ErrMarketingInsufficient)
+						var attempts int64
+						require.NoError(t, db.Model(&MarketingDispatch{}).Where("funding_id = ?", second.ID).Count(&attempts).Error)
+						assert.Zero(t, attempts, "an uncovered reservation cannot create permission to send")
+						zero := int64(0)
+						second = settleMarketingTest(t, other, second, &zero, true, "pre_dispatch_cancel")
+						assert.Zero(t, second.ReservedQuota)
+						replacement := reserveMarketingTest(t, db, user, token, "dispatch-backing-replacement-"+name, 101, 30)
+						settleMarketingTest(t, other, replacement, &zero, true, "pre_dispatch_cancel")
+					}
+					assertMarketingSources(t, db, user.Id)
+				})
+			}
+		}
+	})
+	t.Run("paid_reversal_hold_overflow_rolls_back_and_recovers", func(t *testing.T) {
+		maximum := int64(common.MaxWalletQuota)
+		user, firstToken, _ := marketingFundingFixture(t, db, "reverse-hold-bound", maximum, maximum, nil)
+		secondToken := Token{UserId: user.Id, Key: "mv2-test-only-reverse-hold-bound-b", Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: common.MaxWalletQuota}
+		require.NoError(t, db.Create(&secondToken).Error)
+		first := reserveMarketingTest(t, db, user, firstToken, "reverse-hold-bound-a", 100, maximum/2)
+		second := reserveMarketingTest(t, other, user, secondToken, "reverse-hold-bound-b", 100, maximum-maximum/2)
+		first = settleMarketingTest(t, db, first, &maximum, false, "upstream_progress")
+		second = settleMarketingTest(t, other, second, &maximum, false, "upstream_progress")
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -common.MaxWalletQuota, user.Quota)
+		assertMarketingSources(t, db, user.Id)
+		zero := int64(0)
+		first = settleMarketingTest(t, db, first, &zero, false, "upstream_progress")
+		var account MarketingAccount
+		require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+		assert.Equal(t, maximum, account.PaidReserved)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Zero(t, user.Quota)
+		second = settleMarketingTest(t, other, second, &zero, false, "upstream_progress")
+		assert.Equal(t, "review", second.State)
+		assert.Equal(t, "reversal_requires_reconciliation", second.ReviewReason)
+		assert.Zero(t, second.ActualQuota)
+		assert.Equal(t, maximum, second.SettledQuota)
+		require.NoError(t, db.First(&account, "user_id = ?", user.Id).Error)
+		assert.Equal(t, maximum, account.PaidReserved)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Zero(t, user.Quota, "a rejected reversal must not partially restore paid funds")
+		var reversals int64
+		require.NoError(t, db.Model(&MarketingLedgerEntry{}).Where("funding_id = ? AND kind = ?", second.ID, "consume_reversal").Count(&reversals).Error)
+		assert.Zero(t, reversals)
+		assertMarketingSources(t, db, user.Id)
+		first = settleMarketingTest(t, db, first, &zero, true, "upstream_terminal")
+		assert.Zero(t, first.ReservedQuota)
+		second = settleMarketingTest(t, other, second, &zero, true, "upstream_terminal")
+		assert.Equal(t, "settled", second.State)
+		assert.Empty(t, second.ReviewReason)
+		assert.Zero(t, second.SettledQuota)
+		assert.Zero(t, second.ReservedQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, common.MaxWalletQuota, user.Quota)
+		assertMarketingSources(t, db, user.Id)
+	})
+	t.Run("negative_paid_reversal_restores_original_sources", func(t *testing.T) {
+		user, token, gifts := marketingFundingFixture(t, db, "negative-reversal", 0, 100, []marketingGiftFixture{{10, 200}})
+		funding := reserveMarketingTest(t, db, user, token, "negative-reversal", 100, 10)
+		actual := int64(50)
+		funding = settleMarketingTest(t, db, funding, &actual, false, "upstream_progress")
+		actual = 30
+		funding = settleMarketingTest(t, other, funding, &actual, false, "upstream_progress")
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -20, user.Quota)
+		require.NoError(t, db.First(&gifts[0], gifts[0].ID).Error)
+		assert.Zero(t, gifts[0].RemainingQuota, "paid debit is reversed before the earlier gift debit")
+		actual = 5
+		funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
+		assert.Equal(t, "settled", funding.State)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Zero(t, user.Quota)
+		require.NoError(t, db.First(&gifts[0], gifts[0].ID).Error)
+		assert.EqualValues(t, 5, gifts[0].RemainingQuota)
+		assertMarketingSources(t, db, user.Id)
+	})
+	t.Run("signed_wallet_lower_bound_preserves_full_cost_for_reconciliation", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "negative-bound", 1, 100, nil)
+		funding := reserveMarketingTest(t, db, user, token, "negative-bound", 100, 0)
+		// A prior admitted charge has already used all but one unit of the
+		// supported signed wallet range; keep its imported opening fact exact.
+		require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", -common.MaxWalletQuota+1).Error)
+		require.NoError(t, db.Model(&MarketingAccount{}).Where("user_id = ?", user.Id).Update("opening_quota", -common.MaxWalletQuota).Error)
+		actual := int64(1)
+		funding = settleMarketingTest(t, db, funding, &actual, false, "upstream_progress")
+		assert.EqualValues(t, 1, funding.SettledQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -common.MaxWalletQuota, user.Quota)
+		actual = 2
+		funding = settleMarketingTest(t, other, funding, &actual, true, "upstream_terminal")
+		assert.Equal(t, "review", funding.State)
+		assert.EqualValues(t, 2, funding.ActualQuota)
+		assert.EqualValues(t, 1, funding.SettledQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -common.MaxWalletQuota, user.Quota)
+		assertMarketingSources(t, db, user.Id)
+	})
 	t.Run("consumption_and_log_snapshot_commit_together", func(t *testing.T) {
 		user, token, _ := marketingFundingFixture(t, db, "usage-snapshot", 100, 100, []marketingGiftFixture{{20, 200}})
 		funding := reserveMarketingTest(t, db, user, token, "usage-snapshot", 100, 30)
@@ -1045,21 +1295,21 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		assert.Equal(t, 50, user.Quota)
 		assertMarketingSources(t, db, user.Id)
 	})
-	t.Run("insufficient_keeps_true_cost_then_recovers", func(t *testing.T) {
+	t.Run("confirmed_overrun_settles_before_topup", func(t *testing.T) {
 		user, token, _ := marketingFundingFixture(t, db, "short", 50, 500, []marketingGiftFixture{{10, 200}})
 		funding := reserveMarketingTest(t, db, user, token, "short", 100, 30)
 		actual := int64(200)
 		funding = settleMarketingTest(t, db, funding, &actual, true, "upstream_terminal")
-		assert.Equal(t, "review", funding.State)
+		assert.Equal(t, "settled", funding.State)
 		assert.EqualValues(t, 200, funding.ActualQuota)
-		assert.EqualValues(t, 60, funding.SettledQuota)
+		assert.EqualValues(t, 200, funding.SettledQuota)
 		require.NoError(t, db.First(&user, user.Id).Error)
-		assert.Zero(t, user.Quota)
+		assert.Equal(t, -140, user.Quota)
 		require.NoError(t, other.Transaction(func(tx *gorm.DB) error {
 			_, err := CreditMarketingPayment(tx, MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: "short-topup", PaidCents: 200, PostedAt: 201, Money: MarketingMoneySnapshot{Amount: "200", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 			return err
 		}))
-		funding = settleMarketingTest(t, other, funding, &actual, true, "upstream_terminal")
+		require.NoError(t, other.First(&funding, funding.ID).Error)
 		assert.Equal(t, "settled", funding.State)
 		assert.EqualValues(t, 200, funding.SettledQuota)
 		require.NoError(t, db.First(&user, user.Id).Error)
@@ -1067,8 +1317,8 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		assertMarketingSources(t, db, user.Id)
 	})
 	t.Run("rollback_and_revocation", func(t *testing.T) {
-		user, token, _ := marketingFundingFixture(t, db, "rollbackfund", 100, 40, nil)
-		funding := reserveMarketingTest(t, db, user, token, "rollbackfund", 100, 30)
+		user, token, _ := marketingFundingFixture(t, db, "rollbackfund", 5, 40, []marketingGiftFixture{{5, 200}})
+		funding := reserveMarketingTest(t, db, user, token, "rollbackfund", 100, 5)
 		actual := int64(20)
 		input := MarketingSettlementInput{UserID: user.Id, FundingID: funding.ID, Version: 1, ActualQuota: &actual, Final: true, EvidenceKind: "upstream_terminal", Evidence: "terminal20"}
 		abort := errors.New("rollback after all financial writes")
@@ -1081,7 +1331,9 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		}), abort)
 		require.NoError(t, db.First(&funding, funding.ID).Error)
 		assert.Zero(t, funding.Revision)
-		assert.EqualValues(t, 30, funding.ReservedQuota)
+		assert.EqualValues(t, 5, funding.ReservedQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, 5, user.Quota, "rollback restores the entire attempted paid overdraft")
 		require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("status", common.UserStatusDisabled).Error)
 		require.NoError(t, db.Transaction(func(tx *gorm.DB) error { _, err := SettleMarketingFunding(tx, input); return err }))
 		require.ErrorIs(t, other.Transaction(func(tx *gorm.DB) error {
@@ -1091,7 +1343,7 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		assertMarketingSources(t, db, user.Id)
 	})
 	t.Run("concurrent_holds_and_token_ceiling", func(t *testing.T) {
-		user, token, _ := marketingFundingFixture(t, db, "parallel", 100, 100, nil)
+		user, token, _ := marketingFundingFixture(t, db, "parallel", 200, 100, nil)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		results := make([]error, 2)
@@ -1122,11 +1374,17 @@ func testMarketingFunding(t *testing.T, db, other *gorm.DB, dialect string) {
 		require.NoError(t, db.Where("user_id = ?", user.Id).First(&funding).Error)
 		actual := int64(120)
 		result := settleMarketingTest(t, db, &funding, &actual, true, "upstream_terminal")
-		assert.Equal(t, "review", result.State)
-		assert.EqualValues(t, 100, result.SettledQuota)
+		assert.Equal(t, "settled", result.State)
+		assert.EqualValues(t, 120, result.SettledQuota)
 		assert.EqualValues(t, 120, result.ActualQuota)
 		require.NoError(t, db.First(&token, token.Id).Error)
-		assert.Zero(t, token.RemainQuota)
+		assert.Equal(t, -20, token.RemainQuota)
+		assert.Equal(t, 120, token.UsedQuota)
+		require.ErrorIs(t, db.Transaction(func(tx *gorm.DB) error {
+			_, err := ReserveMarketingFunding(tx, MarketingReservationInput{UserID: user.Id, TokenID: token.Id, RequestReference: "after-token-overrun", QualifiedAt: 101, PricingEvidence: "fixed:test"})
+			return err
+		}), ErrMarketingInsufficient)
+		assertMarketingSources(t, db, user.Id)
 	})
 }
 
@@ -1174,6 +1432,24 @@ func realtimeMarketingTestFact(t *testing.T, db *gorm.DB, funding *MarketingFund
 	return result
 }
 func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
+	t.Run("actual_token_overrun_stops_even_with_positive_paid_balance", func(t *testing.T) {
+		user, token, _ := marketingFundingFixture(t, db, "rt-token-overdraw", 100, 5, nil)
+		funding := realtimeMarketingTestConnection(t, db, user, token, "rt-token-overdraw", 100, 0)
+		round := realtimeMarketingTestRound(t, db, funding, "first", 100, 5, false)
+		cost := int64(10)
+		result := realtimeMarketingTestFact(t, other, funding, round.Round, "first-done", &dto.RealtimeUsage{InputTokens: 10, TotalTokens: 10}, &cost, true)
+		assert.EqualValues(t, 10, result.Funding.SettledQuota)
+		assert.True(t, result.Stop)
+		require.NoError(t, db.First(&token, token.Id).Error)
+		assert.Equal(t, -5, token.RemainQuota)
+		assert.Equal(t, 10, token.UsedQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, 90, user.Quota)
+		blocked := realtimeMarketingTestRound(t, other, funding, "next", 101, 0, false)
+		assert.True(t, blocked.Stop)
+		assert.False(t, blocked.Created)
+		assertMarketingSources(t, db, user.Id)
+	})
 	t.Run("zero_estimate_requires_available_funds_except_frozen_free_model", func(t *testing.T) {
 		for index, tc := range []struct {
 			name                              string
@@ -1506,7 +1782,10 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		cost := int64(5)
 		result := realtimeMarketingTestFact(t, db, funding, first.Round, "first-done", &dto.RealtimeUsage{InputTokens: 5, TotalTokens: 5}, &cost, true)
 		assert.EqualValues(t, 5, result.Funding.ActualQuota)
-		assert.Zero(t, result.Funding.SettledQuota)
+		assert.EqualValues(t, 5, result.Funding.SettledQuota)
+		assert.True(t, result.Stop)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -5, user.Quota)
 		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 			_, err := GrantMarketingGift(tx, MarketingGiftInput{UserID: user.Id, Kind: "admin_gift", Reference: "later-rt-debt", GrantedAt: 150, Money: MarketingMoneySnapshot{Amount: "20", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
 			return err
@@ -1517,10 +1796,11 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		cost = 7
 		result = realtimeMarketingTestFact(t, db, funding, second.Round, "second-progress", &dto.RealtimeUsage{InputTokens: 2, TotalTokens: 2}, &cost, false)
 		assert.EqualValues(t, 7, result.Funding.ActualQuota)
-		assert.EqualValues(t, 2, result.Funding.SettledQuota)
+		assert.EqualValues(t, 7, result.Funding.SettledQuota)
+		assert.True(t, result.Stop)
 		var oldDebit int64
 		require.NoError(t, db.Model(&MarketingDebit{}).Where("funding_id = ? AND round_id = ?", funding.ID, first.Round.ID).Count(&oldDebit).Error)
-		assert.Zero(t, oldDebit)
+		assert.EqualValues(t, 1, oldDebit, "the earlier actual usage remains charged to paid debt")
 		cost = 1
 		result = realtimeMarketingTestFact(t, db, funding, second.Round, "discount", &dto.RealtimeUsage{InputTokens: 3, TotalTokens: 3}, &cost, true)
 		assert.EqualValues(t, 1, result.Funding.ActualQuota)
@@ -1820,7 +2100,8 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		result = realtimeMarketingTestFact(t, db, funding, result.Round, "automatic-done", &dto.RealtimeUsage{InputTokens: 1, TotalTokens: 1}, &cost, true)
 		assert.True(t, result.Funding.RealtimeInputPending)
 		assert.EqualValues(t, 1, result.Funding.ActualQuota)
-		assert.Zero(t, result.Funding.SettledQuota)
+		assert.EqualValues(t, 1, result.Funding.SettledQuota)
+		assert.True(t, result.Stop)
 		require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
 			var err error
 			result, err = CloseMarketingRealtimeFunding(tx, user.Id, funding.ID, "pending audio plus unfunded reply")
@@ -2014,7 +2295,11 @@ func testMarketingRealtime(t *testing.T, db, other *gorm.DB) {
 		result = realtimeMarketingTestFact(t, db, funding, round, "real-cost", &dto.RealtimeUsage{InputTokens: 6, TotalTokens: 6}, &cost, true)
 		assert.True(t, result.Stop)
 		assert.EqualValues(t, 6, result.Funding.ActualQuota)
-		assert.EqualValues(t, 4, result.Funding.SettledQuota, "B input keeps its separate reservation")
+		assert.EqualValues(t, 6, result.Funding.SettledQuota, "all measured usage is charged while B input keeps its separate reservation")
+		assert.True(t, result.Funding.RealtimeInputPending)
+		assert.EqualValues(t, 1, result.Funding.ReservedQuota)
+		require.NoError(t, db.First(&user, user.Id).Error)
+		assert.Equal(t, -1, user.Quota)
 		assertMarketingSources(t, db, user.Id)
 	})
 

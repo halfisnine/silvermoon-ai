@@ -187,7 +187,7 @@ func completeEpayTopUpWithClock(tx *gorm.DB, tradeNo string, receipt EpayTopUpRe
 	if err := lockForUpdate(tx).First(&user, order.UserId).Error; err != nil {
 		return nil, err
 	}
-	if user.Quota < 0 || user.Quota > common.MaxWalletQuota-quota {
+	if int64(user.Quota) < -common.MaxWalletQuota || user.Quota > common.MaxWalletQuota-quota {
 		return nil, ErrTopUpQuotaLimitExceeded
 	}
 	// A request can wait on another instance's user/account/order locks. Its

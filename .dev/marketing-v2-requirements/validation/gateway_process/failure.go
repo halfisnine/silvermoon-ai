@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	"gorm.io/gorm"
 )
 
 // External failures exercise the actual relay/refund/retry controller on two
@@ -41,6 +42,12 @@ func runGatewayFailures() {
 		case name == "task-bad-receipt":
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, `{"code":1,"result":`)
+		case strings.HasPrefix(name, "debt-"):
+			prompt := 400
+			if name == "debt-mixed" {
+				prompt = 500
+			}
+			fmt.Fprintf(w, `{"id":"debt-fixture","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":%d,"completion_tokens":100,"total_tokens":%d}}`, prompt, prompt+100)
 		case strings.HasPrefix(name, "503") || name == "expired":
 			if name == "expired" {
 				eventually("gift expired before failure", func() bool { return common.GetTimestamp() >= expiresAt })
@@ -50,6 +57,9 @@ func runGatewayFailures() {
 		case name == "400":
 			w.WriteHeader(400)
 			fmt.Fprint(w, `{"error":{"code":"invalid_request","message":"fixture invalid request","type":"invalid_request_error"}}`)
+		case name == "404":
+			w.WriteHeader(404)
+			fmt.Fprint(w, `{"error":{"code":"model_not_found","message":"fixture wrong downstream model","type":"invalid_request_error"}}`)
 		case name == "500" || (name == "retry" && attempt == 1):
 			w.WriteHeader(500)
 			fmt.Fprint(w, `{"error":{"code":"server_error","message":"fixture transient error","type":"server_error"}}`)
@@ -66,12 +76,12 @@ func runGatewayFailures() {
 		}
 	}))
 	defer upstream.Close()
-	for _, option := range []model.Option{{Key: "ModelPrice", Value: `{"gpt-4o":0.001,"mj_imagine":0.001}`}, {Key: "RetryTimes", Value: "2"}} {
+	for _, option := range []model.Option{{Key: "ModelPrice", Value: `{"gpt-4o":0.001,"mj_imagine":0.001}`}, {Key: "RetryTimes", Value: "2"}, {Key: "ModelRatio", Value: `{"gpt-4o-debt":1}`}, {Key: "CompletionRatio", Value: `{"gpt-4o-debt":1}`}} {
 		must(model.DB.Create(&option).Error)
 	}
 	base := upstream.URL
 	for _, ch := range []model.Channel{
-		{Name: "failure-openai", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture", AutoBan: common.GetPointer(0), BaseURL: &base, Models: "gpt-4o", Group: "default"},
+		{Name: "failure-openai", Type: constant.ChannelTypeOpenAI, Status: common.ChannelStatusEnabled, Key: "fixture", AutoBan: common.GetPointer(0), BaseURL: &base, Models: "gpt-4o,gpt-4o-debt", Group: "default"},
 		{Name: "failure-mj", Type: constant.ChannelTypeMidjourney, Status: common.ChannelStatusEnabled, Key: "fixture", AutoBan: common.GetPointer(0), BaseURL: &base, Models: "mj_imagine", Group: "default"},
 	} {
 		must(ch.Insert())
@@ -83,7 +93,7 @@ func runGatewayFailures() {
 		gift int
 	}{
 		{"503-gift", 600}, {"503-mixed", 200}, {"503-paid", 0},
-		{"400", 200}, {"500", 200}, {"network", 200}, {"malformed", 200}, {"empty", 200},
+		{"400", 200}, {"404", 200}, {"500", 200}, {"network", 200}, {"malformed", 200}, {"empty", 200},
 		{"retry", 200}, {"expired", 600}, {"task-bad-receipt", 200},
 	} {
 		expiresAt := int64(0)
@@ -157,4 +167,55 @@ func runGatewayFailures() {
 		}
 		fmt.Printf("GATEWAY_FAILURE_OK case=%s attempts=%d state=%s next_other_process=success paid=%d gift_spent=%d\n", scenario.name, attempts, funding.State, user.Quota, giftSpent)
 	}
+	for _, scenario := range []struct {
+		name                     string
+		paid, gift, actual, debt int
+	}{
+		{"debt-gift", 0, 100, 500, -400}, {"debt-mixed", 300, 200, 600, -100},
+	} {
+		user, token, gift := realtimeFixtureAccount(scenario.name, scenario.gift, 0, realtimeFixtureBudget{PaidQuota: scenario.paid, TokenQuota: 10000})
+		body := fmt.Sprintf(`{"model":"gpt-4o-debt","messages":[{"role":"user","content":%q}]}`, scenario.name)
+		request("18371", "/v1/chat/completions", token.Key, body)
+		var funding model.MarketingFunding
+		eventually("confirmed debt settled", func() bool {
+			return model.DB.Where("user_id = ?", user.Id).First(&funding).Error == nil && funding.State == "settled"
+		})
+		must(model.DB.First(&user, user.Id).Error)
+		must(model.DB.First(&gift, gift.ID).Error)
+		check(user.Quota == scenario.debt && gift.RemainingQuota == 0 && gift.ConsumedQuota == int64(scenario.gift), "HTTP actual debt source mismatch")
+		check(funding.ActualQuota == int64(scenario.actual) && funding.SettledQuota == int64(scenario.actual) && funding.ReservedQuota == 0, "confirmed debt not fully settled")
+		var logs int64
+		eventually("single negative settlement usage log", func() bool {
+			return model.DB.Model(&model.Log{}).Where("user_id = ? AND usage_event_id = ? AND type = ?", user.Id, funding.RequestKey, model.LogTypeConsume).Count(&logs).Error == nil && logs == 1
+		})
+		req, err := http.NewRequest("POST", "http://127.0.0.1:18372/v1/chat/completions", strings.NewReader(body))
+		must(err)
+		req.Header.Set("Authorization", "Bearer sk-"+token.Key)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+		must(err)
+		_, err = io.Copy(io.Discard, resp.Body)
+		must(err)
+		must(resp.Body.Close())
+		check(resp.StatusCode == 403, "negative paid account admitted a fresh call on second gateway")
+		mu.Lock()
+		attempts := calls[scenario.name]
+		mu.Unlock()
+		check(attempts == 1, "debt blocked request reached upstream")
+		must(model.DB.Transaction(func(tx *gorm.DB) error {
+			_, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: scenario.name + "-repay", PaidCents: 1000, PostedAt: common.GetTimestamp(), Money: model.MarketingMoneySnapshot{Amount: "1000", QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}})
+			return err
+		}))
+		must(model.DB.First(&user, user.Id).Error)
+		check(user.Quota == 1000+scenario.debt, "recharge did not offset debt naturally")
+		request("18372", "/v1/chat/completions", token.Key, `{"model":"gpt-4o","messages":[{"role":"user","content":"success"}]}`)
+		eventually("paid recharge permits new settled call", func() bool {
+			var next model.MarketingFunding
+			return model.DB.Where("user_id = ? AND id <> ?", user.Id, funding.ID).First(&next).Error == nil && next.State == "settled"
+		})
+		must(model.DB.First(&user, user.Id).Error)
+		check(user.Quota == 1000+scenario.debt-500, "debt was charged twice on recovery")
+		fmt.Printf("GATEWAY_DEBT_OK case=%s fee=%d gift=%d paid_after_call=%d recharge=1000 next_other_process=success single_usage_log=true\n", scenario.name, scenario.actual, scenario.gift, scenario.debt)
+	}
+
 }

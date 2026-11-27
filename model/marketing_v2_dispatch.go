@@ -206,9 +206,20 @@ func BeginMarketingDispatch(tx *gorm.DB, input MarketingDispatchInput) (*Marketi
 	if err = CheckMarketingFundingDebt(tx, input.UserID); err != nil {
 		return nil, false, err
 	}
+	// Another admitted request can settle above its estimate before this send.
+	// Its actual charge must not turn this stale hold into unbacked permission.
+	if book.account.PaidReserved > int64(book.user.Quota) {
+		var paidHolds int64
+		if err = tx.Model(&MarketingAllocation{}).Where("funding_id = ? AND gift_id = ? AND reserved_quota > ?", funding.ID, 0, 0).Count(&paidHolds).Error; err != nil {
+			return nil, false, err
+		}
+		if paidHolds > 0 {
+			return nil, false, ErrMarketingInsufficient
+		}
+	}
 	// Include this request's own hold; funds already reserved for it remain
 	// usable, but an earlier zero reservation is not permission after exhaustion.
-	if book.hasToken && !book.token.UnlimitedQuota && int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota <= 0 {
+	if book.hasToken && !book.token.UnlimitedQuota && (int64(book.token.RemainQuota) < book.tokenHold.ReservedQuota || int64(book.token.RemainQuota)-book.tokenHold.ReservedQuota+funding.ReservedQuota <= 0) {
 		return nil, false, ErrMarketingInsufficient
 	}
 	if err = marketingRequestCanDispatch(tx, funding); err != nil {

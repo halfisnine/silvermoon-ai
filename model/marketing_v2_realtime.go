@@ -365,6 +365,16 @@ func (book *fundingBook) realtimeRoundReserved() int64 {
 
 func (book *fundingBook) reserveRealtimeRound(funding *MarketingFunding, target int64) (bool, error) {
 	held := book.realtimeRoundReserved()
+	if book.hasToken && !book.token.UnlimitedQuota && int64(book.token.RemainQuota) < book.tokenHold.ReservedQuota {
+		return false, nil
+	}
+	if book.account.PaidReserved > int64(book.user.Quota) {
+		for _, allocation := range book.allocations {
+			if allocation.RoundID == book.roundID && allocation.GiftID == 0 && allocation.ReservedQuota > 0 {
+				return false, nil
+			}
+		}
+	}
 	if target <= held {
 		return true, nil
 	}
@@ -845,7 +855,7 @@ func ApplyMarketingRealtimeFact(tx *gorm.DB, input MarketingRealtimeFactInput) (
 	if err = book.save(tx, funding); err != nil {
 		return nil, err
 	}
-	result := &MarketingRealtimeResult{Funding: funding, Round: round, Created: true, Stop: funding.State == "review" || funding.RealtimeClosed}
+	result := &MarketingRealtimeResult{Funding: funding, Round: round, Created: true, Stop: funding.State == "review" || funding.RealtimeClosed || book.user.Quota < 0 || (book.hasToken && !book.token.UnlimitedQuota && book.token.RemainQuota < 0)}
 	outcome, err := common.Marshal(result)
 	if err != nil {
 		return nil, err

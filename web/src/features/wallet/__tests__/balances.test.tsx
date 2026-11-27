@@ -78,3 +78,93 @@ test('wallet fetch failure is visible and retry does not present a false zero ba
   await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
   expect(retry).toHaveBeenCalledOnce()
 })
+
+test.each([false, true])(
+  'negative paid balance shows exact debt and automatic recharge offset in compact=%s',
+  async (compact) => {
+    await view(
+      <WalletStatsCard
+        compact={compact}
+        balance={{
+          paid: { amount: '-12.000001', currency: 'CNY' },
+          gift: { amount: '2', currency: 'CNY' },
+        }}
+      />
+    )
+    expect(screen.getByText('¥-12.000001')).toHaveClass('text-destructive')
+    expect(screen.getByText('¥2')).not.toHaveClass('text-destructive')
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Amount owed: ¥12.000001. Your next recharge will automatically offset this debt.'
+    )
+    expect(screen.getByRole('status')).toHaveClass('col-span-2', 'break-words')
+    expect(screen.getAllByRole('status')).toHaveLength(1)
+    await act(() => i18next.changeLanguage('zh'))
+    expect(screen.getByRole('status')).toHaveTextContent(
+      '当前欠款：¥12.000001。下次充值将自动抵扣欠款。'
+    )
+    expect(screen.getByText('¥-12.000001')).toHaveClass('text-destructive')
+  }
+)
+
+test.each(['100', '0', '-0.000000'])(
+  'paid balance %s shows no debt warning',
+  async (paid) => {
+    await view(
+      <WalletStatsCard
+        balance={{
+          paid: { amount: paid, currency: 'CNY' },
+          gift: { amount: '0', currency: 'CNY' },
+        }}
+      />
+    )
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(document.querySelector('.text-destructive')).not.toBeInTheDocument()
+  }
+)
+
+test('a tiny negative paid amount retains its debt precision without rounding to zero', async () => {
+  await view(
+    <WalletStatsCard
+      balance={{
+        paid: { amount: '-0.000000000000000001', currency: 'USD' },
+        gift: { amount: '0', currency: 'USD' },
+      }}
+    />
+  )
+  expect(screen.getByText('$-0.000000000000000001')).toHaveClass(
+    'text-destructive'
+  )
+  expect(screen.getByRole('status')).toHaveTextContent(
+    'Amount owed: $0.000000000000000001.'
+  )
+})
+
+test.each([{ loading: true }, { error: true }])(
+  'unavailable wallet data %j suppresses a stale debt warning',
+  async (state) => {
+    await view(
+      <WalletStatsCard
+        {...state}
+        balance={{
+          paid: { amount: '-12', currency: 'CNY' },
+          gift: { amount: '0', currency: 'CNY' },
+        }}
+      />
+    )
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.queryByText('¥-12')).not.toBeInTheDocument()
+  }
+)
+
+test('an invalid paid amount stays unavailable without presenting a debt amount', async () => {
+  await view(
+    <WalletStatsCard
+      balance={{
+        paid: { amount: '-unknown', currency: 'CNY' },
+        gift: { amount: '0', currency: 'CNY' },
+      }}
+    />
+  )
+  expect(screen.getByText('—')).toBeVisible()
+  expect(screen.queryByRole('status')).not.toBeInTheDocument()
+})

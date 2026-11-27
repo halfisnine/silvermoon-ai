@@ -443,6 +443,36 @@ func TestEpayMarketing(t *testing.T) {
 				require.NoError(t, order.Insert())
 				return order
 			}
+			t.Run("callback_offsets_negative_balance_once", func(t *testing.T) {
+				for _, opening := range []int{-100, -74, -40} {
+					user := newUser(common.RoleCommonUser)
+					require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", opening).Error)
+					require.NoError(t, db.Model(&MarketingAccount{}).Where("user_id = ?", user.Id).Update("opening_quota", opening).Error)
+					order := create(user.Id, "negative-"+strconv.Itoa(user.Id))
+					require.NoError(t, ValidateTopUpQuotaCapacity(user.Id, 74))
+					var first *EpayTopUpResult
+					for i := range 2 {
+						require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+							result, err := CreditEpayTopUp(tx, order.TradeNo, epayTestReceipt(order.TradeNo, "alipay"), 200)
+							if err != nil {
+								return err
+							}
+							assert.Equal(t, i == 1, result.AlreadyPosted)
+							if first == nil {
+								first = result
+							} else {
+								assert.Equal(t, first.PaymentID, result.PaymentID)
+							}
+							return nil
+						}))
+					}
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, opening+74, user.Quota)
+					var consumed int64
+					require.NoError(t, db.Model(&MarketingLedgerEntry{}).Where("user_id = ? AND kind = ?", user.Id, "consume").Count(&consumed).Error)
+					assert.Zero(t, consumed, "paying an existing signed balance creates no duplicate consumption")
+				}
+			})
 			t.Run("snapshot_receipt_replay_and_manual_evidence", func(t *testing.T) {
 				user := newUser(common.RoleCommonUser)
 				order := create(user.Id, "snapshot")

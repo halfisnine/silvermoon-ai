@@ -584,6 +584,7 @@
     "Amount must be greater than 0": "Amount must be greater than 0",
     "Amount of quota to credit to user account.": "Amount of quota to credit to user account.",
     "Amount options must be a JSON array": "Amount options must be a JSON array",
+    "Amount owed: {{amount}}. Your next recharge will automatically offset this debt.": "Amount owed: {{amount}}. Your next recharge will automatically offset this debt.",
     "Amount the user pays to purchase this plan (USD).": "Amount the user pays to purchase this plan (USD).",
     "Amount the user pays to purchase this plan; the actual currency depends on the payment gateway.": "Amount the user pays to purchase this plan; the actual currency depends on the payment gateway.",
     "Amount to pay:": "Amount to pay:",

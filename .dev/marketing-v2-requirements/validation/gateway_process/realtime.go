@@ -173,7 +173,7 @@ type realtimeFixtureBudget struct{ PaidQuota, TokenQuota int }
 func realtimeFixtureAccount(label string, giftQuota int, expiresAt int64, budgets ...realtimeFixtureBudget) (model.User, model.Token, model.MarketingGift) {
 	user := model.User{Username: "realtime_" + label, AffCode: "rt_" + label, Status: common.UserStatusEnabled, Group: "default", Role: common.RoleCommonUser}
 	token := model.Token{Key: fmt.Sprintf("realtime%-40s", label), Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 10000, Group: "default"}
-	token.Key = strings.ReplaceAll(token.Key, " ", "0")
+	token.Key = strings.NewReplacer(" ", "0", "-", "0").Replace(token.Key)
 	var gift model.MarketingGift
 	principal := 5000
 	if len(budgets) > 0 {
@@ -192,8 +192,10 @@ func realtimeFixtureAccount(label string, giftQuota int, expiresAt int64, budget
 			return err
 		}
 		now := common.GetTimestamp()
-		if _, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: "realtime-" + label, PaidCents: 100, PostedAt: now, Money: model.MarketingMoneySnapshot{Amount: fmt.Sprint(principal), QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}}); err != nil {
-			return err
+		if principal > 0 {
+			if _, err := model.CreditMarketingPayment(tx, model.MarketingPaymentInput{UserID: user.Id, Kind: "online", Reference: "realtime-" + label, PaidCents: 100, PostedAt: now, Money: model.MarketingMoneySnapshot{Amount: fmt.Sprint(principal), QuotaPerUnit: "1", CurrencyPerUnit: "1", Currency: "CNY"}}); err != nil {
+				return err
+			}
 		}
 		if giftQuota == 0 {
 			return nil
@@ -585,15 +587,19 @@ func runRealtimeExhaustionScenarios(f *realtimeGatewayFixture) {
 		// The test never closes the provider or client to trigger this stop.
 		_ = client.Close()
 		var funding model.MarketingFunding
-		eventually("exhausted realtime review", func() bool {
-			return model.DB.Where("user_id = ? AND realtime = ?", user.Id, true).First(&funding).Error == nil && funding.RealtimeClosed && funding.State == "review"
+		expectedState := "review"
+		if known {
+			expectedState = "settled"
+		}
+		eventually("exhausted realtime finalized", func() bool {
+			return model.DB.Where("user_id = ? AND realtime = ?", user.Id, true).First(&funding).Error == nil && funding.RealtimeClosed && funding.State == expectedState
 		})
 		must(model.DB.First(&user, user.Id).Error)
 		must(model.DB.First(&token, token.Id).Error)
 		must(model.DB.First(&gift, gift.ID).Error)
 		if known {
-			check(funding.CostKnown && funding.ActualQuota == 1200 && funding.SettledQuota == 600, "queued true terminal lost or debt forgiven at exhaustion")
-			check(user.Quota == 0 && gift.ConsumedQuota == 100 && token.RemainQuota == 9400, "exhaustion overdrew balances or missed actual paid sources")
+			check(funding.CostKnown && funding.ActualQuota == 1200 && funding.SettledQuota == 1200, "queued true terminal lost or debt forgiven at exhaustion")
+			check(user.Quota == -600 && gift.ConsumedQuota == 100 && token.RemainQuota == 8800, "exhaustion did not charge full confirmed usage to gift and signed paid balance")
 		} else {
 			check(!funding.CostKnown && funding.SettledQuota == 0 && funding.ReservedQuota > 0, "exhaustion without terminal charged or released an estimate")
 			check(user.Quota == 500 && gift.ConsumedQuota == 0 && token.RemainQuota == 10000, "unknown exhausted response changed actual balances")
@@ -699,7 +705,7 @@ func runRealtimeRejectedStartScenarios(f *realtimeGatewayFixture) {
 		})
 		_ = client.Close()
 		eventually("rejected automatic start durable review", func() bool {
-			return model.DB.First(&funding, funding.ID).Error == nil && funding.RealtimeClosed && funding.State == "review"
+			return model.DB.First(&funding, funding.ID).Error == nil && funding.RealtimeClosed && funding.State == map[bool]string{true: "settled", false: "review"}[scenario.known]
 		})
 		var rejected *model.MarketingRealtimeRound
 		must(model.DB.Transaction(func(tx *gorm.DB) error {
@@ -711,7 +717,11 @@ func runRealtimeRejectedStartScenarios(f *realtimeGatewayFixture) {
 		if scenario.output {
 			check(rejected.OutputObserved && (!scenario.audio || rejected.AudioOutputObserved), "already-read rejected output evidence was discarded")
 		}
-		check(funding.SettledQuota == 120, "rejected response changed first round's settled charge")
+		expectedSettled := int64(120)
+		if scenario.known {
+			expectedSettled = 125
+		}
+		check(funding.SettledQuota == expectedSettled, "rejected response did not preserve confirmed settled charge")
 		if scenario.known {
 			check(funding.CostKnown && funding.ActualQuota == 125 && rejected.UsageJSON != "" && !rejected.Unknown, "read terminal lost true unpaid cost at rejected start")
 		} else {
@@ -724,8 +734,8 @@ func runRealtimeRejectedStartScenarios(f *realtimeGatewayFixture) {
 		must(err)
 		for range 2 {
 			recovered, recoverErr := service.ReconcileMarketingRealtimeResponse(user.Id, funding.ID, raw, time.Now())
-			check(errors.Is(recoverErr, model.ErrMarketingReview), fmt.Sprintf("trusted rejected-start recovery must retain unpaid review: %v", recoverErr))
-			check(recovered != nil && recovered.CostKnown && recovered.ActualQuota == 125 && recovered.SettledQuota == 120 && recovered.State == "review", "trusted late nonzero usage was erased or unpaid charge forgiven")
+			must(recoverErr)
+			check(recovered != nil && recovered.CostKnown && recovered.ActualQuota == 125 && recovered.SettledQuota == 125 && recovered.State == "settled", "trusted late nonzero usage was erased or charge not fully settled")
 		}
 		var stored model.MarketingRealtimeRound
 		must(model.DB.First(&stored, oldID).Error)
@@ -735,31 +745,19 @@ func runRealtimeRejectedStartScenarios(f *realtimeGatewayFixture) {
 		check(roundCount == 2, "late rejected-start recovery created an extra round")
 		must(model.DB.First(&user, user.Id).Error)
 		must(model.DB.First(&token, token.Id).Error)
-		check(user.Quota == 4880 && token.RemainQuota == 0 && token.UsedQuota == 120, "late terminal double-charged or overran exhausted token")
-		// A fresh funded token proves this is the account-wide review gate,
-		// rather than merely the exhausted original token's ordinary limit.
-		freshToken := model.Token{UserId: user.Id, Key: fmt.Sprintf("reviewbypass%036d", user.Id), Name: "isolated review gate probe", Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 10000, Group: "default"}
+		check(user.Quota == 4875 && token.RemainQuota == -5 && token.UsedQuota == 125, "late terminal did not charge confirmed cost exactly once")
+		// An exhausted API token does not create account debt when paid funds
+		// covered the full charge. A different funded token can start normally.
+		freshToken := model.Token{UserId: user.Id, Key: fmt.Sprintf("reviewbypass%036d", user.Id), Name: "isolated account debt probe", Status: common.TokenStatusEnabled, ExpiredTime: -1, RemainQuota: 10000, Group: "default"}
 		must(model.DB.Create(&freshToken).Error)
 		before := f.connections.Load()
-		blocked, _, err := websocket.DefaultDialer.Dial("ws://127.0.0.1:18372/v1/realtime?model=realtime-fixture", http.Header{"Authorization": []string{"Bearer sk-" + freshToken.Key}})
-		if err == nil {
-			must(blocked.SetReadDeadline(time.Now().Add(10 * time.Second)))
-			_, body, readErr := blocked.ReadMessage()
-			if readErr == nil {
-				var event struct {
-					Type string `json:"type"`
-				}
-				must(common.Unmarshal(body, &event))
-				check(event.Type == "error", "unpaid rejected response admitted a new connection")
-			} else {
-				var timeout net.Error
-				check(!errors.As(readErr, &timeout) || !timeout.Timeout(), "rejected-start review only timed out")
-			}
-			_ = blocked.Close()
-		}
-		check(f.connections.Load() == before, "unpaid rejected start dispatched on second gateway")
+		freshClient, freshProvider := realtimeDial(f, "18372", freshToken.Key)
+		freshRound := realtimeStartRound(freshClient)
+		realtimeFinishRound(freshClient, freshProvider, freshRound)
+		realtimeCloseAndCheck(freshClient, freshProvider)
+		check(f.connections.Load() == before+1, "positive paid account was blocked by exhausted unrelated token")
 		must(model.DB.First(&freshToken, freshToken.Id).Error)
-		check(freshToken.RemainQuota == 10000 && freshToken.UsedQuota == 0, "account review bypass consumed the fresh token")
-		fmt.Printf("GATEWAY_REALTIME_OK case=rejected_%s natural_token_exhaustion=true fresh_token_review_blocked=true actual_upstream_closed=true durable_identity=true output=%t audio=%t recovered_actual=125 settled=120 process=validation_harness no_metadata=true\n", scenario.name, scenario.output, scenario.audio)
+		check(freshToken.RemainQuota == 9880 && freshToken.UsedQuota == 120, "fresh token did not settle independent usage")
+		fmt.Printf("GATEWAY_REALTIME_OK case=rejected_%s natural_token_exhaustion=true fresh_token_positive_paid_admitted=true actual_upstream_closed=true durable_identity=true output=%t audio=%t recovered_actual=125 settled=125 process=validation_harness no_metadata=true\n", scenario.name, scenario.output, scenario.audio)
 	}
 }

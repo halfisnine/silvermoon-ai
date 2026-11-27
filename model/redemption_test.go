@@ -184,6 +184,36 @@ func TestPaidRedemption(t *testing.T) {
 				require.Len(t, rows, 1)
 				return rows[0]
 			}
+			t.Run("paid_code_offsets_negative_balance_once", func(t *testing.T) {
+				for i, opening := range []int{-500, -370, -200} {
+					name := "debt" + strconv.Itoa(i)
+					user := newUser(name, common.RoleCommonUser)
+					require.NoError(t, db.Model(&User{}).Where("id = ?", user.Id).Update("quota", opening).Error)
+					require.NoError(t, db.Model(&MarketingAccount{}).Where("user_id = ?", user.Id).Update("opening_quota", opening).Error)
+					code := create(name)
+					var paymentID int64
+					for attempt := range 2 {
+						require.NoError(t, db.Transaction(func(tx *gorm.DB) error {
+							result, err := RedeemPaidCode(tx, user.Id, code.Key, 200)
+							if err != nil {
+								return err
+							}
+							assert.Equal(t, attempt == 1, result.AlreadyPosted)
+							if paymentID == 0 {
+								paymentID = result.PaymentID
+							} else {
+								assert.Equal(t, paymentID, result.PaymentID)
+							}
+							return nil
+						}))
+					}
+					require.NoError(t, db.First(&user, user.Id).Error)
+					assert.Equal(t, opening+370, user.Quota)
+					var consumed int64
+					require.NoError(t, db.Model(&MarketingLedgerEntry{}).Where("user_id = ? AND kind = ?", user.Id, "consume").Count(&consumed).Error)
+					assert.Zero(t, consumed)
+				}
+			})
 			t.Run("paid_snapshot_sequence_activity_and_replay", func(t *testing.T) {
 				user := newUser("posting", common.RoleCommonUser)
 				var activity *MarketingActivity

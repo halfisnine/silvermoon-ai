@@ -58,7 +58,7 @@ func MarketingDisplayMoney(amount string) (model.MarketingMoneySnapshot, error) 
 // MarketingWalletDisplayAmount projects stored funds through current site
 // currency settings. HTTP responses must not expose the storage-unit ratio.
 func MarketingWalletDisplayAmount(quota int64) (amount, currency string, err error) {
-	if quota < 0 || quota > common.MaxWalletQuota {
+	if quota < -common.MaxWalletQuota || quota > common.MaxWalletQuota {
 		return "", "", model.ErrMarketingInput
 	}
 	money, err := MarketingDisplayMoney("1")

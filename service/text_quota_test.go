@@ -1843,7 +1843,9 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				info.PriceData.AudioRatio = 1
 			}
 			if scenario == "realtime_pricing_failure" {
-				expression := `p == 0 ? tier("empty", p) : tier("invalid", c / (p-p))`
+				// An out-of-range runtime index produces a real evaluation error;
+				// floating division by zero instead saturates to a billable quota.
+				expression := `p == 0 ? tier("empty", p) : tier("invalid", [0][int(p)])`
 				info.TieredBillingSnapshot = &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: expression, ExprHash: billingexpr.ExprHashString(expression), ExprVersion: 1, QuotaPerUnit: 1_000_000, GroupRatio: 1}
 			}
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -1916,13 +1918,13 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 						require.NoError(t, coordinator.Close("upstream stopped before trusted terminal arrived"))
 						late := []byte(`{"type":"response.done","response":{"id":"automatic-unfunded","status":"completed","usage":{"total_tokens":5,"input_tokens":2,"output_tokens":3,"input_token_details":{"text_tokens":2},"output_token_details":{"text_tokens":3}}}}`)
 						recovered, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
-						require.ErrorIs(t, err, model.ErrMarketingReview, "real cost survives recovery even though the token cannot pay it")
+						require.NoError(t, err, "already incurred usage fully settles even after token exhaustion")
 						require.NotNil(t, recovered)
 						assert.EqualValues(t, 105, recovered.ActualQuota)
-						assert.EqualValues(t, 100, recovered.SettledQuota)
-						assert.Equal(t, "review", recovered.State)
+						assert.EqualValues(t, 105, recovered.SettledQuota)
+						assert.Equal(t, "settled", recovered.State)
 						repeated, err := ReconcileMarketingRealtimeResponse(user.Id, session.funding.ID, late, at)
-						require.ErrorIs(t, err, model.ErrMarketingReview)
+						require.NoError(t, err)
 						assert.Equal(t, recovered.Revision, repeated.Revision)
 						var stopped model.MarketingRealtimeRound
 						require.NoError(t, db.First(&stopped, stoppedID).Error)
@@ -1949,10 +1951,14 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 						assert.EqualValues(t, 100, session.funding.SettledQuota)
 					}
 					require.NoError(t, db.First(&user, user.Id).Error)
-					assert.Equal(t, 20, user.Quota)
+					wantExtra := 0
+					if scenario == "realtime_stopped_start_late" {
+						wantExtra = 5
+					}
+					assert.Equal(t, 20-wantExtra, user.Quota)
 					require.NoError(t, db.First(&token, token.Id).Error)
-					assert.Zero(t, token.RemainQuota)
-					assert.Equal(t, 100, token.UsedQuota)
+					assert.Equal(t, -wantExtra, token.RemainQuota)
+					assert.Equal(t, 100+wantExtra, token.UsedQuota)
 					return
 				}
 
@@ -2459,7 +2465,7 @@ func runMarketingBillingSessionLifecycle(t *testing.T, driver gorm.Dialector) {
 				version := int64(1)
 				if scenario == "known_debt_blocks_next" {
 					actual := int64(130)
-					require.ErrorIs(t, session.SettleEvidence(&actual, false, "upstream_progress", "confirmed partial charge", version), model.ErrMarketingReview)
+					require.NoError(t, session.SettleEvidence(&actual, false, "upstream_progress", "confirmed partial charge", version))
 					version++
 				}
 				require.ErrorIs(t, session.SettleEvidence(nil, true, "unknown", "unresolved remainder", version), model.ErrMarketingReview)
@@ -2803,8 +2809,8 @@ func TestMarketingBillingMessagesRespectReaderLanguage(t *testing.T) {
 		{"zh-CN", model.ErrMarketingReview, "请求的账务处理异常，请联系管理员。"},
 		{"zh-CN", model.ErrMarketingOrigin, "初始余额的资金来源尚未核验，请联系管理员。"},
 		{"en", model.ErrMarketingOrigin, "Initial balance sources have not been verified. Please contact the administrator."},
-		{"zh-TW", model.ErrMarketingDebt, "已有請求的已確認費用尚未結清，請聯絡管理員。"},
-		{"en", model.ErrMarketingDebt, "A previous request has confirmed unpaid charges. Please contact the administrator."},
+		{"zh-TW", model.ErrMarketingDebt, "帳戶存在欠費，請儲值後再發起新請求。"},
+		{"en", model.ErrMarketingDebt, "Your account has unpaid charges. Please add funds before starting another request."},
 		{"zh-TW", model.ErrMarketingAccess, "此帳號或 API 權杖目前無法發起新請求。"},
 	} {
 		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

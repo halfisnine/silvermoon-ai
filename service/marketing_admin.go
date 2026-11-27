@@ -160,7 +160,7 @@ func marketingAdminMoney(amount, currency string, configuration MarketingMoneyCo
 	return money, nil
 }
 func marketingAdminDisplayAmount(quota int64, configuration MarketingMoneyContext) (string, string, error) {
-	if quota < 0 || quota > common.MaxWalletQuota {
+	if quota < -common.MaxWalletQuota || quota > common.MaxWalletQuota {
 		return "", "", model.ErrMarketingInput
 	}
 	units, err := decimal.NewFromString(configuration.Display.QuotaPerUnit)
