@@ -65,7 +65,9 @@ func MarketingAdminRead(c *gin.Context) {
 		return
 	}
 	var result any
-	if resource == "rewards" {
+	if resource == "gifts" || resource == "gift-batches" || resource == "gift-users" {
+		result, err = service.ReadMarketingAdminGifts(c.Request.Context(), identity.UserID, resource, id, f, c.Query("state"), c.Query("validity"))
+	} else if resource == "rewards" {
 		if c.Param("kind") != "" {
 			f.Kind = c.Param("kind")
 		}
@@ -88,6 +90,30 @@ func MarketingAdminWrite(c *gin.Context) {
 	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 262145))
 	if err != nil || len(body) > 262144 {
 		marketingAdminFailure(c, model.ErrMarketingInput)
+		return
+	}
+	if c.Param("resource") == "gift-batches" {
+		var result any
+		if c.Param("id") != "" {
+			id, parseErr := strconv.ParseInt(c.Param("id"), 10, 64)
+			if parseErr != nil || id <= 0 || c.Param("action") != "retry" || c.Request.Method != http.MethodPost {
+				marketingAdminFailure(c, model.ErrMarketingInput)
+				return
+			}
+			result, err = service.RetryMarketingAdminGifts(c.Request.Context(), identity.UserID, id)
+		} else {
+			var input service.MarketingGiftBatchInput
+			if c.Request.Method != http.MethodPost || common.Unmarshal(body, &input) != nil {
+				marketingAdminFailure(c, model.ErrMarketingInput)
+				return
+			}
+			result, err = service.IssueMarketingAdminGifts(c.Request.Context(), identity.UserID, input)
+		}
+		if err != nil {
+			marketingAdminFailure(c, err)
+			return
+		}
+		common.ApiSuccess(c, result)
 		return
 	}
 	var input service.MarketingAdminRequest

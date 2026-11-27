@@ -219,59 +219,9 @@ func ReadMarketingUserGifts(ctx context.Context, userID int, id int64, f Marketi
 		items := []MarketingUserGift{}
 		now := time.Now().Unix()
 		for _, gift := range rows {
-			item := MarketingUserGift{ID: gift.ID, SourceKind: "gift", SourceName: "", SourceNameKey: "Activity reward", CreditedAt: gift.GrantedAt, ExpiresAt: gift.ExpiresAt, State: "active"}
-			remaining, expired := gift.RemainingQuota, gift.ExpiredQuota
-			if gift.ClearedQuota > 0 {
-				item.State = "cleared"
-			} else if gift.ExpiresAt > 0 && gift.ExpiresAt <= now {
-				item.State = "expired"
-				expired += remaining - gift.ReservedQuota
-				remaining = gift.ReservedQuota
-			} else if remaining == 0 {
-				item.State = "used"
-			}
-			snapshot, err := marketingUserGiftConversion(gift)
+			item, err := marketingUserGiftView(tx, gift, now)
 			if err != nil {
 				return err
-			}
-			configuration := MarketingMoneyContext{Display: snapshot}
-			for _, field := range []struct {
-				quota  int64
-				target *string
-			}{{gift.GrantedQuota, &item.GrantedAmount}, {gift.ConsumedQuota, &item.ConsumedAmount}, {remaining, &item.RemainingAmount}, {expired, &item.ExpiredAmount}, {gift.ClearedQuota, &item.ClearedAmount}} {
-				*field.target, item.Currency, err = marketingAdminDisplayAmount(field.quota, configuration)
-				if err != nil {
-					return err
-				}
-			}
-			var activityReward model.MarketingActivityReward
-			err = tx.Where("gift_id = ? AND user_id = ?", gift.ID, userID).First(&activityReward).Error
-			if err == nil {
-				var activity model.MarketingActivity
-				if err := tx.First(&activity, activityReward.ActivityID).Error; err != nil {
-					return err
-				}
-				item.SourceName = activity.Name
-				item.SourceNameKey = ""
-				item.RewardID = activityReward.ID
-				item.RewardKind = "activity"
-			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			} else {
-				var award model.MarketingLotteryAward
-				err := tx.Where("gift_id = ? AND user_id = ?", gift.ID, userID).First(&award).Error
-				if err == nil {
-					var pool model.MarketingLotteryPool
-					if err := tx.First(&pool, award.PoolID).Error; err != nil {
-						return err
-					}
-					item.SourceName = pool.Name
-					item.SourceNameKey = ""
-					item.RewardID = award.DrawID
-					item.RewardKind = "lottery"
-				} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-					return err
-				}
 			}
 			items = append(items, item)
 		}
@@ -317,4 +267,74 @@ func marketingUserGiftConversion(gift model.MarketingGift) (model.MarketingMoney
 		return snapshot, model.ErrMarketingInput
 	}
 	return snapshot, nil
+}
+
+// Shared by owner-scoped gift details and the administrator projection; the
+// caller enforces ownership/authorization before resolving financial records.
+func marketingUserGiftView(tx *gorm.DB, gift model.MarketingGift, now int64) (MarketingUserGift, error) {
+	item := MarketingUserGift{ID: gift.ID, SourceKind: gift.SourceKind, SourceName: "", SourceNameKey: marketingGiftSourceKey(gift.SourceKind), CreditedAt: gift.GrantedAt, ExpiresAt: gift.ExpiresAt, State: "active"}
+	remaining, expired := gift.RemainingQuota, gift.ExpiredQuota
+	if gift.ClearedQuota > 0 {
+		item.State = "cleared"
+	} else if gift.ExpiresAt > 0 && gift.ExpiresAt <= now {
+		item.State = "expired"
+		expired += remaining - gift.ReservedQuota
+		remaining = gift.ReservedQuota
+	} else if remaining == 0 {
+		item.State = "used"
+	}
+	snapshot, err := marketingUserGiftConversion(gift)
+	if err != nil {
+		return item, err
+	}
+	configuration := MarketingMoneyContext{Display: snapshot}
+	for _, field := range []struct {
+		quota  int64
+		target *string
+	}{{gift.GrantedQuota, &item.GrantedAmount}, {gift.ConsumedQuota, &item.ConsumedAmount}, {remaining, &item.RemainingAmount}, {expired, &item.ExpiredAmount}, {gift.ClearedQuota, &item.ClearedAmount}} {
+		*field.target, item.Currency, err = marketingAdminDisplayAmount(field.quota, configuration)
+		if err != nil {
+			return item, err
+		}
+	}
+	if gift.SourceKind == "admin_gift" {
+		return item, nil
+	}
+	var activityReward model.MarketingActivityReward
+	err = tx.Where("gift_id = ? AND user_id = ?", gift.ID, gift.UserID).First(&activityReward).Error
+	if err == nil {
+		var activity model.MarketingActivity
+		if err := tx.First(&activity, activityReward.ActivityID).Error; err != nil {
+			return item, err
+		}
+		item.SourceName = activity.Name
+		item.SourceNameKey = ""
+		item.RewardID = activityReward.ID
+		item.RewardKind = "activity"
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return item, err
+	} else {
+		var award model.MarketingLotteryAward
+		err := tx.Where("gift_id = ? AND user_id = ?", gift.ID, gift.UserID).First(&award).Error
+		if err == nil {
+			var pool model.MarketingLotteryPool
+			if err := tx.First(&pool, award.PoolID).Error; err != nil {
+				return item, err
+			}
+			item.SourceName = pool.Name
+			item.SourceNameKey = ""
+			item.RewardID = award.DrawID
+			item.RewardKind = "lottery"
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return item, err
+		}
+	}
+	return item, nil
+}
+
+func marketingGiftSourceKey(kind string) string {
+	if kind == "admin_gift" {
+		return "Administrator gift"
+	}
+	return "Activity reward"
 }

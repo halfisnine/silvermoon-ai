@@ -431,6 +431,204 @@ func TestMarketingAdminHTTP(t *testing.T) {
 			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 		}
 	})
+
+	t.Run("manual_gifts_preserve_assets_and_retry_only_unsuccessful_recipients", func(t *testing.T) {
+		// Upgrade a populated marketing database; repeat migration and retain prior
+		// gifts, paid money, and all existing ledger facts unchanged.
+		var prior []model.MarketingGift
+		require.NoError(t, model.DB.Order("id").Find(&prior).Error)
+		for range 2 {
+			require.NoError(t, model.DB.AutoMigrate(&model.MarketingGiftBatch{}, &model.MarketingGiftRecipient{}))
+		}
+		var after []model.MarketingGift
+		require.NoError(t, model.DB.Order("id").Find(&after).Error)
+		assert.Equal(t, prior, after)
+		first := model.User{Username: "manual-first", AffCode: "manual-first", Status: common.UserStatusEnabled, Role: common.RoleCommonUser, Quota: 19}
+		second := model.User{Username: "manual-second", AffCode: "manual-second", Status: common.UserStatusDisabled, Role: common.RoleCommonUser, Quota: 23}
+		require.NoError(t, model.DB.Create(&first).Error)
+		require.NoError(t, model.DB.Create(&second).Error)
+		var current struct {
+			Currency string `json:"currency"`
+			Revision string `json:"money_revision"`
+		}
+		decode(request("GET", "/metadata", nil, bundle.AccessToken), &current)
+		input := service.MarketingGiftBatchInput{OperationKey: "manual-partial", MoneyRevision: current.Revision, UserIDs: []int{second.Id, first.Id}, Amount: "0.00004", Currency: current.Currency, ValidSeconds: 3600, Reason: "internal compensation evidence"}
+		assert.Equal(t, http.StatusUnauthorized, request("POST", "/gift-batches", input, "").Code)
+		var batch service.MarketingGiftBatchView
+		response := request("POST", "/gift-batches", input, bundle.AccessToken)
+		decode(response, &batch)
+		assert.Equal(t, 2, batch.Total)
+		assert.Equal(t, 1, batch.Credited)
+		assert.Equal(t, 1, batch.Failed)
+		assert.Equal(t, "0.00004", batch.TotalAmount)
+		require.Len(t, batch.Recipients, 2)
+		var gifted model.MarketingGift
+		require.NoError(t, model.DB.Where("user_id = ?", first.Id).First(&gifted).Error)
+		assert.EqualValues(t, 1, gifted.GrantedQuota)
+		assert.EqualValues(t, 3600, gifted.ExpiresAt-gifted.GrantedAt)
+		assert.Equal(t, "admin_gift", gifted.SourceKind)
+		assert.NotContains(t, response.Body.String(), "QuotaPerUnit")
+		// A changed form using the same operation key must never re-credit anyone.
+		changed := input
+		changed.Amount = "2"
+		assert.Equal(t, http.StatusConflict, request("POST", "/gift-batches", changed, bundle.AccessToken).Code)
+		var replay service.MarketingGiftBatchView
+		decode(request("POST", "/gift-batches", input, bundle.AccessToken), &replay)
+		assert.Equal(t, batch.ID, replay.ID)
+		require.NoError(t, model.DB.Model(&second).Update("status", common.UserStatusEnabled).Error)
+		common.QuotaPerUnit = 100000
+		decode(request("POST", "/gift-batches", input, bundle.AccessToken), &replay)
+		assert.Equal(t, 2, replay.Credited)
+		assert.Zero(t, replay.Failed)
+		assert.Equal(t, "0.00008", replay.TotalAmount)
+		var secondGift model.MarketingGift
+		require.NoError(t, model.DB.Where("user_id = ?", second.Id).First(&secondGift).Error)
+		assert.EqualValues(t, 1, secondGift.GrantedQuota, "retry retains original conversion")
+		assert.EqualValues(t, 3600, secondGift.ExpiresAt-secondGift.GrantedAt)
+		common.QuotaPerUnit = 50000
+		var paidFirst, paidSecond model.User
+		require.NoError(t, model.DB.First(&paidFirst, first.Id).Error)
+		require.NoError(t, model.DB.First(&paidSecond, second.Id).Error)
+		assert.Equal(t, 19, paidFirst.Quota)
+		assert.Equal(t, 23, paidSecond.Quota)
+		for _, record := range []any{&model.MarketingPayment{}, &model.MarketingActivityFact{}} {
+			var count int64
+			require.NoError(t, model.DB.Model(record).Where("user_id IN ?", []int{first.Id, second.Id}).Count(&count).Error)
+			assert.Zero(t, count, "manual gifts are not payments or activity triggers")
+		}
+		// Administrator list is global and includes the source and linked batch.
+		var gifts struct {
+			Items []service.MarketingAdminGiftView `json:"items"`
+			Total int64                            `json:"total"`
+		}
+		decode(request("GET", "/gifts?kind=admin_gift&keyword=manual-&validity=limited", nil, bundle.AccessToken), &gifts)
+		assert.EqualValues(t, 2, gifts.Total)
+		for _, g := range gifts.Items {
+			assert.Equal(t, "Administrator gift", g.SourceNameKey)
+			assert.Equal(t, batch.ID, g.BatchID)
+		}
+		// Owner projections expose their own gift source, never internal reasons or
+		// another user's gift. The same route remains owner-scoped for admins too.
+		ug := router.Group("/api/marketing/user", middleware.UserAuth())
+		ug.GET("/:resource", MarketingUserRead)
+		ug.GET("/:resource/:id", MarketingUserRead)
+		ownBundle, err := service.CreateLoginSession(first.Id, "password", "127.0.0.1", "gift-owner")
+		require.NoError(t, err)
+		ownerRequest := func(path, token string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest("GET", "/api/marketing/user"+path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+			return rec
+		}
+		var owned struct {
+			Items []service.MarketingUserGift `json:"items"`
+			Total int64                       `json:"total"`
+		}
+		ownerResponse := ownerRequest("/gifts", ownBundle.AccessToken)
+		decode(ownerResponse, &owned)
+		require.Len(t, owned.Items, 1)
+		assert.Equal(t, gifted.ID, owned.Items[0].ID)
+		assert.Equal(t, "Administrator gift", owned.Items[0].SourceNameKey)
+		assert.NotContains(t, ownerResponse.Body.String(), input.Reason)
+		assert.NotContains(t, ownerResponse.Body.String(), "actor_id")
+		assert.NotContains(t, ownerResponse.Body.String(), "batch_id")
+		assert.Equal(t, http.StatusNotFound, ownerRequest(fmt.Sprintf("/gifts/%d", secondGift.ID), ownBundle.AccessToken).Code)
+		assert.Equal(t, http.StatusForbidden, request("GET", "/gifts", nil, ownBundle.AccessToken).Code)
+		assert.Equal(t, http.StatusForbidden, request("POST", fmt.Sprintf("/gift-batches/%d/retry", batch.ID), map[string]any{}, ownBundle.AccessToken).Code)
+		// Permanent and expired amounts stay gifts; expiry is not consumption.
+		permanent := input
+		permanent.OperationKey = "manual-permanent"
+		permanent.UserIDs = []int{first.Id}
+		permanent.ValidSeconds = 0
+		decode(request("POST", "/gift-batches", permanent, bundle.AccessToken), &replay)
+		require.Len(t, replay.Recipients, 1)
+		require.NotNil(t, replay.Recipients[0].Gift)
+		assert.Zero(t, replay.Recipients[0].Gift.ExpiresAt)
+		require.NoError(t, model.DB.Model(&gifted).Update("expires_at", time.Now().Unix()-1).Error)
+		decode(request("GET", "/gifts?keyword=manual-first&state=expired", nil, bundle.AccessToken), &gifts)
+		require.Len(t, gifts.Items, 1)
+		assert.Equal(t, "0.00004", gifts.Items[0].ExpiredAmount)
+		assert.Equal(t, "0", gifts.Items[0].ConsumedAmount)
+		assert.Equal(t, "0", gifts.Items[0].RemainingAmount)
+		// New HTTP data is bounded and validated before a batch is accepted.
+		for _, tc := range []struct {
+			name   string
+			modify func(*service.MarketingGiftBatchInput)
+		}{
+			{"duplicate", func(v *service.MarketingGiftBatchInput) { v.UserIDs = []int{first.Id, first.Id} }},
+			{"zero", func(v *service.MarketingGiftBatchInput) { v.Amount = "0" }},
+			{"negative", func(v *service.MarketingGiftBatchInput) { v.Amount = "-1" }},
+			{"blank_reason", func(v *service.MarketingGiftBatchInput) { v.Reason = " " }},
+			{"invalid_duration", func(v *service.MarketingGiftBatchInput) { v.ValidSeconds = -1 }},
+			{"too_long", func(v *service.MarketingGiftBatchInput) { v.ValidSeconds = model.MarketingGiftMaxValidity + 1 }},
+			{"too_many", func(v *service.MarketingGiftBatchInput) { v.UserIDs = make([]int, 101) }},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				v := input
+				v.OperationKey = "invalid-" + tc.name
+				tc.modify(&v)
+				assert.Equal(t, http.StatusBadRequest, request("POST", "/gift-batches", v, bundle.AccessToken).Code)
+			})
+		}
+		// A ledger failure after its INSERT rolls back the gift and wallet revision
+		// before recording failure; two different admins can then retry once.
+		t.Run("ledger_rollback_and_concurrent_retry", func(t *testing.T) {
+			var accountBefore model.MarketingAccount
+			require.NoError(t, model.DB.First(&accountBefore, first.Id).Error)
+			var countBefore int64
+			require.NoError(t, model.DB.Model(&model.MarketingGift{}).Where("user_id = ?", first.Id).Count(&countBefore).Error)
+			const callback = "test:manual_gift_ledger_failure"
+			require.NoError(t, model.DB.Callback().Create().After("gorm:create").Register(callback, func(tx *gorm.DB) {
+				if tx.Statement.Table == "marketing_v2_ledger" {
+					tx.AddError(fmt.Errorf("injected ledger write failure"))
+				}
+			}))
+			defer model.DB.Callback().Create().Remove(callback)
+			v := permanent
+			v.OperationKey = "manual-ledger-rollback"
+			var failed service.MarketingGiftBatchView
+			decode(request("POST", "/gift-batches", v, bundle.AccessToken), &failed)
+			assert.Zero(t, failed.Credited)
+			assert.Equal(t, 1, failed.Failed)
+			require.Len(t, failed.Recipients, 1)
+			assert.Equal(t, "Gift delivery failed; retry this batch", failed.Recipients[0].ErrorKey)
+			var countAfter int64
+			require.NoError(t, model.DB.Model(&model.MarketingGift{}).Where("user_id = ?", first.Id).Count(&countAfter).Error)
+			assert.Equal(t, countBefore, countAfter)
+			var accountAfter model.MarketingAccount
+			require.NoError(t, model.DB.First(&accountAfter, first.Id).Error)
+			assert.Equal(t, accountBefore, accountAfter)
+			require.NoError(t, model.DB.Callback().Create().Remove(callback))
+			other := model.User{Username: "manual-other-admin", AffCode: "manual-other-admin", Status: common.UserStatusEnabled, Role: common.RoleAdminUser}
+			require.NoError(t, model.DB.Create(&other).Error)
+			ready := make(chan struct{})
+			outcomes := make(chan error, 2)
+			for _, actorID := range []int{admin.Id, other.Id} {
+				go func() {
+					<-ready
+					_, e := service.RetryMarketingAdminGifts(context.Background(), actorID, failed.ID)
+					outcomes <- e
+				}()
+			}
+			close(ready)
+			require.NoError(t, <-outcomes)
+			require.NoError(t, <-outcomes)
+			decode(request("GET", fmt.Sprintf("/gift-batches/%d", failed.ID), nil, bundle.AccessToken), &failed)
+			assert.Equal(t, 1, failed.Credited)
+			assert.Zero(t, failed.Failed)
+			require.NoError(t, model.DB.Model(&model.MarketingGift{}).Where("user_id = ?", first.Id).Count(&countAfter).Error)
+			assert.Equal(t, countBefore+1, countAfter)
+			var ledgerCount int64
+			require.NotNil(t, failed.Recipients[0].Gift)
+			require.NoError(t, model.DB.Model(&model.MarketingLedgerEntry{}).Where("gift_id = ? AND kind = ?", failed.Recipients[0].Gift.ID, "gift_credit").Count(&ledgerCount).Error)
+			assert.EqualValues(t, 1, ledgerCount)
+		})
+		// Current role is checked even for an existing operation-key replay.
+		require.NoError(t, model.DB.Model(admin).Update("role", common.RoleCommonUser).Error)
+		assert.Equal(t, http.StatusForbidden, request("POST", "/gift-batches", input, bundle.AccessToken).Code)
+		require.NoError(t, model.DB.Model(admin).Update("role", common.RoleAdminUser).Error)
+	})
 	// Exercise an existing new-system activity table that predates the indexed
 	// projection. Restart migration twice without changing authoritative specs.
 	var beforeMigration model.MarketingActivity

@@ -95,6 +95,11 @@ function getSystemSettingsNavGroups(
               icon: Box,
             },
             {
+              title: t('Gift management'),
+              url: '/marketing-admin/gifts',
+              icon: CreditCard,
+            },
+            {
               title: t('Marketing reward records'),
               url: '/marketing-admin/rewards',
               icon: ClipboardList,

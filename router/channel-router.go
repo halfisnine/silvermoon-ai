@@ -49,6 +49,9 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 		controller.GetChannelKey,
 	)
 
+	handlePermissionRoute(channelRoute, http.MethodGet, "/:id/model_batch", authz.ChannelRead, middleware.RootAuth(), controller.GetChannelModelBatch)
+	handlePermissionRoute(channelRoute, http.MethodPost, "/:id/model_batch", authz.ChannelWrite, middleware.RootAuth(), controller.ApplyChannelModelBatch)
+
 	for _, route := range channelPermissionRoutes {
 		handlePermissionRoute(channelRoute, route.method, route.path, route.permission, route.handler)
 	}

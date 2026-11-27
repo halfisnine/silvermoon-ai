@@ -42,6 +42,7 @@ import { cn } from '@/lib/utils'
 export type Option = {
   label: string
   value: string
+  disabled?: boolean
   /**
    * Secondary text shown beside the option in the dropdown. Chips for hinted
    * values also carry a marker icon whose tooltip repeats the hint.
@@ -73,6 +74,14 @@ interface MultiSelectProps {
   id?: string
   /** Disable the entire control. */
   disabled?: boolean
+  /** Reports search changes, including clearing the search after selection. */
+  onSearchChange?: (value: string) => void
+  /** Override local filtering, for example with the current server results. */
+  filter?: (value: string, query: string) => boolean
+  /** Replaces selectable results while loading or displaying an error. */
+  listStatus?: React.ReactNode
+  /** Additional dropdown controls, such as server pagination. */
+  listFooter?: React.ReactNode
   /**
    * Limits rendered chips while keeping all values selected.
    * Hidden values remain searchable/removable from the dropdown.
@@ -131,9 +140,13 @@ export function MultiSelect(props: MultiSelectProps) {
   // input row, not just the leftover space at the end of wrapped chips.
   const chipsAnchorRef = useComboboxAnchor()
 
-  const [inputValue, setInputValue] = React.useState('')
+  const [inputValue, setInputValueState] = React.useState('')
   const [open, setOpen] = React.useState(false)
   const [expanded, setExpanded] = React.useState(false)
+  const setInputValue = (value: string) => {
+    setInputValueState(value)
+    props.onSearchChange?.(value)
+  }
 
   const selectedSet = React.useMemo(
     () => new Set(props.selected),
@@ -294,7 +307,8 @@ export function MultiSelect(props: MultiSelectProps) {
   return (
     <Combobox
       multiple
-      items={items}
+      items={props.listStatus ? [] : items}
+      filter={props.filter}
       value={props.selected}
       onValueChange={handleValueChange}
       inputValue={inputValue}
@@ -417,63 +431,76 @@ export function MultiSelect(props: MultiSelectProps) {
       </ComboboxChips>
 
       <ComboboxContent anchor={chipsAnchorRef}>
-        <ComboboxList>
-          <ComboboxCollection>
-            {(item: string) => {
-              const isCreate = canCreate && item === trimmedInput
-              const label = labelMap.get(item) ?? item
-              const hint = hintMap.get(item)
-              const icon = iconMap.get(item)
-              return (
-                <ComboboxItem
-                  key={item}
-                  value={item}
-                  className={isCreate ? 'text-foreground' : undefined}
-                  aria-description={hint}
-                >
-                  {isCreate ? (
-                    <>
-                      <HugeiconsIcon
-                        icon={Add01Icon}
-                        strokeWidth={2}
-                        className='text-muted-foreground'
-                        aria-hidden='true'
-                      />
-                      <span className='truncate'>
-                        {props.createLabel
-                          ? t(props.createLabel, { value: item })
-                          : t('Add "{{value}}"', { value: item })}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      {icon && (
-                        <span
-                          aria-hidden='true'
-                          className='inline-flex shrink-0'
-                        >
-                          {icon}
-                        </span>
+        {props.listStatus ? (
+          <div className='p-3'>{props.listStatus}</div>
+        ) : (
+          <>
+            <ComboboxList>
+              <ComboboxCollection>
+                {(item: string) => {
+                  const isCreate = canCreate && item === trimmedInput
+                  const label = labelMap.get(item) ?? item
+                  const hint = hintMap.get(item)
+                  const icon = iconMap.get(item)
+                  return (
+                    <ComboboxItem
+                      key={item}
+                      value={item}
+                      disabled={
+                        props.options.find((option) => option.value === item)
+                          ?.disabled
+                      }
+                      className={isCreate ? 'text-foreground' : undefined}
+                      aria-description={hint}
+                    >
+                      {isCreate ? (
+                        <>
+                          <HugeiconsIcon
+                            icon={Add01Icon}
+                            strokeWidth={2}
+                            className='text-muted-foreground'
+                            aria-hidden='true'
+                          />
+                          <span className='truncate'>
+                            {props.createLabel
+                              ? t(props.createLabel, { value: item })
+                              : t('Add "{{value}}"', { value: item })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {icon && (
+                            <span
+                              aria-hidden='true'
+                              className='inline-flex shrink-0'
+                            >
+                              {icon}
+                            </span>
+                          )}
+                          <span className='truncate'>{label}</span>
+                          {hint && (
+                            <span
+                              aria-hidden='true'
+                              className='text-muted-foreground ml-auto max-w-40 shrink-0 truncate text-xs'
+                            >
+                              {hint}
+                            </span>
+                          )}
+                        </>
                       )}
-                      <span className='truncate'>{label}</span>
-                      {hint && (
-                        <span
-                          aria-hidden='true'
-                          className='text-muted-foreground ml-auto max-w-40 shrink-0 truncate text-xs'
-                        >
-                          {hint}
-                        </span>
-                      )}
-                    </>
-                  )}
-                </ComboboxItem>
-              )
-            }}
-          </ComboboxCollection>
-        </ComboboxList>
-        <ComboboxEmpty>
-          {props.emptyText ?? t('No matching items')}
-        </ComboboxEmpty>
+                    </ComboboxItem>
+                  )
+                }}
+              </ComboboxCollection>
+            </ComboboxList>
+            <ComboboxEmpty>
+              {props.emptyText ?? t('No matching items')}
+            </ComboboxEmpty>
+          </>
+        )}
+        {props.listFooter && (
+          <div className='border-t p-2'>{props.listFooter}</div>
+        )}
       </ComboboxContent>
     </Combobox>
   )

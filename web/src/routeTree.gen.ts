@@ -39,6 +39,7 @@ import { Route as AuthenticatedActivitiesCheckinRouteImport } from './routes/_au
 import { Route as AuthenticatedActivitiesInvitationRouteImport } from './routes/_authenticated/activities/invitation'
 import { Route as AuthenticatedActivitiesLotteryRouteImport } from './routes/_authenticated/activities/lottery'
 import { Route as AuthenticatedActivitiesRewardsRouteImport } from './routes/_authenticated/activities/rewards'
+import { Route as AuthenticatedChannelModelBatchIndexRouteImport } from './routes/_authenticated/channel-model-batch/index'
 import { Route as AuthenticatedChannelsIndexRouteImport } from './routes/_authenticated/channels/index'
 import { Route as AuthenticatedChatChatIdRouteImport } from './routes/_authenticated/chat/$chatId'
 import { Route as AuthenticatedDashboardIndexRouteImport } from './routes/_authenticated/dashboard/index'
@@ -46,6 +47,7 @@ import { Route as AuthenticatedDashboardSectionRouteImport } from './routes/_aut
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
 import { Route as AuthenticatedKeysIndexRouteImport } from './routes/_authenticated/keys/index'
 import { Route as AuthenticatedMarketingAdminActivitiesRouteImport } from './routes/_authenticated/marketing-admin/activities'
+import { Route as AuthenticatedMarketingAdminGiftsRouteImport } from './routes/_authenticated/marketing-admin/gifts'
 import { Route as AuthenticatedMarketingAdminPoolsRouteImport } from './routes/_authenticated/marketing-admin/pools'
 import { Route as AuthenticatedMarketingAdminRewardsRouteImport } from './routes/_authenticated/marketing-admin/rewards'
 import { Route as AuthenticatedModelsIndexRouteImport } from './routes/_authenticated/models/index'
@@ -235,6 +237,12 @@ const AuthenticatedActivitiesRewardsRoute =
     path: '/activities/rewards',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedChannelModelBatchIndexRoute =
+  AuthenticatedChannelModelBatchIndexRouteImport.update({
+    id: '/channel-model-batch/',
+    path: '/channel-model-batch/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedChannelsIndexRoute =
   AuthenticatedChannelsIndexRouteImport.update({
     id: '/channels/',
@@ -273,6 +281,12 @@ const AuthenticatedMarketingAdminActivitiesRoute =
   AuthenticatedMarketingAdminActivitiesRouteImport.update({
     id: '/marketing-admin/activities',
     path: '/marketing-admin/activities',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedMarketingAdminGiftsRoute =
+  AuthenticatedMarketingAdminGiftsRouteImport.update({
+    id: '/marketing-admin/gifts',
+    path: '/marketing-admin/gifts',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedMarketingAdminPoolsRoute =
@@ -511,11 +525,13 @@ export interface FileRoutesByFullPath {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/gifts': typeof AuthenticatedMarketingAdminGiftsRoute
   '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
   '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/channel-model-batch/': typeof AuthenticatedChannelModelBatchIndexRoute
   '/channels/': typeof AuthenticatedChannelsIndexRoute
   '/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/keys/': typeof AuthenticatedKeysIndexRoute
@@ -581,11 +597,13 @@ export interface FileRoutesByTo {
   '/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/marketing-admin/gifts': typeof AuthenticatedMarketingAdminGiftsRoute
   '/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
   '/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/models/$section': typeof AuthenticatedModelsSectionRoute
   '/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/channel-model-batch': typeof AuthenticatedChannelModelBatchIndexRoute
   '/channels': typeof AuthenticatedChannelsIndexRoute
   '/dashboard': typeof AuthenticatedDashboardIndexRoute
   '/keys': typeof AuthenticatedKeysIndexRoute
@@ -655,11 +673,13 @@ export interface FileRoutesById {
   '/_authenticated/dashboard/$section': typeof AuthenticatedDashboardSectionRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/marketing-admin/activities': typeof AuthenticatedMarketingAdminActivitiesRoute
+  '/_authenticated/marketing-admin/gifts': typeof AuthenticatedMarketingAdminGiftsRoute
   '/_authenticated/marketing-admin/pools': typeof AuthenticatedMarketingAdminPoolsRoute
   '/_authenticated/marketing-admin/rewards': typeof AuthenticatedMarketingAdminRewardsRoute
   '/_authenticated/models/$section': typeof AuthenticatedModelsSectionRoute
   '/_authenticated/usage-logs/$section': typeof AuthenticatedUsageLogsSectionRoute
   '/_authenticated/usage-logs/audit': typeof AuthenticatedUsageLogsAuditRoute
+  '/_authenticated/channel-model-batch/': typeof AuthenticatedChannelModelBatchIndexRoute
   '/_authenticated/channels/': typeof AuthenticatedChannelsIndexRoute
   '/_authenticated/dashboard/': typeof AuthenticatedDashboardIndexRoute
   '/_authenticated/keys/': typeof AuthenticatedKeysIndexRoute
@@ -728,11 +748,13 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/marketing-admin/activities'
+    | '/marketing-admin/gifts'
     | '/marketing-admin/pools'
     | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
+    | '/channel-model-batch/'
     | '/channels/'
     | '/dashboard/'
     | '/keys/'
@@ -798,11 +820,13 @@ export interface FileRouteTypes {
     | '/dashboard/$section'
     | '/errors/$error'
     | '/marketing-admin/activities'
+    | '/marketing-admin/gifts'
     | '/marketing-admin/pools'
     | '/marketing-admin/rewards'
     | '/models/$section'
     | '/usage-logs/$section'
     | '/usage-logs/audit'
+    | '/channel-model-batch'
     | '/channels'
     | '/dashboard'
     | '/keys'
@@ -871,11 +895,13 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard/$section'
     | '/_authenticated/errors/$error'
     | '/_authenticated/marketing-admin/activities'
+    | '/_authenticated/marketing-admin/gifts'
     | '/_authenticated/marketing-admin/pools'
     | '/_authenticated/marketing-admin/rewards'
     | '/_authenticated/models/$section'
     | '/_authenticated/usage-logs/$section'
     | '/_authenticated/usage-logs/audit'
+    | '/_authenticated/channel-model-batch/'
     | '/_authenticated/channels/'
     | '/_authenticated/dashboard/'
     | '/_authenticated/keys/'
@@ -1141,6 +1167,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedActivitiesRewardsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/channel-model-batch/': {
+      id: '/_authenticated/channel-model-batch/'
+      path: '/channel-model-batch'
+      fullPath: '/channel-model-batch/'
+      preLoaderRoute: typeof AuthenticatedChannelModelBatchIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/channels/': {
       id: '/_authenticated/channels/'
       path: '/channels'
@@ -1188,6 +1221,13 @@ declare module '@tanstack/react-router' {
       path: '/marketing-admin/activities'
       fullPath: '/marketing-admin/activities'
       preLoaderRoute: typeof AuthenticatedMarketingAdminActivitiesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/marketing-admin/gifts': {
+      id: '/_authenticated/marketing-admin/gifts'
+      path: '/marketing-admin/gifts'
+      fullPath: '/marketing-admin/gifts'
+      preLoaderRoute: typeof AuthenticatedMarketingAdminGiftsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/marketing-admin/pools': {
@@ -1532,11 +1572,13 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardSectionRoute: typeof AuthenticatedDashboardSectionRoute
   AuthenticatedErrorsErrorRoute: typeof AuthenticatedErrorsErrorRoute
   AuthenticatedMarketingAdminActivitiesRoute: typeof AuthenticatedMarketingAdminActivitiesRoute
+  AuthenticatedMarketingAdminGiftsRoute: typeof AuthenticatedMarketingAdminGiftsRoute
   AuthenticatedMarketingAdminPoolsRoute: typeof AuthenticatedMarketingAdminPoolsRoute
   AuthenticatedMarketingAdminRewardsRoute: typeof AuthenticatedMarketingAdminRewardsRoute
   AuthenticatedModelsSectionRoute: typeof AuthenticatedModelsSectionRoute
   AuthenticatedUsageLogsSectionRoute: typeof AuthenticatedUsageLogsSectionRoute
   AuthenticatedUsageLogsAuditRoute: typeof AuthenticatedUsageLogsAuditRoute
+  AuthenticatedChannelModelBatchIndexRoute: typeof AuthenticatedChannelModelBatchIndexRoute
   AuthenticatedChannelsIndexRoute: typeof AuthenticatedChannelsIndexRoute
   AuthenticatedDashboardIndexRoute: typeof AuthenticatedDashboardIndexRoute
   AuthenticatedKeysIndexRoute: typeof AuthenticatedKeysIndexRoute
@@ -1568,12 +1610,15 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedErrorsErrorRoute: AuthenticatedErrorsErrorRoute,
   AuthenticatedMarketingAdminActivitiesRoute:
     AuthenticatedMarketingAdminActivitiesRoute,
+  AuthenticatedMarketingAdminGiftsRoute: AuthenticatedMarketingAdminGiftsRoute,
   AuthenticatedMarketingAdminPoolsRoute: AuthenticatedMarketingAdminPoolsRoute,
   AuthenticatedMarketingAdminRewardsRoute:
     AuthenticatedMarketingAdminRewardsRoute,
   AuthenticatedModelsSectionRoute: AuthenticatedModelsSectionRoute,
   AuthenticatedUsageLogsSectionRoute: AuthenticatedUsageLogsSectionRoute,
   AuthenticatedUsageLogsAuditRoute: AuthenticatedUsageLogsAuditRoute,
+  AuthenticatedChannelModelBatchIndexRoute:
+    AuthenticatedChannelModelBatchIndexRoute,
   AuthenticatedChannelsIndexRoute: AuthenticatedChannelsIndexRoute,
   AuthenticatedDashboardIndexRoute: AuthenticatedDashboardIndexRoute,
   AuthenticatedKeysIndexRoute: AuthenticatedKeysIndexRoute,

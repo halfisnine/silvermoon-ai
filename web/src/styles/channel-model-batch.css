@@ -1,0 +1,331 @@
+/* Scoped workbench styling; original New API pages retain their own layout. */
+.channel-model-batch {
+  background: var(--muted);
+  overflow: auto;
+}
+.channel-model-batch .batch-page {
+  width: 100%;
+  max-width: none;
+  padding: 8px;
+}
+.channel-model-batch .batch-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.channel-model-batch .batch-overview,
+.channel-model-batch .batch-models {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.channel-model-batch .batch-overview {
+  padding: 8px 12px;
+}
+.channel-model-batch .batch-overview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.channel-model-batch .batch-channel-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 330px;
+  max-width: 100%;
+  min-width: 0;
+}
+.channel-model-batch .batch-channel-picker > .batch-label {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+.channel-model-batch .batch-channel-picker > div {
+  flex: 1;
+  min-width: 0;
+}
+.channel-model-batch .batch-channel-picker [data-slot='input-group'] {
+  height: 32px;
+}
+.channel-model-batch .batch-label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.channel-model-batch .batch-channel-info {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+}
+.channel-model-batch .batch-channel-info > .batch-label {
+  margin-bottom: 0;
+}
+.channel-model-batch .batch-channel-info > strong {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-model-batch .batch-pills {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.channel-model-batch .batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+.channel-model-batch .batch-toolbar-left,
+.channel-model-batch .batch-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.channel-model-batch .batch-toolbar-right {
+  margin-left: auto;
+}
+.channel-model-batch .batch-toolbar-right > input {
+  width: 220px;
+}
+.channel-model-batch .batch-toolbar-right > div {
+  width: 125px;
+}
+.channel-model-batch [data-slot='button'],
+.channel-batch-dialog [data-slot='button'] {
+  border-radius: 7px;
+  font-size: 12px;
+}
+.channel-model-batch [data-slot='input'],
+.channel-model-batch [data-slot='input-group'],
+.channel-batch-dialog [data-slot='input-group'] {
+  border-radius: 7px;
+  box-shadow: none;
+  font-size: 12px;
+}
+.channel-model-batch .batch-table {
+  border: 0;
+  border-radius: 0 0 12px 12px;
+}
+.channel-model-batch .batch-table th {
+  background: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+  padding: 10px 8px;
+}
+.channel-model-batch .batch-table td {
+  padding: 10px 8px;
+  height: 58px;
+  border-top: 1px solid var(--border);
+}
+.channel-model-batch .batch-model-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.channel-model-batch .batch-model-cell input {
+  height: 30px;
+  min-width: 0;
+  padding: 4px 7px;
+  font-weight: 500;
+}
+.channel-model-batch .batch-vendor-select {
+  width: 100%;
+  flex-shrink: 0;
+}
+.channel-model-batch .batch-vendor-select [data-slot='input-group'] {
+  height: 30px;
+}
+.channel-model-batch .batch-vendor-select input {
+  font-size: 11px;
+  padding: 2px 6px;
+}
+.channel-model-batch .batch-upstream {
+  display: block;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.channel-model-batch .batch-price-controls {
+  display: grid;
+  grid-template-columns: 68px 216px minmax(0, 318px);
+  align-items: center;
+  column-gap: 6px;
+  row-gap: 5px;
+}
+.channel-model-batch .batch-cache-fields {
+  min-width: 0;
+}
+.channel-model-batch .batch-cache-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+.channel-model-batch .batch-price-controls [data-slot='input-group'] {
+  height: 30px;
+}
+.channel-model-batch .batch-price-controls input {
+  height: 28px;
+}
+.channel-model-batch .batch-cache-fields input {
+  min-width: 38px;
+  width: 0;
+  font-size: 12px;
+  padding-left: 4px;
+}
+.channel-model-batch .batch-cache-fields [data-slot='input-group-addon'] {
+  font-size: 9px;
+  padding: 0 5px;
+  white-space: nowrap;
+}
+.channel-model-batch .batch-cache-fields [data-slot='label'] {
+  font-size: 10px;
+}
+.channel-model-batch .batch-cache-fields [data-align='inline-start'] > div {
+  gap: 5px;
+}
+.channel-model-batch
+  .batch-price-controls[data-mode='request']
+  > .batch-price-fields {
+  max-width: 110px;
+}
+.channel-model-batch .batch-mode {
+  width: 68px;
+  flex-shrink: 0;
+}
+.batch-price-fields {
+  display: flex;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
+}
+.batch-price-fields [data-slot='input-group'] {
+  min-width: 0;
+  flex: 1;
+}
+.batch-price-fields input {
+  width: 0;
+  min-width: 30px;
+  font-size: 12px;
+  padding-left: 7px;
+}
+.batch-price-fields [data-slot='input-group-addon'] {
+  font-size: 9px;
+  padding: 0 5px 0 0;
+  white-space: nowrap;
+}
+.channel-model-batch .batch-advanced {
+  min-height: 30px;
+  height: auto;
+  padding: 0;
+  font-size: 11px;
+  white-space: normal;
+  text-align: left;
+  justify-content: flex-start;
+  color: var(--muted-foreground);
+}
+.channel-model-batch .batch-status {
+  font-size: 10px;
+  border-radius: 999px;
+  padding: 5px 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  display: inline-block;
+}
+.channel-model-batch .batch-status.ready {
+  background: #e8f7ed;
+  color: #227349;
+}
+.channel-model-batch .batch-status.todo {
+  background: #fff5dd;
+  color: #8c651b;
+}
+.channel-model-batch .batch-footer {
+  position: sticky;
+  bottom: -8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  z-index: 10;
+}
+.channel-model-batch .batch-footer > span {
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .channel-model-batch .batch-page {
+    padding: 8px;
+  }
+  .channel-model-batch .batch-overview-row {
+    gap: 14px;
+  }
+  .channel-model-batch .batch-pills {
+    margin-left: 0;
+  }
+  .channel-model-batch .batch-toolbar-left {
+    flex-wrap: wrap;
+  }
+  .channel-model-batch .batch-toolbar-right {
+    width: 100%;
+  }
+  .channel-model-batch .batch-toolbar-right > input {
+    flex: 1;
+    width: 0;
+  }
+}
+.channel-model-batch {
+  --card: #fff;
+  --muted: #f5f6fa;
+  --border: #e5e8ef;
+  --foreground: #20263a;
+  --muted-foreground: #70788d;
+  --primary: #6757d9;
+  --primary-foreground: #fff;
+  --input: #dfe3ed;
+  --secondary: #eeebfc;
+  color: var(--foreground);
+}
+.dark .channel-model-batch {
+  --card: #20222c;
+  --muted: #171923;
+  --border: #383b4c;
+  --foreground: #e8eaf3;
+  --muted-foreground: #a4acc3;
+  --input: #45495c;
+  --secondary: #34304d;
+}
+.channel-model-batch
+  .batch-cache-fields
+  [data-slot='label']
+  > [aria-hidden='true'] {
+  max-width: 42px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.channel-model-batch .batch-price-warning {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--destructive);
+  cursor: help;
+}
